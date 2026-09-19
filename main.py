@@ -1,15 +1,26 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from api.routes import router
+from config.settings import HOST, PORT
 
 app = FastAPI(title="老年数字辅助智能体后端")
 
+# 允许前端跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册路由
+app.include_router(router)
+
 @app.get("/")
 def read_root():
-    return {"message": "你好，老年智能体后端启动成功！"}
-
-@app.get("/hello/{name}")
-def say_hello(name: str):
-    return {"message": f"你好 {name}，我是老年数字辅助智能体"}
+    return {"message": "老年数字辅助智能体后端运行正常"}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=True)
