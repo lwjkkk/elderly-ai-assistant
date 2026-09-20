@@ -1,0 +1,39 @@
+# Web API
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+python-multipart>=0.0.9,<1.0
+pydantic-settings>=2.6,<3.0
+
+# AI 模型与接口
+transformers>=4.45,<5.0
+torch>=2.4,<3.0
+openai>=1.50,<2.0
+
+# LangChain 与 RAG
+langchain>=0.3,<1.0
+langchain-community>=0.3,<1.0
+langchain-text-splitters>=0.3,<1.0
+langchain-openai>=0.2,<1.0
+
+# 向量数据库
+chromadb>=0.5,<1.0
+
+# 文档与文本处理
+pypdf>=5.0,<6.0
+python-docx>=1.1,<2.0
+beautifulsoup4>=4.12,<5.0
+jieba>=0.42,<1.0
+
+# OCR 与图像处理
+paddleocr>=2.9,<3.0
+paddlepaddle>=3.0,<4.0
+Pillow>=10.4,<12.0
+opencv-python>=4.10,<5.0
+
+# HTTP 请求与工具
+httpx>=0.27,<1.0
+python-dotenv>=1.0,<2.0
+
+# 测试与代码质量
+pytest>=8.3,<9.0
+ruff>=0.8,<1.0
