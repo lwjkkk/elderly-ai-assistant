@@ -1,0 +1,82 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 环境变量和敏感配置
+.env
+.env.*
+!.env.example
+
+# IDE 配置
+.vscode/
+.idea/
+*.code-workspace
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 测试、日志和临时文件
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+*.tmp
+*.temp
+
+# 数据库和本地运行文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 用户上传内容和隐私数据
+uploads/
+user_uploads/
+private_data/
+data/raw_private/
+data/processed_private/
+
+# 模型权重和缓存
+models/*
+!models/.gitkeep
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.pdmodel
+*.pdiparams
+*.pdparams
+*.zip
+
+# 向量数据库和本地索引
+chroma/
+chroma_db/
+faiss_index/
+vector_store/
+*.faiss
+*.pkl
+
+# 前端依赖和构建产物
+node_modules/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# 覆盖率和打包文件
+*.egg-info/
+*.whl
