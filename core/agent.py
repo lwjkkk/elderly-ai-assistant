@@ -1,12 +1,16 @@
 # 核心智能体逻辑
 
 import os
+import re
 import logging
 from core.prompt import SYSTEM_PROMPT, MODULE_PROMPTS
 from core.qwen_llm import call_qwen
 from core.rag import retrieve_from_knowledge_base
 
 logger = logging.getLogger(__name__)
+
+# 只认"第X步"开头的行（X 为中文或阿拉伯数字）
+_STEP_RE = re.compile(r"^第([一二三四五六七八九十0-9０-９]{1,3})步")
 
 # 知识库目录名 → 模块名的映射（RAG 命中时优先使用）
 _DIR_TO_MODULE = {
@@ -104,13 +108,23 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         return _error_response("系统出了点状况，请稍后再试。")
 
 
-def _parse_steps(answer: str) -> list:
-    """从模型回答中提取操作步骤"""
+def _parse_steps(answer: str, max_steps: int = 6) -> list:
+    """
+    从模型回答中提取操作步骤。
+
+    只认"第X步"开头的行（中文/阿拉伯数字均可），最多 max_steps 条，
+    并按内容去重——避免把小模型回答里夹带的参考资料或幻觉文本算成步骤。
+    如果没提取到任何步骤，把整个回答作为单步返回。
+    """
     steps = []
     for line in answer.strip().split("\n"):
         line = line.strip()
-        if line and any(line.startswith(prefix) for prefix in ["第一步", "第二步", "第三步", "第四步", "第五步", "第1步", "第2步", "第3步"]):
+        if not line:
+            continue
+        if _STEP_RE.match(line) and line not in steps:
             steps.append(line)
+            if len(steps) >= max_steps:
+                break
     # 如果没提取到步骤，就把回答整体作为单步
     if not steps:
         steps = [answer]
