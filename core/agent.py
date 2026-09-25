@@ -1,10 +1,26 @@
 # 核心智能体逻辑
 
+import os
 import logging
 from core.prompt import SYSTEM_PROMPT, MODULE_PROMPTS
 from core.qwen_llm import call_qwen
+from core.rag import retrieve_from_knowledge_base
 
 logger = logging.getLogger(__name__)
+
+# 知识库目录名 → 模块名的映射（RAG 命中时优先使用）
+_DIR_TO_MODULE = {
+    "phone_tutorial": "phone",
+    "services": "services",
+    "daily_life": "daily_life",
+}
+
+
+def _module_from_dir(dir_path: str) -> str:
+    """根据知识库文件所在目录映射模块名，无法映射返回空字符串"""
+    if not dir_path:
+        return ""
+    return _DIR_TO_MODULE.get(os.path.basename(dir_path), "")
 
 
 def get_agent_answer(question: str, image_base64: str = None) -> dict:
@@ -29,13 +45,29 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         #     ocr_text = do_ocr(image_base64)
         #     question = f"{question}\n截图识别内容：{ocr_text}"
 
-        # 2. 调用 RAG 检索知识库相关内容（后续阶段实现）
-        # rag_context = retrieve_from_knowledge_base(question)
+        # 2. 调用 RAG 检索知识库相关内容
+        rag_results = []
+        rag_context = ""
+        try:
+            rag_results = retrieve_from_knowledge_base(question)
+            if rag_results:
+                rag_context = "\n\n".join(
+                    f"【{r['source']}】\n{r['content']}" for r in rag_results
+                )
+        except Exception as e:
+            logger.warning(f"RAG 检索失败：{e}")
 
         # 3. 拼接最终问题（如果有 RAG 上下文，附加到问题后面）
         final_question = question
-        # if rag_context:
-        #     final_question = f"{question}\n\n参考资料：{rag_context}"
+        if rag_context:
+            final_question = f"{question}\n\n参考资料：\n{rag_context}"
+
+        # 4. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
+        module = _detect_module(question)
+        if rag_results:
+            dir_module = _module_from_dir(rag_results[0].get("dir", ""))
+            if dir_module:
+                module = dir_module
 
         # 4. 调用通义千问生成回答
         answer = call_qwen(
@@ -49,7 +81,7 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
 
         return {
             "answer": answer,
-            "module": _detect_module(question),
+            "module": module,
             "steps": steps,
             "disclaimer": "以上内容仅供参考，具体操作请以实际界面为准。如有疑问请咨询子女或社区工作人员。"
         }

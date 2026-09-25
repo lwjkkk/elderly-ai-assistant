@@ -1,13 +1,20 @@
-# 通义千问大模型调用封装
+# 通义千问大模型调用封装（使用 OpenAI 兼容模式）
 
-import dashscope
-from dashscope import Generation
+# 说明：dashscope SDK 在 Windows 上处理中文请求时会报
+#       'latin-1' codec can't encode characters 的编码 bug。
+#       这里改用阿里云官方支持的 OpenAI 兼容接口（compatible-mode），
+#       用 openai 包调用，稳定且不依赖 dashscope 的 HTTP 编码实现。
+
 import logging
 import time
 
+from openai import OpenAI
+
 from config.settings import (
     DASHSCOPE_API_KEY,
+    LLM_BASE_URL,
     QWEN_MODEL_NAME,
+    QWEN_VL_MODEL_NAME,
     QWEN_MAX_TOKENS,
     QWEN_TEMPERATURE,
     QWEN_TIMEOUT,
@@ -16,9 +23,29 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
+# OpenAI 兼容模式的客户端（当前指向本地 Ollama，也可指向阿里云百炼）
+_client = None
+
+
+def _get_client() -> OpenAI:
+    """懒加载一个全局可复用的客户端"""
+    global _client
+    if _client is None:
+        # 本地 Ollama 完全忽略 Authorization 头，传任意 ASCII 占位即可；
+        # 若 base_url 指向云端 API（阿里云百炼），才使用真实 key。
+        key = "ollama" if "localhost" in LLM_BASE_URL else (DASHSCOPE_API_KEY or "dummy")
+        _client = OpenAI(
+            api_key=key,
+            base_url=LLM_BASE_URL,
+            timeout=QWEN_TIMEOUT,
+        )
+    return _client
+
 
 def _validate_api_key():
-    """校验 API Key 是否已配置"""
+    """校验 API Key：本地 Ollama 不需要 key，仅指向云端 API 时才需要"""
+    if "localhost" in LLM_BASE_URL:
+        return
     if not DASHSCOPE_API_KEY:
         raise ValueError(
             "未配置通义千问 API Key，请在环境变量中设置 DASHSCOPE_API_KEY"
@@ -36,78 +63,49 @@ def call_qwen(system_prompt: str, user_question: str, image_base64: str = None) 
 
     返回：
         模型生成的文本回答
-
-    异常：
-        ValueError: API Key 未配置或无效
-        TimeoutError: 网络请求超时
-        RuntimeError: 其他调用失败
     """
     _validate_api_key()
 
-    # 构造消息列表
-    messages = [
-        {"role": "system", "content": system_prompt},
-    ]
+    # 有图片时使用视觉模型；否则用配置的文本模型
+    model_name = QWEN_VL_MODEL_NAME if image_base64 else QWEN_MODEL_NAME
 
-    # 如果有截图，用多模态方式传入（qwen-vl 系列支持图片）
+    messages = [{"role": "system", "content": system_prompt}]
     if image_base64:
-        user_content = [
-            {"image": f"data:image/png;base64,{image_base64}"},
-            {"text": user_question},
-        ]
-        messages.append({"role": "user", "content": user_content})
-        # 有图片时使用视觉模型
-        model_name = "qwen-vl-plus"
+        # 多模态：图片用 base64 data URL，文字并列传入
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
+                {"type": "text", "text": user_question},
+            ],
+        })
     else:
         messages.append({"role": "user", "content": user_question})
-        model_name = QWEN_MODEL_NAME
 
-    # 带重试的调用逻辑
     last_error = None
     for attempt in range(1, QWEN_MAX_RETRIES + 1):
         try:
             logger.info(f"第 {attempt} 次调用通义千问，模型：{model_name}")
 
-            response = Generation.call(
-                api_key=DASHSCOPE_API_KEY,
+            response = _get_client().chat.completions.create(
                 model=model_name,
                 messages=messages,
                 max_tokens=QWEN_MAX_TOKENS,
                 temperature=QWEN_TEMPERATURE,
-                timeout=QWEN_TIMEOUT,
-                result_format="message",
             )
 
-            # 判断返回状态
-            if response.status_code == 200:
-                answer = response.output.choices[0].message.content
-                # 如果返回的是列表（多模态情况），拼接文字
-                if isinstance(answer, list):
-                    answer = "".join(
-                        item.get("text", "") for item in answer if "text" in item
-                    )
+            answer = response.choices[0].message.content
+            if answer:
                 logger.info("通义千问调用成功")
-                return answer
-            else:
-                # API 返回错误状态码
-                error_msg = f"API返回错误 - 状态码: {response.status_code}, 信息: {response.message}"
-                logger.error(error_msg)
+                return answer.strip()
 
-                # API Key 无效，不重试，直接抛出
-                if response.status_code in (401, 403):
-                    raise ValueError(f"API Key 无效或权限不足，请检查 DASHSCOPE_API_KEY 配置。详细信息：{response.message}")
+            last_error = RuntimeError("模型返回为空")
 
-                last_error = RuntimeError(error_msg)
-
-        except (ValueError, PermissionError):
-            # API Key 问题，直接向上抛，不重试
-            raise
         except Exception as e:
-            # 网络超时、连接失败等，可以重试
             logger.warning(f"第 {attempt} 次调用失败：{e}")
             last_error = e
             if attempt < QWEN_MAX_RETRIES:
-                time.sleep(1)  # 等1秒再重试
+                time.sleep(1)  # 等 1 秒再重试
 
     # 所有重试都失败
     raise RuntimeError(f"通义千问调用失败（已重试{QWEN_MAX_RETRIES}次）：{last_error}")

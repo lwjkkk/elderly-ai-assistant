@@ -2,7 +2,9 @@ fastapi
 uvicorn[standard]
 pydantic
 python-multipart
+python-dotenv
 dashscope
+openai
 langchain
 paddlepaddle
 paddleocr
