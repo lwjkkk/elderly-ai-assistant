@@ -1,6 +1,6 @@
 import gradio as gr
 
-USE_MOCK = True
+USE_MOCK = False
 API_URL = "http://127.0.0.1:8000/api/chat"
 
 def mock_ask(query):
@@ -17,8 +17,12 @@ def ask(query, image):
     if USE_MOCK:
         data = mock_ask(query)
     else:
-        import requests
-        r = requests.post(API_URL, json={"query": query}, timeout=60)
+        import requests, base64
+        payload = {"question": query}
+        if image is not None:
+            with open(image, "rb") as f:
+                payload["image_base64"] = base64.b64encode(f.read()).decode()
+        r = requests.post(API_URL, json=payload, timeout=60)
         data = r.json()
     head = {"phone": "手机使用", "services": "便民服务", "daily_life": "日常生活"}.get(data.get("module", ""), data.get("module", ""))
     answer = f"【{head}】\n{data.get('answer','')}"
