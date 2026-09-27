@@ -80,3 +80,11 @@ build/
 # 覆盖率和打包文件
 *.egg-info/
 *.whl
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+venv/
+env/
+*.env
+.DS_Store
