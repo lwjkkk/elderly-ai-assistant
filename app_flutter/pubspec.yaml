@@ -1,0 +1,25 @@
+name: elderly_ai_assistant
+description: 云栖码梦 - 适老化 AI 辅助智能体 App（老人端 + 家属端）
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  dio: ^5.4.0
+  shared_preferences: ^2.2.2
+  speech_to_text: ^6.6.0
+  flutter_tts: ^4.0.2
+  image_picker: ^1.0.7
+  fl_chart: ^0.66.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
