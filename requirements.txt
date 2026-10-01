@@ -47,3 +47,15 @@ openai
 langchain
 paddlepaddle
 paddleocr
+
+# 数据库与鉴权（Day1 新增）
+sqlalchemy>=2.0,<3.0
+pyjwt>=2.9,<3.0
+bcrypt>=4.0,<5.0
+
+# 定时任务（Day2 新增）
+apscheduler>=3.10,<4.0
+
+# PDF 导出与图表（Day3 新增）
+reportlab>=4.0,<5.0
+matplotlib>=3.8,<4.0
