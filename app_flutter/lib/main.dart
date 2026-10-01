@@ -32,11 +32,16 @@ class ElderApp extends StatelessWidget {
       home: FutureBuilder<String?>(
         future: ApiService.getToken(),
         builder: (c, s) {
-          if (!s.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          if (s.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
           if (s.data == null) return const LoginPage();
           return FutureBuilder<String?>(
             future: ApiService.getRole(),
             builder: (c2, r) {
+              if (r.connectionState == ConnectionState.waiting) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
               if (r.data == 'family') return const FamilyHome();
               return const ElderHome();
             },
