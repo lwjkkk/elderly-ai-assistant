@@ -94,3 +94,28 @@ class ConsultRecord(Base):
     hospital = Column(String(100), nullable=True)      # 医院名
     doctor = Column(String(50), nullable=True)         # 医生名
     created_at = Column(DateTime, server_default=func.now())
+
+
+class HealthReport(Base):
+    """体检报告表：上传体检单图片，OCR 识别 + AI 建议（不做诊断）。"""
+    __tablename__ = "health_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    image_url = Column(String(500), nullable=True)     # 体检单图片保存路径
+    ocr_text = Column(String, nullable=True)           # OCR 识别出的指标文字
+    advice_text = Column(String, nullable=True)        # AI 大白话建议
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class SymptomCheck(Base):
+    """症状自查表：输入症状描述，AI 建议 + 风险分级。"""
+    __tablename__ = "symptom_checks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    input_text = Column(String, nullable=False)        # 老人描述的症状
+    advice_text = Column(String, nullable=True)        # AI 建议
+    # 风险等级：green=可居家观察，yellow=建议尽快就医，red=立即就医/急诊
+    risk = Column(String(10), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())

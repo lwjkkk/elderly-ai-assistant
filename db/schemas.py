@@ -1,6 +1,8 @@
 # Pydantic 校验模型：负责校验请求体长什么样、返回体长什么样
 # 注意和 models.py 的区别：models 对应数据库表，schemas 对应接口的输入输出
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -156,7 +158,7 @@ class VitalsCreate(BaseModel):
     type: str = Field(..., description="类型：bp=血压, bs=血糖, hr=心率, weight=体重")
     systolic: int | None = Field(None, description="收缩压（血压时必填）")
     diastolic: int | None = Field(None, description="舒张压（血压时必填）")
-    value: str | None = Field(None, description="通用数值：血糖/心率/体重")
+    value: float | None = Field(None, description="通用数值：血糖/心率/体重")
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
 
@@ -166,8 +168,8 @@ class VitalsOut(BaseModel):
     type: str
     systolic: int | None = None
     diastolic: int | None = None
-    value: str | None = None
-    measured_at: str | None = None
+    value: float | None = None
+    measured_at: datetime | None = None
 
     class Config:
         from_attributes = True
@@ -178,7 +180,7 @@ class TrendPoint(BaseModel):
     date: str
     systolic: int | None = None
     diastolic: int | None = None
-    value: str | None = None
+    value: float | None = None
 
 
 # ---------- 问诊录音 ----------
@@ -190,7 +192,50 @@ class ConsultOut(BaseModel):
     duration: int | None = None
     hospital: str | None = None
     doctor: str | None = None
-    created_at: str | None = None
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
+
+
+# ---------- 症状自查 ----------
+
+class SymptomCreate(BaseModel):
+    """症状自查请求体"""
+    input_text: str = Field(..., description="症状描述，如 头疼、咳嗽两天")
+    elder_id: int | None = Field(None, description="家属代提交时指定老人id")
+
+
+class SymptomOut(BaseModel):
+    id: int
+    elder_id: int
+    input_text: str
+    advice_text: str | None = None
+    risk: str                       # green / yellow / red
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- 体检报告 ----------
+
+class HealthReportOut(BaseModel):
+    id: int
+    elder_id: int
+    image_url: str | None = None
+    ocr_text: str | None = None
+    advice_text: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- 天气提醒 ----------
+
+class WeatherRemind(BaseModel):
+    city: str
+    text: str = Field(..., description="天气概况，如 多云 18~26℃")
+    tip: str = Field(..., description="给老人的弹窗提醒文案")
+    warning: str | None = Field(None, description="预警信息，无则为空")

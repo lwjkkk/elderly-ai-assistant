@@ -1,3 +1,6 @@
+import torch  # noqa: F401  必须在所有 import 最前：Windows 下晚加载会因 conda 旧 VC++ 运行库
+# 导致 torch/lib/shm.dll 加载失败(WinError 127)；进程最早期导入可复用已加载的新版运行库。
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -11,6 +14,9 @@ from api.meds import router as meds_router
 from api.drugs import router as drugs_router
 from api.vitals import router as vitals_router
 from api.consults import router as consults_router
+from api.symptom import router as symptom_router
+from api.reports import router as reports_router
+from api.weather import router as weather_router
 from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
@@ -44,6 +50,9 @@ app.include_router(meds_router)    # 用药 /api/meds
 app.include_router(drugs_router)   # 查药 /api/drugs
 app.include_router(vitals_router)  # 体征 /api/vitals
 app.include_router(consults_router)  # 问诊录音 /api/consults
+app.include_router(symptom_router)  # 症状自查 /api/symptom-check
+app.include_router(reports_router)  # 体检报告 /api/reports
+app.include_router(weather_router)  # 天气 /api/weather
 
 
 @app.get("/")
