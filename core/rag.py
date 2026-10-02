@@ -9,6 +9,14 @@ from config.settings import KNOWLEDGE_BASE_DIR
 
 logger = logging.getLogger(__name__)
 
+# 模块类别 → 知识库子目录名；新增 health 健康分支
+CATEGORY_DIRS = {
+    "phone": "phone_tutorial",
+    "services": "services",
+    "daily_life": "daily_life",
+    "health": "health",
+}
+
 # 常见疑问词/辅助词，检索时先去掉，保留核心词
 _STOP_WORDS = (
     "怎么", "如何", "怎样", "什么样", "什么", "怎么办", "怎么弄",
@@ -100,13 +108,16 @@ def _build_keywords(question: str) -> list:
     return result
 
 
-def retrieve_from_knowledge_base(question: str, top_k: int = 2) -> list:
+def retrieve_from_knowledge_base(question: str, top_k: int = 2,
+                                 category: str | None = None) -> list:
     """
     基础检索：从知识库中按关键词匹配，返回最相关的片段。
 
     参数：
         question: 用户的问题
         top_k: 返回最多几个片段
+        category: 可选，限定只在某个类别目录检索
+                  （phone/services/daily_life/health），不传则检索全部
 
     返回：
         [{"content": "相关片段全文", "source": "来源文件名"}, ...]
@@ -116,9 +127,12 @@ def retrieve_from_knowledge_base(question: str, top_k: int = 2) -> list:
     if not keywords:
         keywords = [question[:6]]
 
+    only_dir = CATEGORY_DIRS.get(category or "", "")
     docs = _load_documents()
     scored = []
     for doc in docs:
+        if only_dir and os.path.basename(doc["dir"]) != only_dir:
+            continue
         total = sum(doc["content"].lower().count(k.lower()) for k in keywords)
         if total > 0:
             scored.append({

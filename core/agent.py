@@ -6,17 +6,21 @@ import logging
 from core.prompt import SYSTEM_PROMPT, MODULE_PROMPTS
 from core.qwen_llm import call_qwen
 from core.rag import retrieve_from_knowledge_base
+from core.ocr import recognize_image
 
 logger = logging.getLogger(__name__)
 
-# 只认"第X步"开头的行（X 为中文或阿拉伯数字）
+# 认"第X步"开头（X 为中文或阿拉伯数字）
 _STEP_RE = re.compile(r"^第([一二三四五六七八九十0-9０-９]{1,3})步")
+# 也认 "1. " "2、" "3)" 这类阿拉伯数字编号（本地模型常用这种格式）
+_NUM_RE = re.compile(r"^\d{1,2}\s*[.、)]\s*")
 
 # 知识库目录名 → 模块名的映射（RAG 命中时优先使用）
 _DIR_TO_MODULE = {
     "phone_tutorial": "phone",
     "services": "services",
     "daily_life": "daily_life",
+    "health": "health",
 }
 
 
@@ -44,16 +48,22 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         }
     """
     try:
-        # 1. 如果有截图，先调用 OCR 识别图片内容（后续阶段实现）
-        # if image_base64:
-        #     ocr_text = do_ocr(image_base64)
-        #     question = f"{question}\n截图识别内容：{ocr_text}"
+        # 1. 如果带了手机截图，先 OCR 识别截图里的界面文字，作为补充上下文
+        ocr_text = ""
+        if image_base64:
+            try:
+                ocr_text = recognize_image(image_base64)
+            except Exception as e:
+                logger.warning(f"截图 OCR 失败：{e}")
+
+        # 检索用“问题 + 截图识别文字”，避免只看一句口头描述检索不到
+        search_question = f"{question} {ocr_text}".strip() if ocr_text else question
 
         # 2. 调用 RAG 检索知识库相关内容
         rag_results = []
         rag_context = ""
         try:
-            rag_results = retrieve_from_knowledge_base(question)
+            rag_results = retrieve_from_knowledge_base(search_question)
             if rag_results:
                 rag_context = "\n\n".join(
                     f"【{r['source']}】\n{r['content']}" for r in rag_results
@@ -61,23 +71,25 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         except Exception as e:
             logger.warning(f"RAG 检索失败：{e}")
 
-        # 3. 拼接最终问题（如果有 RAG 上下文，附加到问题后面）
+        # 3. 拼接最终问题：截图识别内容 + RAG 参考资料都给模型
         final_question = question
+        if ocr_text:
+            final_question += f"\n\n手机截图识别到的内容：\n{ocr_text}"
         if rag_context:
-            final_question = f"{question}\n\n参考资料：\n{rag_context}"
+            final_question += f"\n\n参考资料：\n{rag_context}"
 
         # 4. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
-        module = _detect_module(question)
+        module = _detect_module(search_question)
         if rag_results:
             dir_module = _module_from_dir(rag_results[0].get("dir", ""))
             if dir_module:
                 module = dir_module
 
-        # 4. 调用通义千问生成回答
+        # 4. 调用本地模型生成回答。截图内容已由 PaddleOCR 转成文字放进
+        # final_question，因此这里不传图片、只用文本模型（无需 qwen2-vl）。
         answer = call_qwen(
             system_prompt=SYSTEM_PROMPT,
             user_question=final_question,
-            image_base64=image_base64,
         )
 
         # 5. 按适老化格式整理返回
@@ -117,24 +129,43 @@ def _parse_steps(answer: str, max_steps: int = 6) -> list:
     如果没提取到任何步骤，把整个回答作为单步返回。
     """
     steps = []
-    for line in answer.strip().split("\n"):
-        line = line.strip()
+    cur = None
+    for raw in answer.strip().split("\n"):
+        line = raw.strip()
         if not line:
             continue
-        if _STEP_RE.match(line) and line not in steps:
-            steps.append(line)
+        is_head = bool(_STEP_RE.match(line) or _NUM_RE.match(line))
+        if is_head:
+            # 遇到新编号，先收上一条
+            if cur is not None:
+                steps.append(cur)
+            cur = line
             if len(steps) >= max_steps:
                 break
-    # 如果没提取到步骤，就把回答整体作为单步
-    if not steps:
-        steps = [answer]
-    return steps
+        elif cur is not None:
+            # 编号下的子项/说明，并入当前步骤，保证一步内容完整
+            cur += "\n" + line
+    if cur is not None and len(steps) < max_steps:
+        steps.append(cur)
+
+    # 按内容去重
+    result = []
+    for s in steps:
+        if s not in result:
+            result.append(s)
+    # 两种编号都没匹配到，就把回答整体作为单步
+    if not result:
+        result = [answer]
+    return result[:max_steps]
 
 
 def _detect_module(question: str) -> str:
-    """根据问题内容简单判断属于哪个模块"""
-    phone_keywords = ["微信", "手机", "APP", "app", "软件", "怎么操作", "怎么打开", "怎么设置", "字体", "声音"]
-    services_keywords = ["医保", "挂号", "社保", "养老", "公积金", "水电", "缴费"]
+    """根据问题内容简单判断属于哪个模块（RAG 目录命中会覆盖此结果）"""
+    phone_keywords = ["微信", "手机", "APP", "app", "软件", "怎么操作", "怎么打开", "怎么设置", "字体", "声音", "WiFi", "wifi", "蓝牙", "截屏", "拍照"]
+    services_keywords = ["医保", "挂号", "社保", "公积金", "水电", "缴费", "养老金", "失业保险", "驾驶证", "年检", "退税", "报销", "备案"]
+    health_keywords = ["血压", "血糖", "糖尿病", "高血压", "吃药", "用药", "药品", "症状", "头疼", "头痛",
+                       "头晕", "发烧", "发热", "感冒", "咳嗽", "失眠", "睡眠", "饮食", "营养", "骨质疏松",
+                       "锻炼", "健身", "心率", "胆固醇", "尿酸", "慢性病", "便秘", "牙疼", "肠胃", "健康"]
 
     for kw in phone_keywords:
         if kw in question:
@@ -142,6 +173,9 @@ def _detect_module(question: str) -> str:
     for kw in services_keywords:
         if kw in question:
             return "services"
+    for kw in health_keywords:
+        if kw in question:
+            return "health"
     return "daily_life"
 
 
