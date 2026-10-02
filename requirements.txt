@@ -37,3 +37,13 @@ python-dotenv>=1.0,<2.0
 # 测试与代码质量
 pytest>=8.3,<9.0
 ruff>=0.8,<1.0
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+python-dotenv
+dashscope
+openai
+langchain
+paddlepaddle
+paddleocr
