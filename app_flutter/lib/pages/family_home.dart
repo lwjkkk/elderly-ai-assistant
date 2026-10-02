@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
-import 'tabs/placeholder_tab.dart';
+import 'tabs/meds_tab.dart';
+import 'tabs/vitals_tab.dart';
+import 'tabs/consult_drug_chat_tab.dart';
+import 'tabs/me_tab.dart';
 import 'bind_page.dart';
 
-/// 家属端 4 Tab：亲人用药 / 体征 / 绑定管理 / 我的
+/// 家属端：亲人用药 / 体征 / 自查 / 报告 / 绑定 / 我的
 class FamilyHome extends StatefulWidget {
   const FamilyHome({super.key});
   @override
@@ -14,24 +17,30 @@ class _FamilyHomeState extends State<FamilyHome> {
   @override
   Widget build(BuildContext context) {
     final pages = const [
-      PlaceholderTab(title: '亲人用药', desc: 'Day2：查看老人打卡，漏服红色提醒'),
-      PlaceholderTab(title: '体征', desc: 'Day3：查看老人曲线和 PDF'),
+      MedsTab(readOnly: true),
+      VitalsTab(readOnly: true),
+      SymptomTab(),
+      ReportTab(),
       BindPage(role: 'family'),
-      PlaceholderTab(title: '我的', desc: '账号与设置'),
+      MeTab(role: 'family'),
     ];
+    const titles = ['亲人用药', '体征', '自查', '报告', '绑定', '我的'];
     return Scaffold(
-      body: pages[idx],
+      appBar: AppBar(title: Text(titles[idx])),
+      body: SafeArea(key: ValueKey(idx), child: pages[idx]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: idx,
         type: BottomNavigationBarType.fixed,
-        selectedFontSize: 18,
-        unselectedFontSize: 16,
+        selectedFontSize: 16,
+        unselectedFontSize: 14,
         onTap: (i) => setState(() => idx = i),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.medication, size: 32), label: '用药'),
-          BottomNavigationBarItem(icon: Icon(Icons.favorite, size: 32), label: '体征'),
-          BottomNavigationBarItem(icon: Icon(Icons.group, size: 32), label: '绑定'),
-          BottomNavigationBarItem(icon: Icon(Icons.person, size: 32), label: '我的'),
+          BottomNavigationBarItem(icon: Icon(Icons.medication, size: 28), label: '用药'),
+          BottomNavigationBarItem(icon: Icon(Icons.favorite, size: 28), label: '体征'),
+          BottomNavigationBarItem(icon: Icon(Icons.health_and_safety, size: 28), label: '自查'),
+          BottomNavigationBarItem(icon: Icon(Icons.description, size: 28), label: '报告'),
+          BottomNavigationBarItem(icon: Icon(Icons.group, size: 28), label: '绑定'),
+          BottomNavigationBarItem(icon: Icon(Icons.person, size: 28), label: '我的'),
         ],
       ),
     );

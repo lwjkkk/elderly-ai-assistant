@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api.dart';
+import '../theme.dart';
 import 'elder_home.dart';
 import 'family_home.dart';
 import 'register_page.dart';
@@ -20,8 +21,10 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _login() async {
     setState(() { loading = true; err = null; });
+    Map<String,dynamic>? r;
     try {
-      await ApiService.login(phone: phone.text.trim(), password: pwd.text, role: role);
+      r = await ApiService.login(phone: phone.text.trim(), password: pwd.text);
+      role = (r['role'] ?? role).toString();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -69,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             if (err != null) ...[
               const SizedBox(height: 12),
-              Text(err!, style: const TextStyle(color: Colors.red, fontSize: 18)),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Text(err!, style: const TextStyle(color: AppColors.danger, fontSize: 18)))),
             ],
             const SizedBox(height: 24),
             ElevatedButton(
