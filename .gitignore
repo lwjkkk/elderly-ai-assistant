@@ -77,6 +77,34 @@ build/
 .cache/
 .parcel-cache/
 
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+app_flutter/build/
+app_flutter/.dart_tool/
+app_flutter/android/local.properties
+app_flutter/ios/Pods/
+app_flutter/ios/.symlinks/
+*.apk
+*.aab
+*.ipa
+*.jks
+*.keystore
+*.iml
+.flutter-devtools/
+
 # 覆盖率和打包文件
 *.egg-info/
 *.whl
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+venv/
+env/
+*.env
+.DS_Store
