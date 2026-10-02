@@ -15,7 +15,7 @@ from core.security import (
 
 router = APIRouter(prefix="/api/auth", tags=["鉴权"])
 
-@router.post("/register", response_model=UserOut)
+@router.post("/register", response_model=UserOut, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     """注册：老人或家属都走这个接口，用 role 区分身份。"""
     # 校验角色合法

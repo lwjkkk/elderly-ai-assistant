@@ -47,6 +47,7 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
 
     # 趋势图（如果有血压数据）
     bp_records = [r for r in records if r.type == "bp"]
+    chart_path = None
     if bp_records:
         chart_path = _draw_bp_chart(bp_records)
         if chart_path and os.path.exists(chart_path):
@@ -54,7 +55,6 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
             elements.append(Spacer(1, 3 * mm))
             elements.append(Image(chart_path, width=170 * mm, height=80 * mm))
             elements.append(Spacer(1, 5 * mm))
-            os.remove(chart_path)  # 清理临时文件
 
     # 数据表
     elements.append(Paragraph("详细数据", normal_style))
@@ -96,20 +96,32 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
     )))
 
     doc.build(elements)
+    # Image 是在 build 时才真正读取文件，因此临时图必须在 build 之后删除
+    if chart_path and os.path.exists(chart_path):
+        os.remove(chart_path)
     return buf.getvalue()
 
 
 def _register_chinese_font():
-    """注册中文字体，优先用 Windows 系统字体。"""
+    """注册中文字体及其字体族，优先用 Windows 系统字体。"""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
     font_paths = [
         "C:/Windows/Fonts/simhei.ttf",       # 黑体
-        "C:/Windows/Fonts/simsun.ttc",        # 宋体
-        "C:/Windows/Fonts/msyh.ttc",          # 微软雅黑
+        "C:/Windows/Fonts/simsun.ttc",       # 宋体
+        "C:/Windows/Fonts/msyh.ttc",         # 微软雅黑
     ]
     for path in font_paths:
         if os.path.exists(path):
             try:
                 pdfmetrics.registerFont(TTFont("ChineseFont", path))
+                # 必须注册字体族，否则 Paragraph 解析 bold/italic 时会报
+                # "Can't map determine family/bold/italic"
+                pdfmetrics.registerFontFamily(
+                    "ChineseFont",
+                    normal="ChineseFont", bold="ChineseFont",
+                    italic="ChineseFont", boldItalic="ChineseFont")
                 return
             except Exception:
                 continue
