@@ -20,7 +20,7 @@ class _RegisterPageState extends State<RegisterPage> {
           phone: phone.text.trim(), password: pwd.text, role: role, nickname: nick.text.trim());
       setState(() => msg = '注册成功，请返回登录');
     } catch (e) {
-      setState(() => msg = '注册失败：$e');
+      setState(() => msg = '注册失败：${ApiService.friendly(e)}');
     }
   }
 

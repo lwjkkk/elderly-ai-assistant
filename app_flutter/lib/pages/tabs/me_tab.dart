@@ -13,8 +13,20 @@ class MeTab extends StatefulWidget {
 
 class _MeTabState extends State<MeTab> {
   List binds = [];
+  String inviteCode = '';
+  String inviteMsg = '';
   @override
   void initState() { super.initState(); load(); }
+
+  Future<void> genInvite() async {
+    try {
+      inviteCode = await ApiService.createInvite();
+      inviteMsg = '';
+    } catch (e) {
+      inviteMsg = ApiService.friendly(e);
+    }
+    if (mounted) setState(() {});
+  }
   Future<void> load() async {
     try { binds = await ApiService.bindList(); } catch (_) { binds = []; }
     if (mounted) setState(() {});
@@ -29,9 +41,21 @@ class _MeTabState extends State<MeTab> {
         const SizedBox(height: 8),
         const Text('已绑定亲人（双方互见昵称）：', style: TextStyle(fontSize: 20)),
         const SizedBox(height: 8),
-        if (binds.isEmpty) const Card(child: ListTile(title: Text('暂无绑定，先去绑定页完成绑定', style: TextStyle(fontSize: 20)))),
-        ...binds.map((b) {
-          final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
+        if (widget.role == 'elder') ...[
+          ElevatedButton.icon(onPressed: genInvite, icon: const Icon(Icons.qr_code), label: const Text('生成邀请码')),
+          if (inviteCode.isNotEmpty)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.key, size: 36),
+                title: SelectableText(inviteCode, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+                subtitle: const Text('30分钟内有效，把这串码告诉家人', style: TextStyle(fontSize: 18)),
+              ),
+            ),
+          if (inviteMsg.isNotEmpty) Text(inviteMsg, style: const TextStyle(fontSize: 18, color: AppColors.danger)),
+          const SizedBox(height: 8),
+        ],
+        if (binds.isEmpty) const Card(child: ListTile(title: Text('暂无绑定', style: TextStyle(fontSize: 20)))),
+        ...binds.map((b) {          final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
           final name = (m['other_nickname'] ?? m['nickname'] ?? '对方').toString();
           final status = (m['status'] ?? '').toString();
           final code = (m['invite_code'] ?? '').toString();

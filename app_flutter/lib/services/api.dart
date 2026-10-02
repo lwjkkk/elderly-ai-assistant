@@ -133,6 +133,41 @@ class ApiService {
     return d is List ? d : [];
   }
 
+
+  /// 把报错翻译成老人能看懂的话，各页面直接用。
+  static String friendly(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      dynamic data = e.response?.data;
+      final detail = data is Map && data['detail'] != null
+          ? data['detail'].toString()
+          : '';
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout) {
+        return '网络超时，请检查网络后重试';
+      }
+      if (e.type == DioExceptionType.connectionError) {
+        return '连不上服务器，请确认后端已启动且地址正确';
+      }
+      switch (code) {
+        case 400:
+          return detail.isNotEmpty ? detail : '请求不对，请检查输入内容';
+        case 401:
+          return '手机号或密码不对（或登录已过期，请重新登录）';
+        case 403:
+          return '没有权限，请先完成老人与家属绑定';
+        case 404:
+          return '没找到相关记录，可能已被删除或邀请码已失效';
+        case 422:
+          return '输入格式不对（手机号11位，密码至少6位）';
+      }
+      if (detail.isNotEmpty && detail.length < 60) return detail;
+      return '服务器开小差了，请稍后重试';
+    }
+    return '出了点问题，请稍后重试';
+  }
+
   // ---------- 5.3 用药 ----------
   static Future<Map<String, dynamic>> addMed(
       {required String name,
@@ -187,8 +222,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> queryDrugByImage(
-      String imagePath) async {
-    final bytes = await File(imagePath).readAsBytes();
+      List<int> bytes, [String? fileName]) async {
     final res = await _dio.post('/api/drugs/query',
         data: {'image_base64': base64Encode(bytes)});
     return Map<String, dynamic>.from(res.data);
@@ -251,11 +285,10 @@ class ApiService {
     return res.data is List ? res.data : [];
   }
 
-  static Future<Map<String, dynamic>> uploadConsult(String filePath,
+  static Future<Map<String, dynamic>> uploadConsult(List<int> bytes, String fileName,
       {int? duration, String? hospital, String? doctor}) async {
-    final fileName = filePath.split(RegExp(r'[/\\]')).last;
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
       if (duration != null) 'duration': duration,
       if (hospital != null) 'hospital': hospital,
       if (doctor != null) 'doctor': doctor,
@@ -291,10 +324,9 @@ class ApiService {
     return res.data is List ? res.data : [];
   }
 
-  static Future<Map<String, dynamic>> uploadReport(String imagePath) async {
-    final fileName = imagePath.split(RegExp(r'[/\\]')).last;
+  static Future<Map<String, dynamic>> uploadReport(List<int> bytes, String fileName) async {
     final form = FormData.fromMap({
-      'file': await MultipartFile.fromFile(imagePath, filename: fileName),
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
       ...(await withElder()),
     });
     final res = await _dio.post('/api/reports/upload', data: form);

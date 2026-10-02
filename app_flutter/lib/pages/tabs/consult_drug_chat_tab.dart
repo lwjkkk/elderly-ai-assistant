@@ -60,7 +60,7 @@ class _DrugQueryTabState extends State<DrugQueryTab> {
     try {
       final r = await ApiService.queryDrugByName(nameC.text.trim());
       result = '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
-    } catch (e) { result = '查询失败：$e'; }
+    } catch (e) { result = '查询失败：${ApiService.friendly(e)}'; }
     if (mounted) setState(() => busy = false);
   }
 
@@ -69,9 +69,9 @@ class _DrugQueryTabState extends State<DrugQueryTab> {
     if (f == null) return;
     setState(() { busy = true; result = '识别中…'; });
     try {
-      final r = await ApiService.queryDrugByImage(f.path);
+      final r = await ApiService.queryDrugByImage(await f.readAsBytes(), f.name);
       result = '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
-    } catch (e) { result = '识别失败：$e'; }
+    } catch (e) { result = '识别失败：${ApiService.friendly(e)}'; }
     if (mounted) setState(() => busy = false);
   }
 
@@ -125,7 +125,7 @@ class _SymptomTabState extends State<SymptomTab> {
       loadHistory();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('提交失败：$e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('提交失败：${ApiService.friendly(e)}')));
       }
     }
     if (mounted) setState(() => busy = false);
@@ -184,14 +184,14 @@ class _ReportTabState extends State<ReportTab> {
     if (f == null) return;
     setState(() => busy = true);
     try {
-      await ApiService.uploadReport(f.path);
+      await ApiService.uploadReport(await f.readAsBytes(), f.name);
       refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('上传成功')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败：$e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
       }
     }
     if (mounted) setState(() => busy = false);
@@ -265,7 +265,7 @@ class _ChatTabState extends State<ChatTab> {
       msgs.add({'role': 'ai', 'text': '$raw$stepsSuffix'});
     } catch (e) {
       msgs.removeWhere((m) => m['role'] == 'thinking');
-      msgs.add({'role': 'ai', 'text': '出错了：$e'});
+      msgs.add({'role': 'ai', 'text': '出错了：${ApiService.friendly(e)}'});
     }
     if (mounted) setState(() => busy = false);
   }

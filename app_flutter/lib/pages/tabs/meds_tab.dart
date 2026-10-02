@@ -27,7 +27,7 @@ class _MedsTabState extends State<MedsTab> {
     try {
       items = await ApiService.medsToday();
     } catch (e) {
-      err = e.toString();
+      err = ApiService.friendly(e);
     }
     if (mounted) setState(() => loading = false);
   }
@@ -55,7 +55,7 @@ class _MedsTabState extends State<MedsTab> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('打卡失败：$e')));
+            .showSnackBar(SnackBar(content: Text('打卡失败：${ApiService.friendly(e)}')));
       }
     }
   }
@@ -95,7 +95,7 @@ class _MedsTabState extends State<MedsTab> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+              .showSnackBar(SnackBar(content: Text('保存失败：${ApiService.friendly(e)}')));
         }
       }
     }
