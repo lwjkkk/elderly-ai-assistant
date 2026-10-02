@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api.dart';
+import '../theme.dart';
 
 /// 绑定页：老人生成邀请码 / 家属输入邀请码绑定，GET /api/bind/list 展示
 class BindPage extends StatefulWidget {
@@ -33,9 +34,7 @@ class _BindPageState extends State<BindPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('绑定管理', style: TextStyle(fontSize: 26))),
-      body: SingleChildScrollView(
+    return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           ElevatedButton(
@@ -69,11 +68,16 @@ class _BindPageState extends State<BindPage> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(onPressed: _refresh, child: const Text('刷新绑定列表')),
-          ...binds.map((b) => Card(child: ListTile(title: Text(b.toString(), style: const TextStyle(fontSize: 20))))),
+          ...binds.map((b) {
+            final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
+            final name = (m['other_nickname'] ?? m['elder_nickname'] ?? m['family_nickname'] ?? m['nickname'] ?? b.toString()).toString();
+            final phone = (m['elder_phone'] ?? m['family_phone'] ?? m['phone'] ?? '').toString();
+            final status = (m['status'] ?? '').toString();
+            return Card(child: ListTile(title: Text('$name $phone', style: const TextStyle(fontSize: 20)), subtitle: status.isEmpty ? null : Text(status)));
+          }),
           const SizedBox(height: 12),
           Text(msg, style: const TextStyle(fontSize: 20)),
         ]),
-      ),
     );
   }
 }

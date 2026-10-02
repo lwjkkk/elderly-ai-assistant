@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'config.dart';
 import 'services/api.dart';
+import 'theme.dart';
 import 'pages/login_page.dart';
 import 'pages/elder_home.dart';
 import 'pages/family_home.dart';
@@ -13,22 +14,7 @@ class ElderApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '云栖码梦',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFFF7F5EF),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(fontSize: 22),
-          bodyMedium: TextStyle(fontSize: 20),
-          titleLarge: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 56),
-            textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-        ),
-      ),
+      theme: buildAppTheme(),
       home: FutureBuilder<String?>(
         future: ApiService.getToken(),
         builder: (c, s) {
