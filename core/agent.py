@@ -6,7 +6,6 @@ import logging
 from core.prompt import SYSTEM_PROMPT, MODULE_PROMPTS
 from core.qwen_llm import call_qwen
 from core.rag import retrieve_from_knowledge_base
-from core.ocr import recognize_image
 
 logger = logging.getLogger(__name__)
 
@@ -31,35 +30,26 @@ def _module_from_dir(dir_path: str) -> str:
     return _DIR_TO_MODULE.get(os.path.basename(dir_path), "")
 
 
-def get_agent_answer(question: str, image_base64: str = None) -> dict:
+def get_agent_answer(question: str) -> dict:
     """
     老年智能体主函数 - 前端调用这个接口
 
     入参：
-        question: 用户的问题文字
-        image_base64: 用户上传的手机截图（base64编码），没有就传None
+        question: 用户的问题文字（含语音转文字后的文字）
 
     返回：
         {
             "answer": "完整回答",
-            "module": "phone/services/daily_life",
+            "module": "phone/services/daily_life/health",
             "steps": ["第一步...", "第二步..."],
             "disclaimer": "免责声明"
         }
     """
     try:
-        # 1. 如果带了手机截图，先 OCR 识别截图里的界面文字，作为补充上下文
-        ocr_text = ""
-        if image_base64:
-            try:
-                ocr_text = recognize_image(image_base64)
-            except Exception as e:
-                logger.warning(f"截图 OCR 失败：{e}")
+        # 检索用“问题文字”
+        search_question = question
 
-        # 检索用“问题 + 截图识别文字”，避免只看一句口头描述检索不到
-        search_question = f"{question} {ocr_text}".strip() if ocr_text else question
-
-        # 2. 调用 RAG 检索知识库相关内容
+        # 1. 调用 RAG 检索知识库相关内容
         rag_results = []
         rag_context = ""
         try:
@@ -71,22 +61,19 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         except Exception as e:
             logger.warning(f"RAG 检索失败：{e}")
 
-        # 3. 拼接最终问题：截图识别内容 + RAG 参考资料都给模型
+        # 2. 拼接最终问题：RAG 参考资料都给模型
         final_question = question
-        if ocr_text:
-            final_question += f"\n\n手机截图识别到的内容：\n{ocr_text}"
         if rag_context:
             final_question += f"\n\n参考资料：\n{rag_context}"
 
-        # 4. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
+        # 3. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
         module = _detect_module(search_question)
         if rag_results:
             dir_module = _module_from_dir(rag_results[0].get("dir", ""))
             if dir_module:
                 module = dir_module
 
-        # 4. 调用本地模型生成回答。截图内容已由 PaddleOCR 转成文字放进
-        # final_question，因此这里不传图片、只用文本模型（无需 qwen2-vl）。
+        # 4. 生成回答（统一走文本模型）
         answer = call_qwen(
             system_prompt=SYSTEM_PROMPT,
             user_question=final_question,
