@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -18,7 +18,9 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # token 有效期 24 小时
 
 # token 获取方式：前端把 token 放在 Authorization: Bearer <token>
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# 用 HTTPBearer：Swagger 弹窗可直接粘贴 token。
+# （OAuth2PasswordBearer 会要求走表单 username/password，与我们 JSON(phone) 登录接口不匹配）
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -49,7 +51,7 @@ def create_access_token(user: User) -> str:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """接口依赖：从请求头解析 token，返回当前登录用户；失败则 401。"""
@@ -58,6 +60,9 @@ def get_current_user(
         detail="登录已过期或令牌无效",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if creds is None or creds.scheme.lower() != "bearer" or not creds.credentials:
+        raise credentials_exc
+    token = creds.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub"))
