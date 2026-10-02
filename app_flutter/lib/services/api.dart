@@ -65,12 +65,27 @@ class ApiService {
   }
 
   /// 家属必填 elder_id 的统一拼参。
+  /// 家属必填 elder_id 的统一拼参。
+  /// 本地没存过（老版本绑定过、重装过）就现场从绑定列表里补一次。
   static Future<Map<String, dynamic>> withElder(
       [Map<String, dynamic>? extra]) async {
     final m = Map<String, dynamic>.from(extra ?? {});
     final role = await getRole();
     if (role == 'family') {
-      final eid = await getElderId();
+      var eid = await getElderId();
+      if (eid == null) {
+        try {
+          final binds = await bindList();
+          for (final b in binds) {
+            final bm = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
+            if (bm['status'] == 'active' && bm['elder_id'] is int) {
+              eid = bm['elder_id'] as int;
+              await setElderId(eid);
+              break;
+            }
+          }
+        } catch (_) {}
+      }
       if (eid != null) m['elder_id'] = eid;
     }
     return m;
