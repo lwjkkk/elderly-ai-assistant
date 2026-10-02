@@ -27,7 +27,7 @@ class _BindPageState extends State<BindPage> {
     try {
       binds = await ApiService.bindList();
     } catch (e) {
-      msg = '查询绑定列表失败（A 后端 Day1 未完成时正常）: $e';
+      msg = '查询绑定列表失败：${ApiService.friendly(e)}';
     }
     setState(() {});
   }
@@ -43,7 +43,7 @@ class _BindPageState extends State<BindPage> {
                 inviteCode = await ApiService.createInvite();
                 setState(() => msg = '邀请码已生成，告诉家人：$inviteCode');
               } catch (e) {
-                setState(() => msg = '生成失败：$e');
+                setState(() => msg = '生成失败：${ApiService.friendly(e)}');
               }
             },
             child: const Text('生成邀请码（老人点我）'),
@@ -61,7 +61,7 @@ class _BindPageState extends State<BindPage> {
                 setState(() => msg = '绑定成功');
                 _refresh();
               } catch (e) {
-                setState(() => msg = '绑定失败：$e');
+                setState(() => msg = '绑定失败：${ApiService.friendly(e)}');
               }
             },
             child: const Text('确认绑定'),

@@ -79,7 +79,7 @@ class _VitalsTabState extends State<VitalsTab> {
         load();
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败：$e')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('保存失败：${ApiService.friendly(e)}')));
         }
       }
     }
