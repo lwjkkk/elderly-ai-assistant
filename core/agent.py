@@ -56,7 +56,7 @@ def get_agent_answer(question: str) -> dict:
             rag_results = retrieve_from_knowledge_base(search_question)
             if rag_results:
                 rag_context = "\n\n".join(
-                    f"【{r['source']}】\n{r['content']}" for r in rag_results
+                    _clean_reference(r["content"]) for r in rag_results
                 )
         except Exception as e:
             logger.warning(f"RAG 检索失败：{e}")
@@ -64,7 +64,12 @@ def get_agent_answer(question: str) -> dict:
         # 2. 拼接最终问题：RAG 参考资料都给模型
         final_question = question
         if rag_context:
-            final_question += f"\n\n参考资料：\n{rag_context}"
+            final_question += (
+                "\n\n以下是与用户问题可能相关的参考资料，只采用其中与用户问题直接相关的部分，"
+                "无关内容一律忽略，更不要另起话题自行发挥；"
+                "不要在回答中出现资料里的文件名、标题、关键词、分类、问题等原始信息：\n"
+                + rag_context
+            )
 
         # 3. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
         module = _detect_module(search_question)
@@ -105,6 +110,31 @@ def get_agent_answer(question: str) -> dict:
         # 兜底异常处理
         logger.exception(f"未知错误：{e}")
         return _error_response("系统出了点状况，请稍后再试。")
+
+
+# 知识库文件里的元信息行（检索资料给模型前需剔除，避免被照抄进回答）
+_META_PREFIX = ("标题：", "标题:", "关键词：", "关键词:",
+                "分类：", "分类:", "问题：", "问题:")
+
+
+def _clean_reference(content: str) -> str:
+    """
+    清洗知识库文档：去掉标题/关键词/分类/问题等元信息，只保留“回答：”后的正文。
+
+    知识库文件通常以 标题/关键词/分类/问题 开头，正文在“回答：”之后。
+    若没有“回答：”标记，则逐行删除元信息行、保留其余正文。
+    """
+    lines = [l.strip() for l in content.splitlines() if l.strip()]
+
+    # 找到“回答：”标记，只取它之后的内容
+    for i, l in enumerate(lines):
+        if l.startswith("回答：") or l.startswith("回答:"):
+            head = l.split("：", 1)[-1].split(":", 1)[-1].strip()
+            lines = ([head] if head else []) + lines[i + 1:]
+            break
+
+    out = [l for l in lines if not any(l.startswith(p) for p in _META_PREFIX)]
+    return "\n".join(out).strip()
 
 
 def _parse_steps(answer: str, max_steps: int = 6) -> list:
