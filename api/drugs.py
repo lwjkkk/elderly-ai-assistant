@@ -1,6 +1,6 @@
 # 拍照查药接口：药盒照片 OCR + LLM 大白话解读（作用/禁忌/副作用），不做诊疗
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -29,7 +29,12 @@ def query_drug(payload: DrugQuery,
                db: Session = Depends(get_db),
                current: User = Depends(get_current_user)):
     """拍照上传药盒，返回识别文字与大白话解读。"""
-    ocr_text = recognize_image(payload.image_base64)
+    try:
+        ocr_text = recognize_image(payload.image_base64)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="图片识别失败，请重新拍摄清晰的药盒照片再试")
 
     user_msg = f"药盒上识别到的文字如下，请用大白话解释：\n{ocr_text}"
     explanation = call_qwen(DRUG_SYSTEM_PROMPT, user_msg)
