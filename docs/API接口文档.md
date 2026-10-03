@@ -973,7 +973,7 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | answer | string | 完整回答 |
-| module | string | 命中模块：`phone` / `services` / `daily_life` |
+| module | string | 命中模块：`phone` / `services` / `daily_life` / `health` |
 | steps | array | 操作步骤数组 |
 | disclaimer | string | 免责声明 |
 
