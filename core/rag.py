@@ -24,6 +24,9 @@ _STOP_WORDS = (
     "要怎样", "是不是", "有没有",
 )
 
+# 有证据片段（正文）的最低得分门槛：低于此值认为整体不相关，宁缺毋滥
+_MIN_SCORE = 3.0
+
 
 def _load_documents():
     """
@@ -108,6 +111,67 @@ def _build_keywords(question: str) -> list:
     return result
 
 
+def _count_hits(text: str, keywords: list) -> list:
+    """
+    统计关键词在文本中的命中次数，长词优先、非重叠计数。
+
+    “小程序/小程/程序”这类滑窗碎片如果各自独立计数，
+    正文里顺带提一句的文档会靠碎片叠加虚高，
+    所以先匹配长词、命中的位置不再重复计入其短碎片。
+    返回 [(关键词, 次数), ...]。
+    """
+    text = text.lower()
+    ordered = sorted(keywords, key=len, reverse=True)
+    hits = {k: 0 for k in ordered}
+    i = 0
+    while i < len(text):
+        for k in ordered:
+            if text.startswith(k.lower(), i):
+                hits[k] += 1
+                i += len(k)
+                break
+        else:
+            i += 1
+    return [(k, c) for k, c in hits.items() if c]
+
+
+def _score_document(doc: dict, keywords: list) -> float:
+    """
+    给单篇文档算相关度分。
+
+    不能只数关键词出现总次数——正文里顺带提一句“微信小程序”的
+    天气科普，会靠“怎么”“小程序”等零散出现压过真正相关的微信教程。
+    分层加权：
+      1. 文件名/关键词行/问题行是人工标注的主题信号，权重最高；
+      2. 正文命中只算证据片段，疑问词不参与计分，长词优先非重叠计数；
+      3. 按文档长度轻微折减，避免长文档靠堆次数取胜。
+    """
+    name = os.path.splitext(doc["source"])[0]
+    # 文件名可能以疑问词开头（如“怎么看天气预报”），先剥掉再匹配
+    while True:
+        stripped = next((name[len(w):] for w in _STOP_WORDS if name.startswith(w)), None)
+        if stripped is None:
+            break
+        name = stripped
+    content = doc["content"]
+    body = content.split("回答：", 1)[-1].split("回答:", 1)[-1]
+    # 元信息行（关键词：/问题：）单独抽出来，作为高权重主题信号
+    meta = content[: content.find("回答：") if "回答：" in content else 500]
+
+    kws = [k for k in keywords if k not in _STOP_WORDS]
+    name_lower = name.lower()
+    meta_lower = meta.lower()
+    name_score = sum(6.0 * max(len(k), 2) / 2 for k in kws if k.lower() in name_lower)
+    meta_score = sum(3.0 * max(len(k), 2) / 2 for k, _ in _count_hits(meta_lower, kws))
+
+    body_score = 0.0
+    for k, cnt in _count_hits(body, kws):
+        body_score += min(cnt, 5) * max(len(k), 2) / 2
+
+    length_factor = 1.0 / (1.0 + len(body) / 4000.0)
+    return name_score + meta_score + body_score * length_factor
+
+
 def retrieve_from_knowledge_base(question: str, top_k: int = 2,
                                  category: str | None = None) -> list:
     """
@@ -133,10 +197,10 @@ def retrieve_from_knowledge_base(question: str, top_k: int = 2,
     for doc in docs:
         if only_dir and os.path.basename(doc["dir"]) != only_dir:
             continue
-        total = sum(doc["content"].lower().count(k.lower()) for k in keywords)
-        if total > 0:
+        score = _score_document(doc, keywords)
+        if score >= _MIN_SCORE:
             scored.append({
-                "score": total,
+                "score": score,
                 "content": doc["content"],
                 "source": doc["source"],
                 "dir": doc["dir"],

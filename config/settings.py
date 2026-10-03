@@ -20,7 +20,7 @@ QWEN_MODEL_NAME = "qwen2:7b"
 # 模型调用参数
 QWEN_MAX_TOKENS = 1024        # 最大生成 token 数
 QWEN_TEMPERATURE = 0.7        # 温度，越低越稳定
-QWEN_TIMEOUT = 60             # 网络超时时间（秒）
+QWEN_TIMEOUT = 180            # 网络超时时间（秒）；本地CPU跑7B模型生成长回答较慢，给足时间
 QWEN_MAX_RETRIES = 2          # 失败重试次数
 
 # OCR 配置
