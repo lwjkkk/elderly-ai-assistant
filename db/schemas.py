@@ -5,6 +5,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from core.disclaimer import HEALTH_DISCLAIMER
+
 
 # ---------- 账号鉴权 ----------
 
@@ -170,6 +172,7 @@ class VitalsOut(BaseModel):
     diastolic: int | None = None
     value: float | None = None
     measured_at: datetime | None = None
+    disclaimer: str = HEALTH_DISCLAIMER
 
     class Config:
         from_attributes = True
@@ -213,6 +216,7 @@ class SymptomOut(BaseModel):
     advice_text: str | None = None
     risk: str                       # green / yellow / red
     created_at: datetime | None = None
+    disclaimer: str = HEALTH_DISCLAIMER
 
     class Config:
         from_attributes = True
@@ -227,6 +231,7 @@ class HealthReportOut(BaseModel):
     ocr_text: str | None = None
     advice_text: str | None = None
     created_at: datetime | None = None
+    disclaimer: str = HEALTH_DISCLAIMER
 
     class Config:
         from_attributes = True

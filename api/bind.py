@@ -40,9 +40,9 @@ def create_invite(
     ).first()
 
     if existing:
-        # 已有未过期的 pending 码，直接更新码和创建时间
+        # 已有未过期的 pending 码，直接更新码和创建时间（重置30分钟有效期）
         existing.invite_code = _gen_invite_code()
-        existing.created_at = func.now()
+        existing.created_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing)
         return InviteOut(invite_code=existing.invite_code)
