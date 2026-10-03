@@ -6,6 +6,11 @@ import base64
 import logging
 import re
 
+# 必须在 import paddleocr/paddlepaddle 之前先加载 torch：
+# paddle 先加载的 OpenMP(libiomp5md) 等 DLL 会与 torch 的 shm.dll 冲突，
+# 导致 WinError 127；先 import torch 可规避该 DLL 加载顺序问题。
+import torch  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 _ocr = None
