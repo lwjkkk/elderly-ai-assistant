@@ -10,11 +10,11 @@ import time
 
 from openai import OpenAI
 
+from core.sensitive import sanitize
 from config.settings import (
     DASHSCOPE_API_KEY,
     LLM_BASE_URL,
     QWEN_MODEL_NAME,
-    QWEN_VL_MODEL_NAME,
     QWEN_MAX_TOKENS,
     QWEN_TEMPERATURE,
     QWEN_TIMEOUT,
@@ -52,35 +52,26 @@ def _validate_api_key():
         )
 
 
-def call_qwen(system_prompt: str, user_question: str, image_base64: str = None) -> str:
+def call_qwen(system_prompt: str, user_question: str) -> str:
     """
     调用通义千问模型，返回模型生成的文字回答
 
     参数：
         system_prompt: 系统提示词（控制回答风格）
-        user_question: 用户提出的问题
-        image_base64: 可选，用户上传的手机截图（base64编码）
+        user_question: 用户提出的问题（文字，含语音转文字）
 
     返回：
         模型生成的文本回答
     """
     _validate_api_key()
 
-    # 有图片时使用视觉模型；否则用配置的文本模型
-    model_name = QWEN_VL_MODEL_NAME if image_base64 else QWEN_MODEL_NAME
+    # 统一使用配置的文本模型
+    model_name = QWEN_MODEL_NAME
 
-    messages = [{"role": "system", "content": system_prompt}]
-    if image_base64:
-        # 多模态：图片用 base64 data URL，文字并列传入
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
-                {"type": "text", "text": user_question},
-            ],
-        })
-    else:
-        messages.append({"role": "user", "content": user_question})
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_question},
+    ]
 
     last_error = None
     for attempt in range(1, QWEN_MAX_RETRIES + 1):
@@ -97,7 +88,11 @@ def call_qwen(system_prompt: str, user_question: str, image_base64: str = None) 
             answer = response.choices[0].message.content
             if answer:
                 logger.info("通义千问调用成功")
-                return answer.strip()
+                # 返回前做违禁词 / 医疗绝对化用语兜底过滤
+                cleaned, blocked = sanitize(answer.strip())
+                if blocked:
+                    logger.warning("回答命中高危违禁词，已替换为兜底话术")
+                return cleaned
 
             last_error = RuntimeError("模型返回为空")
 

@@ -9,14 +9,17 @@ from core.rag import retrieve_from_knowledge_base
 
 logger = logging.getLogger(__name__)
 
-# 只认"第X步"开头的行（X 为中文或阿拉伯数字）
+# 认"第X步"开头（X 为中文或阿拉伯数字）
 _STEP_RE = re.compile(r"^第([一二三四五六七八九十0-9０-９]{1,3})步")
+# 也认 "1. " "2、" "3)" 这类阿拉伯数字编号（本地模型常用这种格式）
+_NUM_RE = re.compile(r"^\d{1,2}\s*[.、)]\s*")
 
 # 知识库目录名 → 模块名的映射（RAG 命中时优先使用）
 _DIR_TO_MODULE = {
     "phone_tutorial": "phone",
     "services": "services",
     "daily_life": "daily_life",
+    "health": "health",
 }
 
 
@@ -27,57 +30,58 @@ def _module_from_dir(dir_path: str) -> str:
     return _DIR_TO_MODULE.get(os.path.basename(dir_path), "")
 
 
-def get_agent_answer(question: str, image_base64: str = None) -> dict:
+def get_agent_answer(question: str) -> dict:
     """
     老年智能体主函数 - 前端调用这个接口
 
     入参：
-        question: 用户的问题文字
-        image_base64: 用户上传的手机截图（base64编码），没有就传None
+        question: 用户的问题文字（含语音转文字后的文字）
 
     返回：
         {
             "answer": "完整回答",
-            "module": "phone/services/daily_life",
+            "module": "phone/services/daily_life/health",
             "steps": ["第一步...", "第二步..."],
             "disclaimer": "免责声明"
         }
     """
     try:
-        # 1. 如果有截图，先调用 OCR 识别图片内容（后续阶段实现）
-        # if image_base64:
-        #     ocr_text = do_ocr(image_base64)
-        #     question = f"{question}\n截图识别内容：{ocr_text}"
+        # 检索用“问题文字”
+        search_question = question
 
-        # 2. 调用 RAG 检索知识库相关内容
+        # 1. 调用 RAG 检索知识库相关内容
         rag_results = []
         rag_context = ""
         try:
-            rag_results = retrieve_from_knowledge_base(question)
+            rag_results = retrieve_from_knowledge_base(search_question)
             if rag_results:
                 rag_context = "\n\n".join(
-                    f"【{r['source']}】\n{r['content']}" for r in rag_results
+                    _clean_reference(r["content"]) for r in rag_results
                 )
         except Exception as e:
             logger.warning(f"RAG 检索失败：{e}")
 
-        # 3. 拼接最终问题（如果有 RAG 上下文，附加到问题后面）
+        # 2. 拼接最终问题：RAG 参考资料都给模型
         final_question = question
         if rag_context:
-            final_question = f"{question}\n\n参考资料：\n{rag_context}"
+            final_question += (
+                "\n\n以下是与用户问题可能相关的参考资料，只采用其中与用户问题直接相关的部分，"
+                "无关内容一律忽略，更不要另起话题自行发挥；"
+                "不要在回答中出现资料里的文件名、标题、关键词、分类、问题等原始信息：\n"
+                + rag_context
+            )
 
-        # 4. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
-        module = _detect_module(question)
+        # 3. 确定模块：优先按 RAG 命中的知识库目录映射，否则按问题关键词判断
+        module = _detect_module(search_question)
         if rag_results:
             dir_module = _module_from_dir(rag_results[0].get("dir", ""))
             if dir_module:
                 module = dir_module
 
-        # 4. 调用通义千问生成回答
+        # 4. 生成回答（统一走文本模型）
         answer = call_qwen(
             system_prompt=SYSTEM_PROMPT,
             user_question=final_question,
-            image_base64=image_base64,
         )
 
         # 5. 按适老化格式整理返回
@@ -108,6 +112,31 @@ def get_agent_answer(question: str, image_base64: str = None) -> dict:
         return _error_response("系统出了点状况，请稍后再试。")
 
 
+# 知识库文件里的元信息行（检索资料给模型前需剔除，避免被照抄进回答）
+_META_PREFIX = ("标题：", "标题:", "关键词：", "关键词:",
+                "分类：", "分类:", "问题：", "问题:")
+
+
+def _clean_reference(content: str) -> str:
+    """
+    清洗知识库文档：去掉标题/关键词/分类/问题等元信息，只保留“回答：”后的正文。
+
+    知识库文件通常以 标题/关键词/分类/问题 开头，正文在“回答：”之后。
+    若没有“回答：”标记，则逐行删除元信息行、保留其余正文。
+    """
+    lines = [l.strip() for l in content.splitlines() if l.strip()]
+
+    # 找到“回答：”标记，只取它之后的内容
+    for i, l in enumerate(lines):
+        if l.startswith("回答：") or l.startswith("回答:"):
+            head = l.split("：", 1)[-1].split(":", 1)[-1].strip()
+            lines = ([head] if head else []) + lines[i + 1:]
+            break
+
+    out = [l for l in lines if not any(l.startswith(p) for p in _META_PREFIX)]
+    return "\n".join(out).strip()
+
+
 def _parse_steps(answer: str, max_steps: int = 6) -> list:
     """
     从模型回答中提取操作步骤。
@@ -117,24 +146,43 @@ def _parse_steps(answer: str, max_steps: int = 6) -> list:
     如果没提取到任何步骤，把整个回答作为单步返回。
     """
     steps = []
-    for line in answer.strip().split("\n"):
-        line = line.strip()
+    cur = None
+    for raw in answer.strip().split("\n"):
+        line = raw.strip()
         if not line:
             continue
-        if _STEP_RE.match(line) and line not in steps:
-            steps.append(line)
+        is_head = bool(_STEP_RE.match(line) or _NUM_RE.match(line))
+        if is_head:
+            # 遇到新编号，先收上一条
+            if cur is not None:
+                steps.append(cur)
+            cur = line
             if len(steps) >= max_steps:
                 break
-    # 如果没提取到步骤，就把回答整体作为单步
-    if not steps:
-        steps = [answer]
-    return steps
+        elif cur is not None:
+            # 编号下的子项/说明，并入当前步骤，保证一步内容完整
+            cur += "\n" + line
+    if cur is not None and len(steps) < max_steps:
+        steps.append(cur)
+
+    # 按内容去重
+    result = []
+    for s in steps:
+        if s not in result:
+            result.append(s)
+    # 两种编号都没匹配到，就把回答整体作为单步
+    if not result:
+        result = [answer]
+    return result[:max_steps]
 
 
 def _detect_module(question: str) -> str:
-    """根据问题内容简单判断属于哪个模块"""
-    phone_keywords = ["微信", "手机", "APP", "app", "软件", "怎么操作", "怎么打开", "怎么设置", "字体", "声音"]
-    services_keywords = ["医保", "挂号", "社保", "养老", "公积金", "水电", "缴费"]
+    """根据问题内容简单判断属于哪个模块（RAG 目录命中会覆盖此结果）"""
+    phone_keywords = ["微信", "手机", "APP", "app", "软件", "怎么操作", "怎么打开", "怎么设置", "字体", "声音", "WiFi", "wifi", "蓝牙", "截屏", "拍照"]
+    services_keywords = ["医保", "挂号", "社保", "公积金", "水电", "缴费", "养老金", "失业保险", "驾驶证", "年检", "退税", "报销", "备案"]
+    health_keywords = ["血压", "血糖", "糖尿病", "高血压", "吃药", "用药", "药品", "症状", "头疼", "头痛",
+                       "头晕", "发烧", "发热", "感冒", "咳嗽", "失眠", "睡眠", "饮食", "营养", "骨质疏松",
+                       "锻炼", "健身", "心率", "胆固醇", "尿酸", "慢性病", "便秘", "牙疼", "肠胃", "健康"]
 
     for kw in phone_keywords:
         if kw in question:
@@ -142,6 +190,9 @@ def _detect_module(question: str) -> str:
     for kw in services_keywords:
         if kw in question:
             return "services"
+    for kw in health_keywords:
+        if kw in question:
+            return "health"
     return "daily_life"
 
 
