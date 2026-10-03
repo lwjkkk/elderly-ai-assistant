@@ -417,7 +417,10 @@ class _ChatTabState extends State<ChatTab> {
       onVoiceStart: startHoldToTalk,
       onVoiceEnd: stopHoldToTalk,
       onToggleTextScale: () => setState(() => fontBig = !fontBig),
-      header: const WeatherCard(),
+      header: ValueListenableBuilder<bool>(
+        valueListenable: tipIsWeather,
+        builder: (_, isWx, __) => isWx ? const SizedBox.shrink() : const WeatherCard(),
+      ),
     );
   }
 }
@@ -495,7 +498,6 @@ class _Weather {
   const _Weather({required this.data, required this.fromGps});
 }
 
-/// 家人相伴页读取问答历史的只读入口（本库内可访问 _ChatTabState.msgs）。
 class ChatHistory {
   static List<AfuMessage> get items {
     final out = <AfuMessage>[];

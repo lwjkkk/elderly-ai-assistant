@@ -225,6 +225,9 @@ class _PrivacyDialog extends StatelessWidget {
 }
 
 /// 今日健康小贴士卡：有未服用的药就显示用药提醒，否则显示天气与穿衣建议。
+/// 小贴士当前是否在显示天气（是则问事页隐藏天气卡，避免重复）。
+final tipIsWeather = ValueNotifier<bool>(false);
+
 class _TipCard extends StatefulWidget {
   final VoidCallback? onMore;
   const _TipCard({this.onMore});
@@ -237,6 +240,7 @@ class _TipCardState extends State<_TipCard> {
 
   static Future<String?> _load() async {
     try {
+      tipIsWeather.value = false;
       final meds = await ApiService.medsToday();
       for (final m in meds) {
         final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
@@ -269,6 +273,7 @@ class _TipCardState extends State<_TipCard> {
       d ??= await ApiService.weatherRemind(city: '武汉');
       final raw = '${d['text'] ?? ''} ${d['tip'] ?? ''}';
       if (raw.contains('未配置') || raw.contains('API_KEY')) return null;
+      tipIsWeather.value = true;
       final text = (d['text'] ?? '').toString();
       final tip = (d['tip'] ?? '').toString();
       final body = (text + '，' + tip).trim().replaceAll(RegExp('^，|，\$'), '');
@@ -509,10 +514,17 @@ class _SampleCard extends StatelessWidget {
   }
 }
 
-/// AI 行：圆形头像 + 浅蓝白气泡。
-class _AiRow extends StatelessWidget {
+/// AI 行：圆形头像 + 浅蓝白气泡，超长回答默认折叠。
+class _AiRow extends StatefulWidget {
   final String text;
   const _AiRow({required this.text});
+  @override
+  State<_AiRow> createState() => _AiRowState();
+}
+
+class _AiRowState extends State<_AiRow> {
+  static const _limit = 300;
+  bool _open = false;
 
   @override
   Widget build(BuildContext context) {
@@ -540,7 +552,23 @@ class _AiRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFFD8E5FB)),
               ),
-              child: Text(text, style: const TextStyle(fontSize: 19, color: _kInk, height: 1.5)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  !_open && widget.text.length > _limit
+                      ? '${widget.text.substring(0, _limit)}……'
+                      : widget.text,
+                  style: const TextStyle(fontSize: 19, color: _kInk, height: 1.5),
+                ),
+                if (widget.text.length > _limit)
+                  GestureDetector(
+                    onTap: () => setState(() => _open = !_open),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(_open ? '收起 ▲' : '展开全文 ▼',
+                          style: const TextStyle(fontSize: 18, color: _kDeep)),
+                    ),
+                  ),
+              ]),
             ),
           ),
         ]),
