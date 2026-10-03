@@ -77,13 +77,21 @@ Authorization: Bearer <access_token>
 
 ## 四、免责声明
 
-所有医疗相关接口响应中包含 `disclaimer` 字段。固定文案：
+所有医疗相关接口响应中均包含 `disclaimer` 字段（A 已于 10/3 统一补充，`db/schemas.py` 中 `VitalsOut`、`SymptomOut`、`HealthReportOut`、`DrugResult` 均带默认值）。
+
+**通用健康免责（`HEALTH_DISCLAIMER`，以 `core/disclaimer.py` 代码为准）：**
 
 ```
-本内容仅供健康科普参考，不构成医疗诊断或用药建议。具体诊疗请遵医嘱，如有急症请立即拨打120。
+以上内容仅为健康科普与信息整理，不能替代医生面诊，不构成疾病诊断或用药建议。如有不适，请及时咨询医生或拨打急救电话。
 ```
 
-涉及接口：`/api/drugs/*`、`/api/reports/*`、`/api/vitals/export`、`/api/symptom-check`。
+**药品解读专用（`DRUG_DISCLAIMER`）：**
+
+```
+本结果仅用于帮助理解药品说明书，不构成用药建议或诊疗诊断；具体用法用量请遵医嘱或咨询药师，切勿自行增减或停药。
+```
+
+涉及接口：`/api/drugs/*`、`/api/reports/*`、`/api/vitals/*`、`/api/symptom-check`。
 
 ---
 
@@ -578,6 +586,7 @@ Authorization: Bearer <access_token>
 | diastolic | integer/null | 舒张压 |
 | value | float/null | 数值 |
 | measured_at | string | 测量时间（默认当前时间） |
+| disclaimer | string | 健康免责声明（默认 `HEALTH_DISCLAIMER`） |
 
 **错误：**
 - 400：type 不是 bp/bs/hr/weight / 血压缺少收缩压或舒张压 / 家属未传 elder_id
@@ -743,6 +752,7 @@ Authorization: Bearer <access_token>
 | advice_text | string | AI 建议 |
 | risk | string | 风险等级：`green` / `yellow` / `red` |
 | created_at | string | 记录时间 |
+| disclaimer | string | 健康免责声明（默认 `HEALTH_DISCLAIMER`） |
 
 ```json
 {
@@ -751,7 +761,8 @@ Authorization: Bearer <access_token>
   "input_text": "最近总是头晕，早上起来尤其明显",
   "advice_text": "您的症状可能与血压波动有关，建议先测量血压。如果头晕加重或出现肢体麻木、说话不清，请立即拨打120。",
   "risk": "yellow",
-  "created_at": "2026-10-02T16:00:00"
+  "created_at": "2026-10-02T16:00:00",
+  "disclaimer": "以上内容仅为健康科普与信息整理，不能替代医生面诊，不构成疾病诊断或用药建议。如有不适，请及时咨询医生或拨打急救电话。"
 }
 ```
 
@@ -805,6 +816,7 @@ Authorization: Bearer <access_token>
 | ocr_text | string | OCR 识别出的报告文字 |
 | advice_text | string | AI 大白话建议（代码先精确判定指标，再 LLM 表达） |
 | created_at | string | 上传时间 |
+| disclaimer | string | 健康免责声明（默认 `HEALTH_DISCLAIMER`） |
 
 **错误：**
 - 400：图片格式不支持
@@ -871,9 +883,74 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 5.10 智能问答接口 `/api/chat`
+### 5.10 数据同步接口 `/api/sync`
 
-#### 5.10.1 办事助手问答
+#### 5.10.1 增量同步健康数据
+
+- **接口**：`GET /api/sync`
+- **鉴权**：需要
+- **用途**：家属端（或老人换设备）按时间戳增量拉取老人的全部健康数据。首次同步不传 `since` 返回全量，之后传上次响应里的 `server_time` 做增量。
+
+**查询参数：**
+
+| 参数 | 类型 | 必填 | 说明 | 示例 |
+|---|---|---|---|---|
+| elder_id | integer | 家属必填 | 老人ID；老人自己调用不传 | `1` |
+| since | string | 否 | ISO 8601 时间戳，只返回该时间之后变更的数据；不传返回全量 | `"2026-10-02T00:00:00"` |
+
+**调用示例：**
+```
+GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
+```
+
+**成功响应：**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| server_time | string | 服务器当前时间（ISO 8601），下次同步时作为 `since` 传入 |
+| elder_id | integer | 老人ID |
+| medications | array | 用药计划列表（格式同 `MedicationOut`） |
+| medication_logs | array | 服药打卡记录列表（格式同 `LogOut`） |
+| vitals | array | 体征记录列表（格式同 `VitalsOut`，含 disclaimer） |
+| reports | array | 体检报告列表（格式同 `HealthReportOut`，含 disclaimer） |
+| symptoms | array | 症状自查记录列表（格式同 `SymptomOut`，含 disclaimer） |
+| consults | array | 问诊录音列表（格式同 `ConsultOut`） |
+
+```json
+{
+  "server_time": "2026-10-03T10:38:03+00:00",
+  "elder_id": 1,
+  "medications": [
+    {"id": 1, "elder_id": 1, "created_by": 1, "name": "硝苯地平缓释片", "dosage": "20mg", "frequency": "每日2次", "times": ["08:00", "20:00"]}
+  ],
+  "medication_logs": [
+    {"id": 1, "medication_id": 1, "elder_id": 1, "date": "2026-10-03", "slot": "08:00", "status": "taken"}
+  ],
+  "vitals": [
+    {"id": 1, "elder_id": 1, "type": "bp", "systolic": 145, "diastolic": 90, "value": null, "measured_at": "2026-10-03T08:00:00", "disclaimer": "以上内容仅为健康科普与信息整理..."}
+  ],
+  "reports": [],
+  "symptoms": [],
+  "consults": []
+}
+```
+
+**数据变更时间规则：**
+- medications：按 `created_at` 过滤
+- medication_logs：按 `updated_at` 过滤（打卡会刷新 updated_at）
+- vitals：按 `measured_at` 过滤
+- reports / symptoms / consults：按 `created_at` 过滤
+
+**错误情况：**
+- 400：家属未传 elder_id
+- 401：未登录
+- 403：未绑定该老人
+
+---
+
+### 5.11 智能问答接口 `/api/chat`
+
+#### 5.11.1 办事助手问答
 
 - **接口**：`POST /api/chat`
 - **鉴权**：不需要
@@ -933,6 +1010,7 @@ Authorization: Bearer <access_token>
 | 报告 | GET | `/api/reports` | 是 | Day4 |
 | 报告 | GET | `/api/reports/image/{filename}` | 否 | Day4 |
 | 天气 | GET | `/api/weather/remind` | 是 | Day4 |
+| 同步 | GET | `/api/sync` | 是 | Day6（增量同步） |
 | 问答 | POST | `/api/chat` | 否 | Day5 |
 
 ---
@@ -958,6 +1036,7 @@ Authorization: Bearer <access_token>
 |---|---|---|---|
 | v1.0 | 2026-10-02 | C | 初始版本（基于计划文档推测） |
 | v2.0 | 2026-10-02 | C | 基于 backend 分支实际代码重写，修正所有接口路径、参数、响应格式 |
+| v2.1 | 2026-10-03 | C | 同步 A 最新提交：新增 `/api/sync` 增量同步接口；统一医疗接口免责声明文案（以 `core/disclaimer.py` 为准）；VitalsOut/SymptomOut/HealthReportOut 响应新增 `disclaimer` 字段；接口总数 28→29 |
 
 ---
 
