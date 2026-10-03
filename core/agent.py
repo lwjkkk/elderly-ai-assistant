@@ -65,7 +65,8 @@ def get_agent_answer(question: str) -> dict:
         final_question = question
         if rag_context:
             final_question += (
-                "\n\n以下是供你参考的资料，请据此组织回答；"
+                "\n\n以下是与用户问题可能相关的参考资料，只采用其中与用户问题直接相关的部分，"
+                "无关内容一律忽略，更不要另起话题自行发挥；"
                 "不要在回答中出现资料里的文件名、标题、关键词、分类、问题等原始信息：\n"
                 + rag_context
             )
