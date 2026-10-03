@@ -48,7 +48,12 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
 
     # OCR + AI 建议（图片字节转 base64 复用 OCR 封装）
     image_b64 = base64.b64encode(content).decode()
-    ocr_text = recognize_image(image_b64)
+    try:
+        ocr_text = recognize_image(image_b64)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="图片识别失败，请重新拍摄清晰的体检单照片再试")
     # 先用代码精确判定每项 正常/偏高/偏低，再让 LLM 据此用大白话表达，避免数值误判
     metrics = parse_metrics(ocr_text)
     advice = report_advice(ocr_text, metrics)
