@@ -17,6 +17,7 @@ from api.consults import router as consults_router
 from api.symptom import router as symptom_router
 from api.reports import router as reports_router
 from api.weather import router as weather_router
+from api.sync import router as sync_router
 from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
@@ -53,6 +54,7 @@ app.include_router(consults_router)  # 问诊录音 /api/consults
 app.include_router(symptom_router)  # 症状自查 /api/symptom-check
 app.include_router(reports_router)  # 体检报告 /api/reports
 app.include_router(weather_router)  # 天气 /api/weather
+app.include_router(sync_router)     # 增量同步 /api/sync
 
 
 @app.get("/")

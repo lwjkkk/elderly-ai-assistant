@@ -42,7 +42,7 @@ class Medication(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     # 归属的老人
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     # 录入者：老人自己或绑定家属（家属可代录）
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)          # 药品名，如 阿司匹林
@@ -58,8 +58,8 @@ class MedicationLog(Base):
     __tablename__ = "medication_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    medication_id = Column(Integer, ForeignKey("medications.id"), nullable=False)
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    medication_id = Column(Integer, ForeignKey("medications.id"), nullable=False, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     date = Column(String(10), nullable=False, index=True)   # 日期 YYYY-MM-DD
     slot = Column(String(10), nullable=False)              # 时间点，如 08:00
     # 状态：pending 待服，taken 已服，missed 漏服
@@ -72,7 +72,7 @@ class Vitals(Base):
     __tablename__ = "vitals"
 
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     # 类型：bp=血压, bs=血糖, hr=心率, weight=体重
     type = Column(String(10), nullable=False)
     # 血压专用：收缩压/舒张压（mmHg），其他类型留空
@@ -80,7 +80,7 @@ class Vitals(Base):
     diastolic = Column(Integer, nullable=True)
     # 通用数值：血糖(mmol/L)、心率(bpm)、体重(kg)
     value = Column(String(20), nullable=True)
-    measured_at = Column(DateTime, server_default=func.now())
+    measured_at = Column(DateTime, server_default=func.now(), index=True)
 
 
 class ConsultRecord(Base):
@@ -88,7 +88,7 @@ class ConsultRecord(Base):
     __tablename__ = "consult_records"
 
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     audio_url = Column(String(500), nullable=False)   # 本地路径或对象存储 URL
     duration = Column(Integer, nullable=True)          # 录音时长（秒）
     hospital = Column(String(100), nullable=True)      # 医院名
@@ -101,7 +101,7 @@ class HealthReport(Base):
     __tablename__ = "health_reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     image_url = Column(String(500), nullable=True)     # 体检单图片保存路径
     ocr_text = Column(String, nullable=True)           # OCR 识别出的指标文字
     advice_text = Column(String, nullable=True)        # AI 大白话建议
@@ -113,7 +113,7 @@ class SymptomCheck(Base):
     __tablename__ = "symptom_checks"
 
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     input_text = Column(String, nullable=False)        # 老人描述的症状
     advice_text = Column(String, nullable=True)        # AI 建议
     # 风险等级：green=可居家观察，yellow=建议尽快就医，red=立即就医/急诊

@@ -35,3 +35,7 @@ def init_db():
     # 必须先 import models，否则 Base 不知道表的存在
     from db import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    # 对已存在的旧库补建新增索引（create_all 不会改已存在的表）
+    for table in Base.metadata.tables.values():
+        for idx in table.indexes:
+            idx.create(bind=engine, checkfirst=True)

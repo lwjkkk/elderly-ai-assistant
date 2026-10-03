@@ -10,6 +10,7 @@ import time
 
 from openai import OpenAI
 
+from core.sensitive import sanitize
 from config.settings import (
     DASHSCOPE_API_KEY,
     LLM_BASE_URL,
@@ -87,7 +88,11 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
             answer = response.choices[0].message.content
             if answer:
                 logger.info("通义千问调用成功")
-                return answer.strip()
+                # 返回前做违禁词 / 医疗绝对化用语兜底过滤
+                cleaned, blocked = sanitize(answer.strip())
+                if blocked:
+                    logger.warning("回答命中高危违禁词，已替换为兜底话术")
+                return cleaned
 
             last_error = RuntimeError("模型返回为空")
 
