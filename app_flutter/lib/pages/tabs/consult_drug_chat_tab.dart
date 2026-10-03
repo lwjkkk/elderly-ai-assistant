@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../../services/api.dart';
 import '../../theme.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../theme.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
 class ConsultsTab extends StatefulWidget {
@@ -318,10 +320,7 @@ class _ChatTabState extends State<ChatTab> {
     return Container(
       color: AppColors.bg,
       child: Column(children: [
-      const Padding(
-        padding: EdgeInsets.all(8),
-        child: Text('问事页v2 只支持文字提问', style: TextStyle(fontSize: 16, color: Colors.grey)),
-      ),
+      const WeatherCard(),
       Expanded(child: msgs.isEmpty
           ? const Center(child: Text('在下方输入问题开始咨询', style: TextStyle(fontSize: 20)))
           : ListView.builder(
@@ -400,25 +399,65 @@ class _ChatTabState extends State<ChatTab> {
 }
 
 /// Day4 天气提醒：GET /api/weather/remind?city&lat&lon
-class WeatherCard extends StatelessWidget {
+class WeatherCard extends StatefulWidget {
   const WeatherCard({super.key});
-  Future<Map<String, dynamic>> _load() => ApiService.weatherRemind(city: '武汉');
+  @override
+  State<WeatherCard> createState() => _WeatherCardState();
+}
+
+class _WeatherCardState extends State<WeatherCard> {
+  late final Future<_Weather?> _future = _load();
+
+  static Future<_Weather?> _load() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.whileInUse ||
+          perm == LocationPermission.always) {
+        final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 8),
+        );
+        final d = await ApiService.weatherRemind(lat: pos.latitude, lon: pos.longitude);
+        return _Weather(data: d, fromGps: true);
+      }
+    } catch (_) {}
+    try {
+      final d = await ApiService.weatherRemind(city: '武汉');
+      return _Weather(data: d, fromGps: false);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _load(),
+    return FutureBuilder<_Weather?>(
+      future: _future,
       builder: (c, s) {
-        if (!s.hasData) return const SizedBox.shrink();
-        final d = s.data!;
+        final w = s.data;
+        if (w == null) return const SizedBox.shrink();
+        final d = w.data;
         return Card(
-          color: Colors.blue[50],
+          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: ListTile(
-            leading: const Icon(Icons.cloud, size: 36),
-            title: Text('${d['city'] ?? ''} ${d['text'] ?? ''}', style: const TextStyle(fontSize: 20)),
-            subtitle: Text((d['tip'] ?? '').toString(), style: const TextStyle(fontSize: 18)),
+            leading: const Icon(Icons.cloud, size: 36, color: AppColors.primary),
+            title: Text('${d['city'] ?? ''} ${d['text'] ?? ''}', style: AppText.body),
+            subtitle: Text(
+              '${(d['tip'] ?? '').toString()}${w.fromGps ? '' : '（定位失败，显示武汉）'}',
+              style: AppText.secondary,
+            ),
           ),
         );
       },
     );
   }
+}
+
+class _Weather {
+  final Map<String, dynamic> data;
+  final bool fromGps;
+  const _Weather({required this.data, required this.fromGps});
 }
