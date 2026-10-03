@@ -3,6 +3,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../../services/api.dart';
 import '../../theme.dart';
+import '../../afu/afu_chat_page.dart';
+import 'hub_pages.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../theme.dart';
 
@@ -229,34 +232,104 @@ class _ReportTabState extends State<ReportTab> {
   }
 }
 
-/// Day5 问事助手：只支持文字或语音提问，不支持图片
-/// （视觉模型幻觉严重，图片入口已下线；查药/报告拍照走专用OCR接口）
+/// Day5 问事助手：柔和风 UI（AfuElderChatPage），逻辑复用原有 send/语音/天气。
 class ChatTab extends StatefulWidget {
   const ChatTab({super.key});
   @override
   State<ChatTab> createState() => _ChatTabState();
 }
 
+final re_step = RegExp('第[一二三四五六七八九十]+步|步骤');
+
 class _ChatTabState extends State<ChatTab> {
   static final msgs = <Map<String, String>>[];
-  final c = TextEditingController();
+  final inputC = TextEditingController();
   bool busy = false;
   bool listening = false;
+  bool fontBig = false;
 
-  Future<void> send() async {
-    final t = c.text.trim();
+  @override
+  void dispose() {
+    inputC.dispose();
+    super.dispose();
+  }
+
+  /// 快捷入口：0查药品 1问症状 2看报告 3语音咨询
+  Future<void> onQuick(int i) async {
+    if (i == 0) {
+      HubNav.go(1, 'drugs');
+      return;
+    }
+    if (i == 1) {
+      inputC.text = '我想咨询一下这个症状';
+      return;
+    }
+    if (i == 2) {
+      _pickReport();
+      return;
+    }
+    startHoldToTalk(autoSend: true);
+  }
+
+  Future<void> _pickReport() async {
+    final src = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.photo_library, size: 32),
+            title: const Text('从相册选', style: TextStyle(fontSize: 20)),
+            onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_camera, size: 32),
+            title: const Text('拍照', style: TextStyle(fontSize: 20)),
+            onTap: () => Navigator.of(context).pop(ImageSource.camera),
+          ),
+        ]),
+      ),
+    );
+    if (src == null || !mounted) return;
+    final f = await ImagePicker().pickImage(source: src);
+    if (f == null || !mounted) return;
+    try {
+      final r = await ApiService.uploadReport(await f.readAsBytes(), f.name);
+      if (!mounted) return;
+      final ocr = (r['ocr_text'] ?? '').toString();
+      final adv = (r['advice_text'] ?? '').toString();
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('报告解读', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+              child: Text(ocr.isEmpty ? adv : '$ocr\n\n$adv',
+                  style: const TextStyle(fontSize: 19, height: 1.5))),
+          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('知道了', style: TextStyle(fontSize: 19)))],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
+    }
+  }
+
+  Future<void> send(String text) async {
+    final t = text.trim();
     if (t.isEmpty || busy) return;
     setState(() {
       msgs.add({'role': 'me', 'text': t});
       msgs.add({'role': 'thinking', 'text': ''});
       busy = true;
     });
-    c.clear();
     try {
       final r = await ApiService.chat(t);
       final raw = (r['answer'] ?? '').toString();
       var stepsSuffix = '';
-      final sl = r['steps'];
+      final hasStepGuide = re_step.hasMatch(raw);
+      final sl = (!hasStepGuide && r['steps'] is List) ? r['steps'] as List : const [];
       if (sl is List && sl.isNotEmpty) {
         final missing = sl.map((e) => e.toString()).where((s) => s.isNotEmpty && !raw.contains(s)).toList();
         if (missing.isNotEmpty) {
@@ -274,7 +347,9 @@ class _ChatTabState extends State<ChatTab> {
 
   SpeechToText? _activeStt;
 
-  Future<void> startHoldToTalk() async {
+  bool _autoSend = false;
+
+  Future<void> startHoldToTalk({bool autoSend = false}) async {
     if (listening) return;
     try {
       final stt = SpeechToText();
@@ -289,6 +364,7 @@ class _ChatTabState extends State<ChatTab> {
         locale ??= locales.isNotEmpty ? locales.first.localeId : null;
       } catch (_) {}
       _activeStt = stt;
+      _autoSend = autoSend;
       if (mounted) setState(() => listening = true);
       await stt.listen(
         localeId: locale ?? 'zh-CN',
@@ -296,7 +372,13 @@ class _ChatTabState extends State<ChatTab> {
         pauseFor: const Duration(seconds: 30),
         partialResults: true,
         onResult: (res) {
-          c.text = res.recognizedWords;
+          if (res.finalResult && res.recognizedWords.trim().isNotEmpty) {
+            if (_autoSend) {
+              _autoSend = false;
+              stopHoldToTalk();
+              send(res.recognizedWords.trim());
+            }
+          }
         },
       );
     } catch (_) {
@@ -317,88 +399,29 @@ class _ChatTabState extends State<ChatTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.bg,
-      child: Column(children: [
-      const WeatherCard(),
-      Expanded(child: msgs.isEmpty
-          ? const Center(child: Text('在下方输入问题开始咨询', style: TextStyle(fontSize: 20)))
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: msgs.length,
-              itemBuilder: (c, i) {
-                final m = msgs[i];
-                if (m['role'] == 'thinking') {
-                  return const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-                          SizedBox(width: 12),
-                          Text('正在思考…', style: TextStyle(fontSize: 20)),
-                        ]),
-                      ),
-                    ),
-                  );
-                }
-                final me = m['role'] == 'me';
-                return Align(
-                  alignment: me ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                    decoration: BoxDecoration(
-                      color: me ? AppColors.primary : Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: me
-                          ? null
-                          : [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
-                    ),
-                    child: Text(
-                      m['text'] ?? '',
-                      style: TextStyle(fontSize: 17, color: me ? Colors.white : AppColors.ink, height: 1.4),
-                    ),
-                  ),
-                );
-              },
-            )),
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          Expanded(
-            child: GestureDetector(
-              onLongPressStart: (_) => startHoldToTalk(),
-              onLongPressEnd: (_) => stopHoldToTalk(),
-              child: TextField(
-                controller: c,
-                decoration: InputDecoration(
-                  hintText: '请在这里输入问题，长按可语音输入',
-                  border: const OutlineInputBorder(),
-                  suffixIcon: GestureDetector(
-                    onLongPressStart: (_) => startHoldToTalk(),
-                    onLongPressEnd: (_) => stopHoldToTalk(),
-                    child: Icon(
-                      listening ? Icons.mic : Icons.mic_none,
-                      color: listening ? Colors.red : null,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(onPressed: busy ? null : send, child: Text(busy ? '…' : '发送')),
-        ]),
-      ),
-      ]),
+    final items = <AfuMessage>[
+      for (final m in msgs)
+        if (m['role'] == 'thinking')
+          const AfuMessage(text: '', isMe: false, thinking: true)
+        else
+          AfuMessage(text: m['text'] ?? '', isMe: m['role'] == 'me'),
+    ];
+    return AfuElderChatPage(
+      messages: items,
+      busy: busy,
+      inputController: inputC,
+      onQuickEntry: onQuick,
+      onTipMore: () => HubNav.go(1, 'news'),
+      textScale: fontBig ? 1.25 : 1.0,
+      onSend: send,
+      onVoiceStart: startHoldToTalk,
+      onVoiceEnd: stopHoldToTalk,
+      onToggleTextScale: () => setState(() => fontBig = !fontBig),
+      header: const WeatherCard(),
     );
   }
 }
 
-/// Day4 天气提醒：GET /api/weather/remind?city&lat&lon
 class WeatherCard extends StatefulWidget {
   const WeatherCard({super.key});
   @override
@@ -421,15 +444,25 @@ class _WeatherCardState extends State<WeatherCard> {
           timeLimit: const Duration(seconds: 8),
         );
         final d = await ApiService.weatherRemind(lat: pos.latitude, lon: pos.longitude);
+        if (_unconfigured(d)) return null;
         return _Weather(data: d, fromGps: true);
       }
     } catch (_) {}
     try {
       final d = await ApiService.weatherRemind(city: '武汉');
+      if (_unconfigured(d)) return null;
       return _Weather(data: d, fromGps: false);
     } catch (_) {
       return null;
     }
+  }
+
+  static bool _unconfigured(Map<String, dynamic> d) {
+    final tipAll = '${d['text'] ?? ''} ${d['tip'] ?? ''}';
+    if (tipAll.contains('未配置') || tipAll.contains('API_KEY')) {
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -460,4 +493,16 @@ class _Weather {
   final Map<String, dynamic> data;
   final bool fromGps;
   const _Weather({required this.data, required this.fromGps});
+}
+
+/// 家人相伴页读取问答历史的只读入口（本库内可访问 _ChatTabState.msgs）。
+class ChatHistory {
+  static List<AfuMessage> get items {
+    final out = <AfuMessage>[];
+    for (final m in _ChatTabState.msgs) {
+      if (m['role'] == 'thinking') continue;
+      out.add(AfuMessage(text: m['text'] ?? '', isMe: m['role'] == 'me'));
+    }
+    return out;
+  }
 }

@@ -40,7 +40,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('云栖码梦·登录', style: TextStyle(fontSize: 26))),
+      appBar: AppBar(title: const Text('登录', style: TextStyle(fontSize: 26))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(

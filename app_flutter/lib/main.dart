@@ -13,7 +13,7 @@ class ElderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '云栖码梦',
+      title: '老年助手',
       theme: buildAppTheme(),
       home: FutureBuilder<String?>(
         future: ApiService.getToken(),
