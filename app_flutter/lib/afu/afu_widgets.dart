@@ -171,7 +171,7 @@ Route<T> afuFadeRoute<T>(Widget page) {
   );
 }
 
-/// 老人端大按钮：高 60，大圆角，整行撑满。
+/// 长辈端大按钮：高 60，大圆角，整行撑满。
 class AfuBigButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;

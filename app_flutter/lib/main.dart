@@ -5,6 +5,7 @@ import 'theme.dart';
 import 'pages/login_page.dart';
 import 'pages/elder_home.dart';
 import 'pages/family_home.dart';
+import 'pages/tabs/hub_pages.dart' show chatScale;
 
 void main() { runApp(const ElderApp()); }
 
@@ -15,6 +16,15 @@ class ElderApp extends StatelessWidget {
     return MaterialApp(
       title: '老年助手',
       theme: buildAppTheme(),
+      builder: (context, child) {
+        return ValueListenableBuilder<double>(
+          valueListenable: chatScale,
+          builder: (c, scale, _) => MediaQuery(
+            data: MediaQuery.of(c).copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
+        );
+      },
       home: FutureBuilder<String?>(
         future: ApiService.getToken(),
         builder: (c, s) {

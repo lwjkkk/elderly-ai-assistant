@@ -40,10 +40,10 @@ class _AssistantPainter extends CustomPainter {
     final halo2 = Paint()..color = const Color(0xFFF0F5FE);
     canvas.drawCircle(Offset(cx, cy), size.width * 0.36, halo2);
 
-    final body = Paint()..color = const Color(0xFF5B8DEF);
+    final body = Paint()..color = const Color(0xFF8AA9DE);
     final face = Paint()..color = Colors.white;
     final dark = Paint()
-      ..color = const Color(0xFF3E6FD8)
+      ..color = const Color(0xFF5C7FBC)
       ..style = PaintingStyle.stroke
       ..strokeWidth = size.width * 0.018
       ..strokeCap = StrokeCap.round;
@@ -66,7 +66,7 @@ class _AssistantPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = size.width * 0.014);
     // 眼睛
-    final eye = Paint()..color = const Color(0xFF3E6FD8);
+    final eye = Paint()..color = const Color(0xFF5C7FBC);
     canvas.drawCircle(Offset(cx - size.width * 0.075, cy - size.height * 0.18), size.width * 0.022, eye);
     canvas.drawCircle(Offset(cx + size.width * 0.075, cy - size.height * 0.18), size.width * 0.022, eye);
     // 微笑
@@ -92,7 +92,7 @@ class _AssistantPainter extends CustomPainter {
   }
 
   void _star(Canvas canvas, Offset c, double r) {
-    final p = Paint()..color = const Color(0xFF9DBCF3);
+    final p = Paint()..color = const Color(0xFFA8BFE4);
     final path = Path();
     for (var i = 0; i < 8; i++) {
       final a = i * 3.14159 / 4;

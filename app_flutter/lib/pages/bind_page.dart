@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api.dart';
 import '../theme.dart';
 
-/// 绑定页：老人生成邀请码 / 家属输入邀请码绑定，GET /api/bind/list 展示
+/// 绑定页：长辈生成邀请码 / 家属输入邀请码绑定，GET /api/bind/list 展示
 class BindPage extends StatefulWidget {
   final String role;
   final Future<void> Function()? onLogout;
@@ -37,7 +37,8 @@ class _BindPageState extends State<BindPage> {
     return SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          ElevatedButton(
+          if (widget.role == 'elder') ...[
+ElevatedButton(
             onPressed: () async {
               try {
                 inviteCode = await ApiService.createInvite();
@@ -46,10 +47,11 @@ class _BindPageState extends State<BindPage> {
                 setState(() => msg = '生成失败：${ApiService.friendly(e)}');
               }
             },
-            child: const Text('生成邀请码（老人点我）'),
+            child: const Text('生成邀请码（长辈点我）'),
           ),
           if (inviteCode.isNotEmpty)
             SelectableText('邀请码：$inviteCode', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+          ],
           const SizedBox(height: 16),
           const Text('输入邀请码绑定（家属填）：', style: TextStyle(fontSize: 20)),
           TextField(controller: codeCtrl, style: const TextStyle(fontSize: 24), decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '6位邀请码')),

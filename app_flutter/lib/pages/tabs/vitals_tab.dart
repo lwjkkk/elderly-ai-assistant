@@ -6,7 +6,8 @@ import '../../services/api.dart';
 /// v2.0：type=bp/bs/hr/weight；trend 返回对象 {bp:[{date,systolic,diastolic,value}]}
 class VitalsTab extends StatefulWidget {
   final bool readOnly;
-  const VitalsTab({super.key, this.readOnly = false});
+  final bool mine;
+  const VitalsTab({super.key, this.readOnly = false, this.mine = false});
   @override
   State<VitalsTab> createState() => _VitalsTabState();
 }
@@ -25,7 +26,7 @@ class _VitalsTabState extends State<VitalsTab> {
   Future<void> load() async {
     setState(() => loading = true);
     try {
-      trend = await ApiService.vitalsTrend(vitalType: type, days: 7);
+      trend = await ApiService.vitalsTrend(vitalType: type, days: 7, mine: widget.mine);
     } catch (_) {
       trend = [];
     }
@@ -68,6 +69,7 @@ class _VitalsTabState extends State<VitalsTab> {
     if (ok == true) {
       try {
         await ApiService.addVital(
+          mine: widget.mine,
           type: type,
           systolic: type == 'bp' ? int.tryParse(sysC.text) : null,
           diastolic: type == 'bp' ? int.tryParse(diaC.text) : null,
@@ -96,10 +98,11 @@ class _VitalsTabState extends State<VitalsTab> {
         const Text('体征趋势', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
         const Spacer(),
         if (!widget.readOnly)
-          ElevatedButton.icon(onPressed: showAddDialog, icon: const Icon(Icons.add), label: const Text('记录')),
+          ElevatedButton.icon(onPressed: showAddDialog, icon: const Icon(Icons.add), label: const Text('导出PDF', style: const TextStyle(fontSize: 19, color: Color(0xFF5A6472)))),
       ]),
       const SizedBox(height: 12),
       SegmentedButton<String>(
+        style: const ButtonStyle(textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 18))),
         segments: const [
           ButtonSegment(value: 'bp', label: Text('血压')),
           ButtonSegment(value: 'bs', label: Text('血糖')),
@@ -118,7 +121,7 @@ class _VitalsTabState extends State<VitalsTab> {
             child: loading
                 ? const Center(child: CircularProgressIndicator())
                 : spots.isEmpty
-                    ? const Center(child: Text('暂无数据，先记录一条'))
+                    ? const Center(child: Text('暂无数据，先记录一条', style: const TextStyle(fontSize: 20, color: Color(0xFF222222))))
                     : LineChart(LineChartData(lineBarsData: [LineChartBarData(spots: spots, isCurved: true, dotData: const FlDotData(show: true))])),
           ),
         ),

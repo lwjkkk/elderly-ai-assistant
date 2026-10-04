@@ -113,10 +113,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scaled = MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(widget.textScale));
-    return MediaQuery(
-      data: scaled,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -179,7 +176,6 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
             ],
           ),
         ),
-      ),
     );
   }
 }
@@ -194,7 +190,7 @@ class _PrivacyDialog extends StatelessWidget {
       backgroundColor: const Color(0xFFF2F6FF),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        side: const BorderSide(color: Color(0xFFD8E5FB)),
+        side: const BorderSide(color: Color(0xFFDCE6F7)),
       ),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
@@ -311,7 +307,7 @@ class _TipBody extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFF2F6FF),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFD8E5FB)),
+        border: Border.all(color: const Color(0xFFDCE6F7)),
         boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
       ),
       child: Column(children: [
@@ -391,7 +387,7 @@ class _QuickCapsule extends StatelessWidget {
         decoration: BoxDecoration(
           color: active ? _kDeep : const Color(0xFFF2F6FF),
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: active ? _kDeep : const Color(0xFFD8E5FB)),
+          border: Border.all(color: active ? _kDeep : const Color(0xFFDCE6F7)),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 28, color: active ? Colors.white : _kDeep),
@@ -483,7 +479,7 @@ class _SampleCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFD8E5FB)),
+            border: Border.all(color: const Color(0xFFDCE6F7)),
             boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -550,7 +546,7 @@ class _AiRowState extends State<_AiRow> {
               decoration: BoxDecoration(
                 color: _kBubbleAi,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFD8E5FB)),
+                border: Border.all(color: const Color(0xFFDCE6F7)),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(
@@ -626,7 +622,7 @@ class _ThinkingRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: _kBubbleAi,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFD8E5FB)),
+            border: Border.all(color: const Color(0xFFDCE6F7)),
           ),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
@@ -708,7 +704,7 @@ class _InputBarState extends State<_InputBar> {
                 hintText: '请输入问题，长按话筒可说话',
                 hintStyle: const TextStyle(fontSize: 18, color: _kSub),
                 filled: true,
-                fillColor: const Color(0xFFF2F6FE),
+                fillColor: const Color(0xFFF5F8FD),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(28),

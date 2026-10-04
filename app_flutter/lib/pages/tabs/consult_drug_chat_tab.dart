@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -6,9 +7,7 @@ import '../../services/api.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
 import 'hub_pages.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../theme.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
 class ConsultsTab extends StatefulWidget {
@@ -205,18 +204,35 @@ class _SymptomTabState extends State<SymptomTab> {
 
 /// Day4 体检报告：multipart上传 → ocr_text + advice_text；原图拼 baseUrl
 class ReportTab extends StatefulWidget {
-  const ReportTab({super.key});
+  final bool mine;
+  const ReportTab({super.key, this.mine = false});
   @override
   State<ReportTab> createState() => _ReportTabState();
 }
 
 class _ReportTabState extends State<ReportTab> {
   List items = [];
+  bool _showImage = false;
   bool busy = false;
+String _adviceOnly(String s) {
+    var x = s.replaceAll(RegExp(r'https?://\S+'), '');
+    final keep = <String>[];
+    for (final line in x.split('\n')) {
+      final l = line.trim();
+      if (l.isEmpty) continue;
+      final cjk = RegExp(r'[\u4e00-\u9fff]').allMatches(l).length;
+      if (cjk == 0) continue;
+      final asc = RegExp(r'[A-Za-z]').allMatches(l).length;
+      if (asc > cjk) continue;
+      keep.add(l);
+    }
+    return keep.join('\n');
+  }
   @override
   void initState() { super.initState(); refresh(); }
   Future<void> refresh() async {
-    try { items = await ApiService.reportList(); } catch (_) { items = []; }
+    try { items = await ApiService.reportList(mine: widget.mine); } catch (_) { items = []; }
+try { _showImage = await ApiService.getRole() != 'elder'; } catch (_) {}
     if (mounted) setState(() {});
   }
 
@@ -225,7 +241,7 @@ class _ReportTabState extends State<ReportTab> {
     if (f == null) return;
     setState(() => busy = true);
     try {
-      await ApiService.uploadReport(await f.readAsBytes(), f.name);
+      await ApiService.uploadReport(await f.readAsBytes(), f.name, mine: widget.mine);
       refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('上传成功')));
@@ -252,15 +268,32 @@ class _ReportTabState extends State<ReportTab> {
         if (items.isEmpty) const Text('暂无报告', style: TextStyle(fontSize: 20)),
         ...items.map((e) {
           final m = Map<String, dynamic>.from(e as Map);
-          return Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text((m['created_at'] ?? '').toString(), style: const TextStyle(fontSize: 16, color: Colors.grey)),
-            const SizedBox(height: 4),
-            Text('识别：${m['ocr_text'] ?? ''}', style: const TextStyle(fontSize: 18)),
-            const SizedBox(height: 4),
-            Text('建议：${m['advice_text'] ?? ''}', style: const TextStyle(fontSize: 18)),
-            if ((m['image_url'] ?? '').toString().isNotEmpty)
-              Text('原图：${ApiService.reportImageUrl((m['image_url'] ?? '').toString())}', style: const TextStyle(fontSize: 14, color: Colors.blue)),
-          ])));
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text((m['created_at'] ?? '').toString(), style: const TextStyle(fontSize: 16, color: Color(0xFF8A94A6))),
+                const SizedBox(height: 6),
+                Builder(builder: (c) {
+                  final adv = _adviceOnly((m['advice_text'] ?? '').toString());
+                  return Text(adv.isEmpty ? '暂暂有效建建诀' : adv, style: const TextStyle(fontSize: 19, height: 1.6, color: Color(0xFF222222)));
+                }),
+                if (_showImage && (m['image_url'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.network(
+                      ApiService.reportImageUrl((m['image_url'] ?? '').toString()),
+                      height: 190,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+          );
         }),
         const Padding(padding: EdgeInsets.only(top: 8), child: Text(ApiService.disclaimer, style: TextStyle(fontSize: 14, color: Colors.grey))),
       ]),
@@ -283,9 +316,25 @@ class _ChatTabState extends State<ChatTab> {
   bool busy = false;
   bool listening = false;
   bool fontBig = false;
+  @override
+  void initState() {
+    super.initState();
+    _loadScale();
+    chatScale.addListener(_applyScale);
+  }
+  Future<void> _loadScale() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      chatScale.value = prefs.getDouble('chat_text_scale') ?? 1.0;
+    } catch (_) {}
+  }
+  void _applyScale() {
+    if (mounted) setState(() => fontBig = chatScale.value > 1.05);
+  }
 
   @override
   void dispose() {
+    chatScale.removeListener(_applyScale);
     inputC.dispose();
     super.dispose();
   }
@@ -448,11 +497,20 @@ class _ChatTabState extends State<ChatTab> {
       inputController: inputC,
       onQuickEntry: onQuick,
       onTipMore: () => HubNav.go(1, 'news'),
-      textScale: fontBig ? 1.25 : 1.0,
+      textScale: 1.0,
       onSend: send,
       onVoiceStart: startHoldToTalk,
       onVoiceEnd: stopHoldToTalk,
-      onToggleTextScale: () => setState(() => fontBig = !fontBig),
+      onToggleTextScale: () async {
+        const steps = [1.0, 1.15, 1.3];
+        var i = steps.indexWhere((s) => (s - chatScale.value).abs() < 0.01);
+        final next = steps[(i + 1) % steps.length];
+        chatScale.value = next;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setDouble('chat_text_scale', next);
+        } catch (_) {}
+      },
       header: ValueListenableBuilder<bool>(
         valueListenable: tipIsWeather,
         builder: (_, isWx, __) => isWx ? const SizedBox.shrink() : const WeatherCard(),
