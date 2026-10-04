@@ -135,15 +135,15 @@ class ApiService {
   // ---------- 5.2 绑定 ----------
   /// 短信验证码登录（后端 /api/auth/sms/* 就绪后生效，UI 已预留）。
   static Future<void> sendSmsCode(String phone) async {
-    await _dio.post('/api/auth/sms/send', data: {'phone': phone});
+    await _dio.post('/api/auth/send_sms_code', data: {'phone': phone});
   }
 
   static Future<Map<String, dynamic>> loginSms(
       {required String phone, required String code}) async {
-    final res = await _dio.post('/api/auth/sms/login',
+    final res = await _dio.post('/api/auth/login_by_code',
         data: {'phone': phone, 'code': code});
     final d = Map<String, dynamic>.from(res.data as Map);
-    final token = (d['token'] ?? d['access_token'] ?? '').toString();
+        final token = (d['token'] ?? d['access_token'] ?? '').toString();
     await saveAuth(token, (d['role'] ?? 'elder').toString(),
         userId: d['user_id'] is int ? d['user_id'] as int : null,
         nickname: (d['nickname'] ?? '').toString());

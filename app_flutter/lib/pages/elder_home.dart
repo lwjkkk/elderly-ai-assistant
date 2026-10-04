@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-
 import '../afu/afu_theme.dart';
 import 'tabs/consult_drug_chat_tab.dart';
 import 'tabs/hub_pages.dart';
+import 'tabs/health_overview.dart';
 
-/// 长辈端 4 Tab：问事 / 健康百事 / 家人相伴 / 设置。
 class ElderHome extends StatefulWidget {
   const ElderHome({super.key});
   @override
@@ -35,23 +34,28 @@ class _ElderHomeState extends State<ElderHome> {
   @override
   Widget build(BuildContext context) {
     const pages = [
+      HealthOverviewTab(role: 'elder'),
       ChatTab(),
-      HealthHubTab(),
       FamilyTab(),
       SettingsTab(),
     ];
-    const labels = ['问事', '健康百事', '家人相伴', '设置'];
-    const icons = [Icons.chat_bubble, Icons.grid_view, Icons.family_restroom, Icons.settings];
+    const labels = ['\u5065\u5eb7\u603b\u89c8', 'AI\u95ee\u4e8b', '\u5bb6\u4eba\u4e92\u52a8', '\u4e2a\u4eba\u4e2d\u5fc3'];
+    const icons = [Icons.dashboard_outlined, Icons.chat_bubble_outline, Icons.family_restroom_outlined, Icons.person_outline];
     return Scaffold(
-      body: IndexedStack(index: idx, children: pages),
+      backgroundColor: const Color(0xFFF7F9FD),
+      body: SafeArea(key: ValueKey(idx), child: pages[idx]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: idx,
         type: BottomNavigationBarType.fixed,
         selectedFontSize: 16,
         unselectedFontSize: 16,
-        iconSize: 30,
+        selectedItemColor: AfuColors.primaryDeep,
+        unselectedItemColor: const Color(0xFF5A6472),
         onTap: (i) => setState(() => idx = i),
-        items: [for (var i = 0; i < labels.length; i++) BottomNavigationBarItem(icon: Icon(icons[i]), label: labels[i])],
+        items: [
+          for (var i = 0; i < labels.length; i++)
+            BottomNavigationBarItem(icon: Icon(icons[i], size: 30), label: labels[i]),
+        ],
       ),
     );
   }

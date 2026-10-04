@@ -20,7 +20,8 @@ class _MeTabState extends State<MeTab> {
   List binds = [];
   String inviteCode = '';
   String inviteMsg = '';
-  String nickname = '长辈';
+  String avatarAsset = kAvatarAssets[0];
+String nickname = '长辈';
   bool notifyOn = true;
   double fontScale = 1.0;
 
@@ -38,7 +39,8 @@ class _MeTabState extends State<MeTab> {
     } catch (_) {}
     try {
       final prefs = await SharedPreferences.getInstance();
-      notifyOn = prefs.getBool('notify_on') ?? true;
+      avatarAsset = prefs.getString('avatar') ?? kAvatarAssets[0];
+notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
     } catch (_) {}
     if (mounted) setState(() {});
@@ -182,7 +184,7 @@ class _MeTabState extends State<MeTab> {
           decoration: const BoxDecoration(
               color: Color(0xFFE8EFFD), shape: BoxShape.circle),
           child:
-              const Icon(Icons.person, size: 44, color: AfuColors.primaryDeep),
+              ClipOval(child: Image.asset(avatarAsset, width: 72, height: 72, fit: BoxFit.cover)),
         ),
         const SizedBox(width: 14),
         Expanded(
