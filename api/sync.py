@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import (
     User, Medication, MedicationLog, Vitals, HealthReport, SymptomCheck, ConsultRecord,
+    DrugQuery, ChatSummary,
 )
 from db.schemas import (
     MedicationOut, LogOut, VitalsOut, HealthReportOut, SymptomOut, ConsultOut,
+    DrugQueryOut, ChatSummaryOut,
 )
 from core.security import get_current_user
 from api.meds import resolve_elder_id
@@ -78,6 +80,21 @@ def sync(since: str | None = None,
         q_con = q_con.filter(ConsultRecord.created_at >= ts)
     consults = q_con.all()
 
+    # 查药记录（始终返回，不受隐私开关约束）
+    q_dq = db.query(DrugQuery).filter(DrugQuery.elder_id == target)
+    if ts:
+        q_dq = q_dq.filter(DrugQuery.created_at >= ts)
+    drug_queries = q_dq.all()
+
+    # 对话摘要：受老人的隐私开关约束——关闭时返回空数组
+    chat_summaries: list[ChatSummary] = []
+    target_user = db.query(User).filter(User.id == target).first()
+    if target_user and target_user.sync_summary_to_family:
+        q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
+        if ts:
+            q_cs = q_cs.filter(ChatSummary.created_at >= ts)
+        chat_summaries = q_cs.all()
+
     server_time = datetime.now(timezone.utc).replace(microsecond=0)
 
     return {
@@ -89,4 +106,6 @@ def sync(since: str | None = None,
         "reports": [HealthReportOut.model_validate(r).model_dump() for r in reports],
         "symptoms": [SymptomOut.model_validate(s).model_dump() for s in symptoms],
         "consults": [ConsultOut.model_validate(c).model_dump() for c in consults],
+        "drug_queries": [DrugQueryOut.model_validate(d).model_dump() for d in drug_queries],
+        "chat_summaries": [ChatSummaryOut.model_validate(c).model_dump() for c in chat_summaries],
     }
