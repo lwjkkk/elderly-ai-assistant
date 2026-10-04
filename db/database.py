@@ -2,7 +2,7 @@
 # 作用：创建数据库引擎、会话工厂和所有表的基类 Base。
 # 改版方案：SQLite 先行（本地一个文件即可跑通），后期再平滑换成 MySQL。
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # SQLite 数据库文件，会在项目根目录生成 elderly.db
@@ -39,3 +39,20 @@ def init_db():
     for table in Base.metadata.tables.values():
         for idx in table.indexes:
             idx.create(bind=engine, checkfirst=True)
+    # 对已存在的旧库补建新增列（SQLite 用 ALTER TABLE，幂等：已存在则跳过）
+    _add_column_if_missing(
+        "users",
+        "sync_summary_to_family",
+        "ALTER TABLE users ADD COLUMN sync_summary_to_family BOOLEAN DEFAULT 1 NOT NULL",
+    )
+
+
+def _add_column_if_missing(table: str, column: str, ddl: str):
+    """若表已存在但缺少指定列，则执行 ALTER TABLE 补列（SQLite）。"""
+    insp = inspect(engine)
+    if table not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns(table)}
+    if column not in cols:
+        with engine.begin() as conn:
+            conn.execute(text(ddl))

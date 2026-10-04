@@ -64,6 +64,52 @@ class Token(BaseModel):
     nickname: str
 
 
+# ---------- 隐私开关 ----------
+
+class PrivacyOut(BaseModel):
+    """隐私开关返回体：是否把对话摘要同步给家属"""
+    sync_summary_to_family: bool
+
+
+class PrivacyUpdate(BaseModel):
+    """隐私开关更新请求体"""
+    sync_summary_to_family: bool
+
+
+# ---------- 对话摘要 ----------
+
+class ChatSummaryOut(BaseModel):
+    """对话摘要返回体（家属端查看老人对话记录）"""
+    id: int
+    elder_id: int
+    category: str            # drug / med / selfcheck / consult
+    question: str
+    summary: str
+    risk: str | None = None
+    module: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- 查药记录 ----------
+
+class DrugQueryOut(BaseModel):
+    """查药记录返回体（家属端摘要展示）"""
+    id: int
+    elder_id: int
+    kind: str                # image / name
+    input_text: str | None = None
+    ocr_text: str | None = None
+    explanation: str | None = None
+    disclaimer: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
 # ---------- 绑定 ----------
 
 class InviteOut(BaseModel):
