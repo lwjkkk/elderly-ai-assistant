@@ -39,6 +39,23 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SendSmsRequest(BaseModel):
+    """获取验证码请求体（答辩演示：验证码打印到控制台，不真实下发短信）"""
+    phone: str = Field(..., pattern=PHONE_PATTERN, description="11位手机号")
+
+
+class SmsSent(BaseModel):
+    """获取验证码返回体（不含验证码本身，验证码只在后端控制台打印）"""
+    message: str
+    expires_in: int = Field(default=300, description="验证码有效期（秒）")
+
+
+class LoginByCodeRequest(BaseModel):
+    """验证码登录请求体"""
+    phone: str = Field(..., pattern=PHONE_PATTERN, description="11位手机号")
+    code: str = Field(..., min_length=6, max_length=6, description="6位验证码")
+
+
 class Token(BaseModel):
     """登录成功返回的令牌"""
     access_token: str
