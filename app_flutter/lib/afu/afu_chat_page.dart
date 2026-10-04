@@ -61,7 +61,6 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
   final _innerInput = TextEditingController();
   TextEditingController get _input => widget.inputController ?? _innerInput;
   final _list = ScrollController();
-  int _quickSel = -1;
 
   @override
   void initState() {
@@ -115,19 +114,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
   Widget build(BuildContext context) {
     return Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          title: const Text('问事', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: _kInk)),
-          actions: [
-            IconButton(
-              tooltip: '放大字体',
-              iconSize: 32,
-              onPressed: widget.onToggleTextScale,
-              icon: Icon(Icons.text_fields,
-                  color: widget.textScale > 1.0 ? _kDeep : _kSub),
-            ),
-          ],
-        ),
+        // 全局规则：不再保留页面顶部黑色标题（字号调节已移到「个人中心」）
         body: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -144,14 +131,8 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
                     ? SingleChildScrollView(
                         child: Column(children: [
                           _TipCard(onMore: widget.onTipMore),
-                          _WelcomeCard(onSample: widget.onSend),
-                          _QuickRow(
-                            selected: _quickSel,
-                            onTap: (i) {
-                              setState(() => _quickSel = i);
-                              widget.onQuickEntry?.call(i);
-                            },
-                          ),
+                          const _WelcomeCard(),
+                          _FuncCards(onTap: (i) => widget.onQuickEntry?.call(i)),
                           const SizedBox(height: 8),
                         ]),
                       )
@@ -335,81 +316,96 @@ class _TipBody extends StatelessWidget {
     );
   }
 }
-
-/// 快捷入口：一排四个胶囊，选中态中蓝底白字。
-class _QuickRow extends StatelessWidget {
-  final int selected;
-  final ValueChanged<int> onTap;
-  const _QuickRow({required this.selected, required this.onTap});
-
-  static const _items = [
-    (Icons.search_outlined, '查药品'),
-    (Icons.health_and_safety_outlined, '问症状'),
-    (Icons.description_outlined, '看报告'),
-    (Icons.mic_none_outlined, '语音咨询'),
-  ];
+/// 快捷功能区：仅保留【体征】【报告】两张卡片。
+/// 卡片样式：左上角圆形图标 + 右侧两字标题 + 标题下方灰色小字说明，无底部装饰图。
+/// 查药 / 自查 / 咨询不再做独立卡片入口，统一由 AI 对话完成。
+class _FuncCards extends StatelessWidget {
+  final ValueChanged<int> onTap; // 0=体征 1=报告
+  const _FuncCards({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      child: Row(
-        children: [
-          for (var i = 0; i < _items.length; i++) ...[
-            Expanded(child: _QuickCapsule(
-              icon: _items[i].$1,
-              label: _items[i].$2,
-              active: selected == i,
-              onTap: () => onTap(i),
-            )),
-            if (i < _items.length - 1) const SizedBox(width: 10),
-          ],
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+      child: Column(children: [
+        _funcCard(
+          icon: Icons.show_chart_outlined,
+          title: '体征',
+          desc: '记录血压、血糖、心率、体重',
+          tint: const Color(0xFFEFEAFA),
+          main: const Color(0xFF7A63B8),
+          onTap: () => onTap(0),
+        ),
+        const SizedBox(height: 16),
+        _funcCard(
+          icon: Icons.description_outlined,
+          title: '报告',
+          desc: '上传体检单，智能读懂结果',
+          tint: const Color(0xFFE8F4F4),
+          main: const Color(0xFF2A7F7F),
+          onTap: () => onTap(1),
+        ),
+      ]),
     );
   }
-}
 
-class _QuickCapsule extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _QuickCapsule({required this.icon, required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _funcCard({
+    required IconData icon,
+    required String title,
+    required String desc,
+    required Color tint,
+    required Color main,
+    required VoidCallback onTap,
+  }) {
     return AfuPressable(
       onTap: onTap,
-      borderRadius: 28,
+      borderRadius: 24,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 13),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: active ? _kDeep : const Color(0xFFF2F6FF),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: active ? _kDeep : const Color(0xFFDCE6F7)),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFDCE6F7)),
+          boxShadow: [
+            BoxShadow(
+                color: _kDeep.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4)),
+          ],
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 28, color: active ? Colors.white : _kDeep),
-          const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(fontSize: 18, color: active ? Colors.white : _kInk)),
+        child: Row(children: [
+          // 左上角圆形图标
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+            child: Icon(icon, size: 32, color: main),
+          ),
+          const SizedBox(width: 16),
+          // 右侧两字标题 + 标题下方灰色小字说明
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: _kInk)),
+                  const SizedBox(height: 6),
+                  Text(desc,
+                      style:
+                          const TextStyle(fontSize: 17, color: _kSub, height: 1.4)),
+                ]),
+          ),
         ]),
       ),
     );
   }
 }
-
-/// 空态欢迎卡：深蓝到浅蓝渐变 + 助手形象 + 3 个建议问题。
+/// 空态欢迎卡：AI 助手形象 + 引导文字（推荐问题小卡片已移除）。
 class _WelcomeCard extends StatelessWidget {
-  final ValueChanged<String> onSample;
-  const _WelcomeCard({required this.onSample});
-
-  static const samples = [
-    (Icons.medication_outlined, '用药建议', '试试：感冒了能吃阿莫西林吗？'),
-    (Icons.schedule_outlined, '血压管理', '试试：降压药什么时候吃最好？'),
-    (Icons.description_outlined, '报告解读', '试试：这个报告结果严重吗？'),
-  ];
+  const _WelcomeCard();
 
   @override
   Widget build(BuildContext context) {
@@ -417,7 +413,7 @@ class _WelcomeCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 26),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -425,92 +421,46 @@ class _WelcomeCard extends StatelessWidget {
             colors: [Color(0xFFE8F0FF), Color(0xFFF2F6FF)],
           ),
           borderRadius: BorderRadius.circular(28),
-          boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.10), blurRadius: 16, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(
+                color: _kDeep.withOpacity(0.10),
+                blurRadius: 16,
+                offset: const Offset(0, 6)),
+          ],
         ),
         child: Column(children: [
+          // AI 助手形象
           Container(
             width: 128,
             height: 128,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white.withOpacity(0.95),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 12, offset: const Offset(0, 4))],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4)),
+              ],
             ),
             padding: const EdgeInsets.all(6),
-            child: ClipOval(child: Image.asset('assets/assistant.png', fit: BoxFit.cover)),
+            child: ClipOval(
+                child: Image.asset('assets/assistant.png', fit: BoxFit.cover)),
           ),
           const SizedBox(height: 18),
           const Text('有什么可以帮您？',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: _kInk)),
+              style: TextStyle(
+                  fontSize: 26, fontWeight: FontWeight.w800, color: _kInk)),
           const SizedBox(height: 8),
-          Text('查药、看报告、问症状，我来陪您一起弄清楚。',
-              style: TextStyle(fontSize: 19, color: _kSub, height: 1.4),
+          // 引导文字
+          const Text('查药、看报告、问症状，我来陪您一起弄清楚。',
+              style: TextStyle(fontSize: 19, color: _kSub, height: 1.5),
               textAlign: TextAlign.center),
-          const SizedBox(height: 20),
-          for (final s in samples) ...[
-            _SampleCard(icon: s.$1, tag: s.$2, text: s.$3,
-                onTap: () => onSample(s.$3.replaceFirst('试试：', ''))),
-            const SizedBox(height: 10),
-          ],
         ]),
       ),
     );
   }
 }
-
-class _SampleCard extends StatelessWidget {
-  final IconData icon;
-  final String tag;
-  final String text;
-  final VoidCallback onTap;
-  const _SampleCard({required this.icon, required this.tag, required this.text, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      elevation: 0,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFDCE6F7)),
-            boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F0FF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(tag, style: const TextStyle(fontSize: 16, color: _kDeep)),
-            ),
-            const SizedBox(height: 8),
-            Row(children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(color: Color(0xFFE3EDFF), shape: BoxShape.circle),
-              child: Icon(icon, size: 26, color: _kDeep),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(text, style: const TextStyle(fontSize: 19, color: _kInk, height: 1.4))),
-            const Icon(Icons.chevron_right, color: _kSub, size: 28),
-            ]),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-/// AI 行：圆形头像 + 浅蓝白气泡，超长回答默认折叠。
 class _AiRow extends StatefulWidget {
   final String text;
   const _AiRow({required this.text});
