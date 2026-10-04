@@ -37,7 +37,7 @@ class ApiService {
     return p.getInt('user_id');
   }
 
-  /// 家属端调用健康接口必须带的 elder_id：优先用已选中的绑定老人。
+  /// 家属端调用健康接口必须带的 elder_id：优先用已选中的绑定长辈。
   static Future<int?> getElderId() async {
     final p = await SharedPreferences.getInstance();
     return p.getInt('elder_id');
@@ -58,6 +58,11 @@ class ApiService {
     _dio.options.headers['Authorization'] = 'Bearer $token';
   }
 
+  static Future<String?> getNickname() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString('nickname');
+  }
+
   static Future<void> clearAuth() async {
     final p = await SharedPreferences.getInstance();
     await p.clear();
@@ -68,10 +73,10 @@ class ApiService {
   /// 家属必填 elder_id 的统一拼参。
   /// 本地没存过（老版本绑定过、重装过）就现场从绑定列表里补一次。
   static Future<Map<String, dynamic>> withElder(
-      [Map<String, dynamic>? extra]) async {
+      [Map<String, dynamic>? extra, bool mine = false]) async {
     final m = Map<String, dynamic>.from(extra ?? {});
     final role = await getRole();
-    if (role == 'family') {
+    if (role == 'family' && !mine) {
       var eid = await getElderId();
       if (eid == null) {
         try {
@@ -128,6 +133,23 @@ class ApiService {
   }
 
   // ---------- 5.2 绑定 ----------
+  /// 短信验证码登录（后端 /api/auth/sms/* 就绪后生效，UI 已预留）。
+  static Future<void> sendSmsCode(String phone) async {
+    await _dio.post('/api/auth/sms/send', data: {'phone': phone});
+  }
+
+  static Future<Map<String, dynamic>> loginSms(
+      {required String phone, required String code}) async {
+    final res = await _dio.post('/api/auth/sms/login',
+        data: {'phone': phone, 'code': code});
+    final d = Map<String, dynamic>.from(res.data as Map);
+    final token = (d['token'] ?? d['access_token'] ?? '').toString();
+    await saveAuth(token, (d['role'] ?? 'elder').toString(),
+        userId: d['user_id'] is int ? d['user_id'] as int : null,
+        nickname: (d['nickname'] ?? '').toString());
+    return {'role': d['role'] ?? 'elder'};
+  }
+
   static Future<String> createInvite() async {
     final res = await _dio.post('/api/bind/invite');
     return res.data['invite_code'].toString();
@@ -149,7 +171,7 @@ class ApiService {
   }
 
 
-  /// 把报错翻译成老人能看懂的话，各页面直接用。
+  /// 把报错翻译成长辈能看懂的话，各页面直接用。
   static String friendly(Object e) {
     if (e is DioException) {
       final code = e.response?.statusCode;
@@ -171,7 +193,7 @@ class ApiService {
         case 401:
           return '手机号或密码不对（或登录已过期，请重新登录）';
         case 403:
-          return '没有权限，请先完成老人与家属绑定';
+          return '没有权限，请先完成长辈与家属绑定';
         case 404:
           return '没找到相关记录，可能已被删除或邀请码已失效';
         case 422:
@@ -214,8 +236,8 @@ class ApiService {
   }
 
   /// v2.0：GET /api/meds/today?elder_id&date，每项含 slots[{slot,status}]。
-  static Future<List> medsToday({String? date}) async {
-    final q = await withElder({if (date != null) 'date': date});
+  static Future<List> medsToday({String? date, bool mine = false}) async {
+    final q = await withElder({if (date != null) 'date': date}, mine);
     final res = await _dio.get('/api/meds/today', queryParameters: q);
     return res.data is List ? res.data : [];
   }
@@ -248,13 +270,13 @@ class ApiService {
       {required String type,
       int? systolic,
       int? diastolic,
-      double? value}) async {
+      double? value, bool mine = false}) async {
     final body = await withElder({
       'type': type,
       if (systolic != null) 'systolic': systolic,
       if (diastolic != null) 'diastolic': diastolic,
       if (value != null) 'value': value,
-    });
+    }, mine);
     final res = await _dio.post('/api/vitals', data: body);
     return Map<String, dynamic>.from(res.data);
   }
@@ -271,11 +293,11 @@ class ApiService {
 
   /// v2.0 返回对象 {bp:[...],bs:[...]}，取当前 type 对应数组。
   static Future<List> vitalsTrend(
-      {String? vitalType, int days = 30}) async {
+      {String? vitalType, int days = 30, bool mine = false}) async {
     final q = await withElder({
       if (vitalType != null) 'vital_type': vitalType,
       'days': days,
-    });
+    }, mine);
     final res = await _dio.get('/api/vitals/trend', queryParameters: q);
     final d = res.data;
     if (d is List) return d;
@@ -294,8 +316,8 @@ class ApiService {
   }
 
   // ---------- 5.6 问诊 ----------
-  static Future<List> consultList() async {
-    final q = await withElder();
+  static Future<List> consultList({bool mine = false}) async {
+    final q = await withElder({}, mine);
     final res = await _dio.get('/api/consults', queryParameters: q);
     return res.data is List ? res.data : [];
   }
@@ -333,16 +355,16 @@ class ApiService {
   }
 
   // ---------- 5.8 体检报告 ----------
-  static Future<List> reportList() async {
-    final q = await withElder();
+  static Future<List> reportList({bool mine = false}) async {
+    final q = await withElder({}, mine);
     final res = await _dio.get('/api/reports', queryParameters: q);
     return res.data is List ? res.data : [];
   }
 
-  static Future<Map<String, dynamic>> uploadReport(List<int> bytes, String fileName) async {
+  static Future<Map<String, dynamic>> uploadReport(List<int> bytes, String fileName, {bool mine = false}) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: fileName),
-      ...(await withElder()),
+      ...(await withElder({}, mine)),
     });
     final res = await _dio.post('/api/reports/upload', data: form);
     return Map<String, dynamic>.from(res.data);

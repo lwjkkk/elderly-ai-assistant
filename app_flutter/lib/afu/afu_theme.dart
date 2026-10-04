@@ -1,12 +1,12 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 /// 柔和风设计 token：低饱和蓝 + 柔和浅底 + 大圆角。
-/// 老人端/家属端共用这一套，只调字号与密度，不另起配色。
+/// 长辈端/家属端共用这一套，只调字号与密度，不另起配色。
 class AfuColors {
   static const bg = Color(0xFFF4F6FB);
   static const card = Colors.white;
-  static const primary = Color(0xFF5B8DEF);
-  static const primaryDeep = Color(0xFF3E6FD8);
+  static const primary = Color(0xFF8AA9DE);
+  static const primaryDeep = Color(0xFF5C7FBC);
   static const primarySoft = Color(0xFFE8EFFD);
   static const ink = Color(0xFF1A2333);
   static const secondary = Color(0xFF6B7690);
@@ -37,7 +37,7 @@ class AfuMotion {
   static const skeletonPeriod = Duration(milliseconds: 1600);
 }
 
-/// 老人端字阶：最小 18sp，全部白底黑字高对比。
+/// 长辈端字阶：最小 18sp，全部白底黑字高对比。
 class AfuElderText {
   static const appTitle = TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AfuColors.ink, height: 1.3);
   static const body = TextStyle(fontSize: 19, color: AfuColors.ink, height: 1.5);

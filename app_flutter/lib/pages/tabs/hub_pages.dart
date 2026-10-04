@@ -17,6 +17,12 @@ import 'vitals_tab.dart';
 import 'me_tab.dart';
 
 /// 跨 Tab 跳转总线：问事页快捷入口调用 HubNav.go(1, 'drugs') 即切到健康百事并滚到对应板块。
+/// 问事页字号总线：设置页调节后问事页实时跟随。
+/// 全局字号总线：小1.0 / 中1.15 / 大1.3，main 的 MediaQuery 全局跟随。
+final chatScale = ValueNotifier<double>(1.0);
+/// 消息通知总开关：关闭后 App 内提醒横幅不再弹出。
+final notifyEnabled = ValueNotifier<bool>(true);
+
 class HubNav {
   static final tab = ValueNotifier<int>(0);
   static String? pendingSection;
@@ -175,9 +181,9 @@ class _HealthHubTabState extends State<HealthHubTab> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 2,
-                mainAxisSpacing: AfuSpace.gap,
-                crossAxisSpacing: AfuSpace.gap,
-                childAspectRatio: 0.92,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 0.8,
                 children: [
                   _FuncCard(
                     title: '查药',
@@ -186,7 +192,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFE6F4EA),
                     main: const Color(0xFF6FAF87),
                     onTap: () => _open(context, '查药', const DrugQueryTab()),
-                    statText: '覆盖常用药品', statIcon: Icons.check_circle_outline,
                     art: const _DrugArt(color: Color(0xFF6FAF87)),
                   ),
                   _FuncCard(
@@ -196,7 +201,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFFDEFF3),
                     main: const Color(0xFFE08CAD),
                     onTap: () => _open(context, '用药', const MedsTab()),
-                    statText: '记得按时打卡', statIcon: Icons.alarm_outlined,
                     art: const _MedArt(color: Color(0xFFE08CAD)),
                   ),
                   _FuncCard(
@@ -206,7 +210,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFE8EFFD),
                     main: const Color(0xFF7AA5F0),
                     onTap: () => _open(context, '体征', const VitalsTab()),
-                    statText: '趋势一目了然', statIcon: Icons.trending_up_outlined,
                     art: const _VitalArt(color: Color(0xFF7AA5F0)),
                   ),
                   _FuncCard(
@@ -216,7 +219,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFEFEAFA),
                     main: const Color(0xFFA58FD6),
                     onTap: () => _open(context, '自查', const SymptomTab()),
-                    statText: '3分钟完成', statIcon: Icons.timer_outlined,
                     art: const _GaugeArt(color: Color(0xFFA58FD6)),
                   ),
                   _FuncCard(
@@ -226,7 +228,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFEFF0F4),
                     main: const Color(0xFF9AA0AE),
                     onTap: () => _open(context, '报告', const ReportTab()),
-                    statText: 'AI智能解读', statIcon: Icons.auto_awesome_outlined,
                     art: const _ReportArt(color: Color(0xFF9AA0AE)),
                   ),
                   _FuncCard(
@@ -236,7 +237,6 @@ class _HealthHubTabState extends State<HealthHubTab> {
                     tint: const Color(0xFFFDECEC),
                     main: const Color(0xFFE08B8B),
                     onTap: () => _open(context, '咨询', const ConsultsTab()),
-                    statText: '录音可回放', statIcon: Icons.replay_outlined,
                     art: const _WaveArt(color: Color(0xFFE08B8B)),
                   ),
                 ],
@@ -331,8 +331,6 @@ class _FuncCard extends StatelessWidget {
   final Color main;
   final VoidCallback onTap;
   final Widget art;
-  final String statText;
-  final IconData statIcon;
   const _FuncCard({
     required this.title,
     required this.subtitle,
@@ -341,60 +339,38 @@ class _FuncCard extends StatelessWidget {
     required this.main,
     required this.onTap,
     required this.art,
-    required this.statText,
-    required this.statIcon,
   });
 
   @override
   Widget build(BuildContext context) {
     return AfuCard(
       onTap: onTap,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
         Container(
-          width: 58,
-          height: 58,
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-          child: Icon(icon, size: 30, color: main),
+          child: Icon(icon, size: 27, color: main),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         Text(title, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 2),
-        Text(subtitle, style: AfuElderText.secondary),
-        const SizedBox(height: 10),
+        Text(subtitle, style: AfuElderText.secondary.copyWith(fontSize: 17)),
+        const SizedBox(height: 6),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           decoration: BoxDecoration(
             color: main.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                height: 56,
-                width: double.infinity,
-                child: Opacity(opacity: 0.8, child: art),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.8),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(statIcon, size: 22, color: main),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(statText,
-                      style: TextStyle(fontSize: 17, color: main, fontWeight: FontWeight.w600)),
-                ),
-              ]),
-            ),
-          ]),
+          child: SizedBox(
+            height: 30,
+            width: double.infinity,
+            child: Opacity(opacity: 0.85, child: art),
+          ),
         ),
       ]),
     );
@@ -425,23 +401,25 @@ class _DrugPainter extends CustomPainter {
   _DrugPainter(this.color);
   @override
   void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
     canvas.drawRRect(
-      RRect.fromLTRBR(4, 18, 52, size.height - 4, const Radius.circular(8)),
+      RRect.fromLTRBR(w * 0.04, h * 0.25, w * 0.38, h * 0.95, const Radius.circular(6)),
       _Stroke.fill(color.withOpacity(0.18)),
     );
-    canvas.drawLine(Offset(14, 30), Offset(42, 30), _Stroke.of(color, 4));
-    canvas.drawLine(Offset(14, 40), Offset(34, 40), _Stroke.of(color, 4));
+    canvas.drawLine(Offset(w * 0.10, h * 0.45), Offset(w * 0.32, h * 0.45), _Stroke.of(color, 3));
+    canvas.drawLine(Offset(w * 0.10, h * 0.65), Offset(w * 0.26, h * 0.65), _Stroke.of(color, 3));
     canvas.drawRRect(
-      RRect.fromLTRBR(62, 14, size.width - 4, 42, const Radius.circular(14)),
-      _Stroke.of(color),
+      RRect.fromLTRBR(w * 0.44, h * 0.18, w * 0.96, h * 0.70, const Radius.circular(10)),
+      _Stroke.of(color, 2.5),
     );
-    canvas.drawCircle(Offset(size.width - 26, 28), 7, _Stroke.of(color));
-    canvas.drawLine(Offset(size.width - 20, 34), Offset(size.width - 12, 42), _Stroke.of(color, 4));
+    canvas.drawCircle(Offset(w * 0.78, h * 0.44), h * 0.12, _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.84, h * 0.52), Offset(w * 0.90, h * 0.62), _Stroke.of(color, 3));
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 用药：时钟 + 药瓶 + 打卡进度条。
 class _MedArt extends StatelessWidget {
@@ -458,23 +436,27 @@ class _MedPainter extends CustomPainter {
   _MedPainter(this.color);
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawCircle(Offset(24, 24), 18, _Stroke.of(color));
-    canvas.drawLine(Offset(24, 24), Offset(24, 12), _Stroke.of(color));
-    canvas.drawLine(Offset(24, 24), Offset(32, 28), _Stroke.of(color));
+    final w = size.width, h = size.height;
+    final c = Offset(w * 0.18, h * 0.42);
+    final r = h * 0.32;
+    canvas.drawCircle(c, r, _Stroke.of(color, 2.5));
+    canvas.drawLine(c, c + Offset(0, -r * 0.6), _Stroke.of(color, 2.5));
+    canvas.drawLine(c, c + Offset(r * 0.5, r * 0.25), _Stroke.of(color, 2.5));
     canvas.drawRRect(
-      RRect.fromLTRBR(50, 14, 78, size.height - 12, const Radius.circular(6)),
+      RRect.fromLTRBR(w * 0.38, h * 0.18, w * 0.58, h * 0.72, const Radius.circular(5)),
       _Stroke.fill(color.withOpacity(0.18)),
     );
-    canvas.drawLine(Offset(64, 8), Offset(64, 14), _Stroke.of(color, 4));
-    final y = size.height - 6.0;
-    canvas.drawLine(Offset(88, y), Offset(size.width - 4, y), _Stroke.of(color.withOpacity(0.3), 6));
-    canvas.drawLine(Offset(88, y), Offset(88 + (size.width - 92) * 0.65, y), _Stroke.of(color, 6));
-    canvas.drawCircle(Offset(88 + (size.width - 92) * 0.65, y), 5, _Stroke.fill(color));
+    canvas.drawLine(Offset(w * 0.48, h * 0.10), Offset(w * 0.48, h * 0.18), _Stroke.of(color, 3));
+    final y = h * 0.88;
+    canvas.drawLine(Offset(w * 0.64, y), Offset(w * 0.96, y), _Stroke.of(color.withOpacity(0.3), 5));
+    canvas.drawLine(Offset(w * 0.64, y), Offset(w * 0.86, y), _Stroke.of(color, 5));
+    canvas.drawCircle(Offset(w * 0.86, y), 4, _Stroke.fill(color));
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 体征：淡色折线 + 数据点。
 class _VitalArt extends StatelessWidget {
@@ -491,28 +473,24 @@ class _VitalPainter extends CustomPainter {
   _VitalPainter(this.color);
   @override
   void paint(Canvas canvas, Size size) {
-    final pts = [
-      Offset(6, size.height - 14),
-      Offset(30, size.height - 30),
-      Offset(54, size.height - 20),
-      Offset(78, size.height - 40),
-      Offset(102, size.height - 26),
-      Offset(size.width - 6, size.height - 44),
-    ];
+    final w = size.width, h = size.height;
+    final frac = [(0.05, 0.75), (0.22, 0.45), (0.40, 0.60), (0.58, 0.25), (0.76, 0.45), (0.95, 0.20)];
+    final pts = [for (final f in frac) Offset(w * f.$1, h * f.$2)];
     final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    for (final p in pts.skip(1)) {
-      path.lineTo(p.dx, p.dy);
+    for (final q in pts.skip(1)) {
+      path.lineTo(q.dx, q.dy);
     }
-    canvas.drawPath(path, _Stroke.of(color, 3.5));
-    for (final p in pts) {
-      canvas.drawCircle(p, 4, _Stroke.fill(Colors.white));
-      canvas.drawCircle(p, 4, _Stroke.of(color, 2.5));
+    canvas.drawPath(path, _Stroke.of(color, 3));
+    for (final q in pts) {
+      canvas.drawCircle(q, 3.5, _Stroke.fill(Colors.white));
+      canvas.drawCircle(q, 3.5, _Stroke.of(color, 2));
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 自查：简易仪表盘。
 class _GaugeArt extends StatelessWidget {
@@ -529,21 +507,21 @@ class _GaugePainter extends CustomPainter {
   _GaugePainter(this.color);
   @override
   void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height - 8);
-    final r = size.width / 2 - 8;
-    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159, false, _Stroke.of(color.withOpacity(0.35), 7));
-    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159 * 0.65, false, _Stroke.of(color, 7));
-    final a = 3.14159 + 3.14159 * 0.65;
-    canvas.drawLine(c, c + Offset(r * 0.7 * _cos(a), r * 0.7 * _sin(a)), _Stroke.of(color, 4));
-    canvas.drawCircle(c, 5, _Stroke.fill(color));
+    final w = size.width, h = size.height;
+    final c = Offset(w * 0.5, h * 0.92);
+    final r = w * 0.38 < h * 0.85 ? w * 0.38 : h * 0.85;
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159, false, _Stroke.of(color.withOpacity(0.35), 6));
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159 * 0.65, false, _Stroke.of(color, 6));
+    const a = 3.14159 + 3.14159 * 0.65;
+    const dx = -0.454, dy = -0.891;
+    canvas.drawLine(c, c + Offset(r * 0.65 * dx, r * 0.65 * dy), _Stroke.of(color, 3.5));
+    canvas.drawCircle(c, 4, _Stroke.fill(color));
   }
-
-  double _cos(double a) => a < 1.58 ? 1 - a * a / 2 : (a < 4.71 ? -1 + (a - 3.14) * (a - 3.14) / 2 : 1);
-  double _sin(double a) => _cos(a - 1.5708);
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 报告：文档 + 数据示意线。
 class _ReportArt extends StatelessWidget {
@@ -560,20 +538,21 @@ class _ReportPainter2 extends CustomPainter {
   _ReportPainter2(this.color);
   @override
   void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
     canvas.drawRRect(
-      RRect.fromLTRBR(6, 4, 58, size.height - 4, const Radius.circular(8)),
+      RRect.fromLTRBR(w * 0.05, h * 0.08, w * 0.42, h * 0.94, const Radius.circular(6)),
       _Stroke.fill(color.withOpacity(0.15)),
     );
     for (var i = 0; i < 3; i++) {
-      final y = 16.0 + i * 12.0;
-      canvas.drawLine(Offset(14, y), Offset(50, y), _Stroke.of(color, 4));
+      final y = h * (0.28 + i * 0.22);
+      canvas.drawLine(Offset(w * 0.11, y), Offset(w * 0.36, y), _Stroke.of(color, 3));
     }
     final bars = [0.5, 0.8, 0.4, 0.65];
     for (var i = 0; i < bars.length; i++) {
-      final x = 68.0 + i * 20.0;
-      final h = (size.height - 20) * bars[i];
+      final x = w * (0.50 + i * 0.125);
+      final bh = (h * 0.78) * bars[i];
       canvas.drawRRect(
-        RRect.fromLTRBR(x, size.height - 8 - h, x + 12, size.height - 8, const Radius.circular(4)),
+        RRect.fromLTRBR(x, h * 0.86 - bh, x + w * 0.075, h * 0.86, const Radius.circular(3)),
         _Stroke.fill(color.withOpacity(0.45)),
       );
     }
@@ -582,6 +561,7 @@ class _ReportPainter2 extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 咨询：麦克风 + 波形。
 class _WaveArt extends StatelessWidget {
@@ -598,20 +578,25 @@ class _WavePainter2 extends CustomPainter {
   _WavePainter2(this.color);
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRRect(RRect.fromLTRBR(8, 6, 30, 32, const Radius.circular(9)), _Stroke.of(color));
-    canvas.drawLine(Offset(19, 32), Offset(19, 44), _Stroke.of(color));
-    canvas.drawLine(Offset(10, 44), Offset(28, 44), _Stroke.of(color));
-    final midY = size.height / 2;
-    final amps = [6.0, 12.0, 18.0, 12.0, 20.0, 12.0, 16.0, 9.0, 6.0];
+    final w = size.width, h = size.height;
+    canvas.drawRRect(
+        RRect.fromLTRBR(w * 0.06, h * 0.12, w * 0.22, h * 0.70, const Radius.circular(7)),
+        _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.14, h * 0.70), Offset(w * 0.14, h * 0.90), _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.07, h * 0.90), Offset(w * 0.21, h * 0.90), _Stroke.of(color, 2.5));
+    final midY = h * 0.5;
+    final amps = [0.10, 0.22, 0.34, 0.22, 0.40, 0.22, 0.30, 0.16, 0.10, 0.06];
     for (var i = 0; i < amps.length; i++) {
-      final x = 44.0 + i * 13.0;
-      canvas.drawLine(Offset(x, midY - amps[i]), Offset(x, midY + amps[i]), _Stroke.of(color.withOpacity(0.6)));
+      final x = w * (0.30 + i * 0.065);
+      final a = h * amps[i];
+      canvas.drawLine(Offset(x, midY - a), Offset(x, midY + a), _Stroke.of(color.withOpacity(0.6), 2.5));
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
 
 /// 科普图文卡：左圆图标 + 右标题说明 + 底部浅色标签。
 class _TipCard extends StatelessWidget {
@@ -1115,6 +1100,7 @@ class _FamilyTabState extends State<FamilyTab> {
       ),
       body: SafeArea(
         child: Column(children: [
+          if (_msgs.isEmpty) ...[
           const SizedBox(height: 6),
           Container(
             width: 112,
@@ -1122,7 +1108,7 @@ class _FamilyTabState extends State<FamilyTab> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white,
-              border: Border.all(color: const Color(0xFFD8E5FB), width: 3),
+              border: Border.all(color: const Color(0xFFDCE6F7), width: 3),
               boxShadow: [
                 BoxShadow(
                     color: AfuColors.primaryDeep.withOpacity(0.10),
@@ -1133,28 +1119,15 @@ class _FamilyTabState extends State<FamilyTab> {
             padding: const EdgeInsets.all(5),
             child: ClipOval(child: Image.asset('assets/assistant.png', fit: BoxFit.cover)),
           ),
+          ],
           _QuickBar(onTap: _quote),
           Expanded(
             child: _msgs.isEmpty
-                ? SingleChildScrollView(
-                    child: Column(children: [
-                      const SizedBox(height: 8),
-                      Opacity(
-                        opacity: 0.85,
-                        child: Container(
-                          width: 120,
-                          height: 120,
-                          decoration: const BoxDecoration(
-                              color: Color(0xFFE8EFFD), shape: BoxShape.circle),
-                          child: const Icon(Icons.forum_outlined,
-                              size: 60, color: AfuColors.primaryDeep),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text('还没有聊天记录\n点上方卡片，引用一条健康记录到对话中，和家人一起讨论',
-                          style: AfuElderText.secondary,
-                          textAlign: TextAlign.center),
-                    ]),
+                ? const Padding(
+                    padding: EdgeInsets.only(top: 24),
+                    child: Text('还没有聊天记录\n点上方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
+                        style: TextStyle(fontSize: 18, color: Color(0xFF555555), height: 1.8),
+                        textAlign: TextAlign.center),
                   )
                 : ListView.builder(
                     controller: _list,
@@ -1193,7 +1166,7 @@ class _FamilyTabState extends State<FamilyTab> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: const Color(0xFFD8E5FB)),
+                border: Border.all(color: const Color(0xFFDCE6F7)),
                 boxShadow: [
                   BoxShadow(
                       color: AfuColors.primaryDeep.withOpacity(0.08),
@@ -1244,9 +1217,9 @@ class _QuickBar extends StatelessWidget {
   const _QuickBar({required this.onTap});
 
   static const _items = [
-    (Icons.description_outlined, '发送体检报告'),
-    (Icons.chat_bubble_outline, '发送问事记录'),
-    (Icons.check_circle_outline, '发送打卡记录'),
+    (Icons.description_outlined, '体检报告'),
+    (Icons.chat_bubble_outline, '问事记录'),
+    (Icons.check_circle_outline, '打卡记录'),
   ];
 
   @override
@@ -1267,7 +1240,7 @@ class _QuickBar extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFD8E5FB)),
+                    border: Border.all(color: const Color(0xFFDCE6F7)),
                     boxShadow: [
                       BoxShadow(
                           color: AfuColors.primaryDeep.withOpacity(0.06),
@@ -1302,7 +1275,7 @@ class _QuickBar extends StatelessWidget {
   }
 }
 
-/// 聊天泡：老人右蓝、家属左白；引用的记录以内嵌缩略卡展示并标注来源。
+/// 聊天泡：长辈右蓝、家属左白；引用的记录以内嵌缩略卡展示并标注来源。
 class _FamBubble extends StatelessWidget {
   final _FamMsg msg;
   const _FamBubble({required this.msg});
@@ -1314,7 +1287,7 @@ class _FamBubble extends StatelessWidget {
     final inkColor =
         msg.isMe ? Colors.white : const Color(0xFF222222);
     final border =
-        msg.isMe ? null : Border.all(color: const Color(0xFFD8E5FB));
+        msg.isMe ? null : Border.all(color: const Color(0xFFDCE6F7));
     if (msg.kind == 'image' && msg.image.isNotEmpty) {
       try {
         return Align(
@@ -1368,7 +1341,7 @@ class _FamBubble extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: msg.isMe
                         ? Colors.white.withOpacity(0.16)
-                        : const Color(0xFFF2F6FE),
+                        : const Color(0xFFF5F8FD),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Column(
@@ -1504,16 +1477,16 @@ class _FamInputBar extends StatelessWidget {
               hintStyle:
                   const TextStyle(fontSize: 18, color: Color(0xFF555555)),
               filled: true,
-              fillColor: const Color(0xFFF2F6FE),
+              fillColor: const Color(0xFFF5F8FD),
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(28),
-                borderSide: const BorderSide(color: Color(0xFFD8E5FB)),
+                borderSide: const BorderSide(color: Color(0xFFDCE6F7)),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(28),
-                borderSide: const BorderSide(color: Color(0xFFD8E5FB)),
+                borderSide: const BorderSide(color: Color(0xFFDCE6F7)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(28),
@@ -1612,7 +1585,7 @@ class _AudioBubbleState extends State<_AudioBubble> {
           color: isMe ? AfuColors.primaryDeep : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border:
-              isMe ? null : Border.all(color: const Color(0xFFD8E5FB)),
+              isMe ? null : Border.all(color: const Color(0xFFDCE6F7)),
         ),
         child: AfuPressable(
           onTap: _toggle,
@@ -1649,8 +1622,8 @@ class SettingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AfuColors.bg,
-      appBar: AppBar(title: const Text('设置')),
+      backgroundColor: const Color(0xFFF7F9FD),
+      appBar: AppBar(title: const Text('设置'), backgroundColor: const Color(0xFFF7F9FD), scrolledUnderElevation: 0),
       body: const SafeArea(child: MeTab(role: 'elder')),
     );
   }

@@ -4,7 +4,7 @@ import '../afu/afu_theme.dart';
 import 'tabs/consult_drug_chat_tab.dart';
 import 'tabs/hub_pages.dart';
 
-/// 老人端 4 Tab：问事 / 健康百事 / 家人相伴 / 设置。
+/// 长辈端 4 Tab：问事 / 健康百事 / 家人相伴 / 设置。
 class ElderHome extends StatefulWidget {
   const ElderHome({super.key});
   @override
