@@ -7,11 +7,13 @@ import '../../services/api.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
 import 'hub_pages.dart';
+import 'vitals_tab.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
 class ConsultsTab extends StatefulWidget {
-  const ConsultsTab({super.key});
+  final bool mine;
+  const ConsultsTab({super.key, this.mine = false});
   @override
   State<ConsultsTab> createState() => _ConsultsTabState();
 }
@@ -45,7 +47,7 @@ class _ConsultsTabState extends State<ConsultsTab> {
   @override
   void initState() { super.initState(); refresh(); }
   Future<void> refresh() async {
-    try { items = await ApiService.consultList(); } catch (_) { items = []; }
+    try { items = await ApiService.consultList(mine: widget.mine); } catch (_) { items = []; }
     if (mounted) setState(() => loading = false);
   }
 
@@ -133,7 +135,8 @@ class _DrugQueryTabState extends State<DrugQueryTab> {
 
 /// Day4 症状自查：POST {input_text} → {advice_text,risk}，red/yellow/green 三色展示
 class SymptomTab extends StatefulWidget {
-  const SymptomTab({super.key});
+  final bool mine;
+  const SymptomTab({super.key, this.mine = false});
   @override
   State<SymptomTab> createState() => _SymptomTabState();
 }
@@ -147,7 +150,7 @@ class _SymptomTabState extends State<SymptomTab> {
   @override
   void initState() { super.initState(); loadHistory(); }
   Future<void> loadHistory() async {
-    try { history = await ApiService.symptomHistory(); } catch (_) {}
+    try { history = await ApiService.symptomHistory(mine: widget.mine); } catch (_) {}
     if (mounted) setState(() {});
   }
 
@@ -339,66 +342,17 @@ class _ChatTabState extends State<ChatTab> {
     super.dispose();
   }
 
-  /// 快捷入口：0查药品 1问症状 2看报告 3语音咨询
+  /// 快捷卡片：0 体征（直接进体征记录页，支持上传/查看）
+  ///           1 报告（直接进体检报告解读页，支持上传）
+  /// 查药 / 自查 / 咨询不再做独立卡片入口，老人直接在输入框文字或语音提问即可。
   Future<void> onQuick(int i) async {
     if (i == 0) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => AfuSubPage(title: '查药', child: const DrugQueryTab())));
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const AfuSubPage(title: '体征', child: VitalsTab())));
       return;
     }
-    if (i == 1) {
-      inputC.text = '我想咨询一下这个症状';
-      return;
-    }
-    if (i == 2) {
-      _pickReport();
-      return;
-    }
-    startHoldToTalk(autoSend: true);
-  }
-
-  Future<void> _pickReport() async {
-    final src = await showModalBottomSheet<ImageSource>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: const Icon(Icons.photo_library, size: 32),
-            title: const Text('从相册选', style: TextStyle(fontSize: 20)),
-            onTap: () => Navigator.of(context).pop(ImageSource.gallery),
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_camera, size: 32),
-            title: const Text('拍照', style: TextStyle(fontSize: 20)),
-            onTap: () => Navigator.of(context).pop(ImageSource.camera),
-          ),
-        ]),
-      ),
-    );
-    if (src == null || !mounted) return;
-    final f = await ImagePicker().pickImage(source: src);
-    if (f == null || !mounted) return;
-    try {
-      final r = await ApiService.uploadReport(await f.readAsBytes(), f.name);
-      if (!mounted) return;
-      final ocr = (r['ocr_text'] ?? '').toString();
-      final adv = (r['advice_text'] ?? '').toString();
-      showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('报告解读', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
-              child: Text(ocr.isEmpty ? adv : '$ocr\n\n$adv',
-                  style: const TextStyle(fontSize: 19, height: 1.5))),
-          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('知道了', style: TextStyle(fontSize: 19)))],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
-    }
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const AfuSubPage(title: '报告', child: ReportTab())));
   }
 
   Future<void> send(String text) async {

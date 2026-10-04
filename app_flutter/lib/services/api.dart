@@ -348,8 +348,8 @@ class ApiService {
     return Map<String, dynamic>.from(res.data);
   }
 
-  static Future<List> symptomHistory() async {
-    final q = await withElder();
+  static Future<List> symptomHistory({bool mine = false}) async {
+    final q = await withElder({}, mine);
     final res = await _dio.get('/api/symptom-check', queryParameters: q);
     return res.data is List ? res.data : [];
   }

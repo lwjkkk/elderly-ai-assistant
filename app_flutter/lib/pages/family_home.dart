@@ -10,7 +10,7 @@ import 'tabs/health_overview.dart';
  
 import 'login_page.dart';
 import 'tabs/consult_drug_chat_tab.dart' show ChatTab;
-import 'tabs/hub_pages.dart' show FamilyTab;
+import 'tabs/hub_pages.dart' show FamilyTab, chatScale, HubNav;
 
 /// 家属端 4Tab：健康总览 / 体征 / 报告 / 我的（阿福风统一视觉）。
 class FamilyHome extends StatefulWidget {
@@ -20,11 +20,29 @@ class FamilyHome extends StatefulWidget {
 }
 
 class _FamilyHomeState extends State<FamilyHome> {
-  int idx = 0;
+  int idx = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    // 响应跨 Tab 跳转（如总览页「分享记录」→ 家人互动）
+    HubNav.tab.addListener(_onHubTab);
+  }
+
+  @override
+  void dispose() {
+    HubNav.tab.removeListener(_onHubTab);
+    super.dispose();
+  }
+
+  void _onHubTab() {
+    if (mounted && HubNav.tab.value != idx) {
+      setState(() => idx = HubNav.tab.value);
+    }
+  }
 
     @override
   Widget build(BuildContext context) {
-    const titles = ['健康总览', 'AI问事', '家人互动', '个人中心'];
     const pages = [
       HealthOverviewTab(role: 'family'),
       ChatTab(),
@@ -33,11 +51,7 @@ class _FamilyHomeState extends State<FamilyHome> {
     ];
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FD),
-      appBar: AppBar(
-        title: Text(titles[idx]),
-        backgroundColor: const Color(0xFFF7F9FD),
-        scrolledUnderElevation: 0,
-      ),
+      // 全局规则：不再显示页面顶部标题栏，各页面内容直接铺满
       body: SafeArea(key: ValueKey(idx), child: pages[idx]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: idx,
@@ -142,48 +156,101 @@ class _FamMeState extends State<FamMe> {
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
-          if (!bound) ...[
-            const SizedBox(height: 16),
-            _bindCard(),
-          ],
+          const SizedBox(height: 24),
+          _fontEntry(),
+          const SizedBox(height: 24),
+          _bindCard(),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(
+            child: ElevatedButton(
               onPressed: _logout,
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFA8BFE4), width: 1.5),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3478D9),
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
-              child: const Text('\u9000\u51fa\u767b\u5f55', style: TextStyle(fontSize: 20)),
+              child: const Text('\u9000\u51fa\u767b\u5f55'),
             ),
           ),
-          if (bound) ...[
-            const SizedBox(height: 16),
-            _bindCard(),
-          ],
         ],
       ),
     );
   }
 
+  /// 字体大小入口：点击跳转新页面，小/中/大三档（与长辈端同一套设置）。
+  Widget _fontEntry() {
+    return AfuCard(
+      child: AfuPressable(
+        onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const _FontSizePage())),
+        borderRadius: 18,
+        child: Row(children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+                color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+            child: const Icon(Icons.text_fields_outlined,
+                size: 30, color: AfuColors.primaryDeep),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('字体大小',
+                style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF222222))),
+          ),
+          ValueListenableBuilder<double>(
+            valueListenable: chatScale,
+            builder: (_, v, __) => Text(
+              v >= 1.3 ? '大' : (v > 1.05 ? '中' : '小'),
+              style: const TextStyle(fontSize: 19, color: Color(0xFF6B7686)),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Icon(Icons.chevron_right, size: 28, color: Color(0xFF8A94A6)),
+        ]),
+      ),
+    );
+  }
+
+
+  /// 头像信息区：左侧圆形头像（水波纹环绕）+ 右侧用户名与编辑入口。
   Widget _profileCard() {
     return AfuCard(
       child: Row(children: [
-        Container(
-          width: 76,
-          height: 76,
-          decoration: const BoxDecoration(color: Color(0xFFEBF1FB), shape: BoxShape.circle),
-          child: ClipOval(child: Image.asset(avatarAsset, width: 72, height: 72, fit: BoxFit.cover)),
-        ),
+        _RippleAvatar(asset: avatarAsset),
         const SizedBox(width: 14),
         Expanded(
-          child: Text(nickname, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+          child: Text(nickname,
+              style: const TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF222222))),
+        ),
+        AfuPressable(
+          onTap: () async {
+            await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => _EditProfilePage(
+                    nickname: nickname, asset: avatarAsset)));
+            await _load();
+            if (mounted) setState(() {});
+          },
+          borderRadius: 14,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Text('编辑',
+                style: TextStyle(fontSize: 17, color: Color(0xFF6B7686))),
+          ),
         ),
       ]),
     );
   }
+
 
   Widget _bindCard() {
     return AfuCard(
@@ -219,6 +286,12 @@ class _FamMeState extends State<FamMe> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF3478D9),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
             onPressed: binding ? null : _doBind,
             child: Text(binding ? '\u7ed1\u5b9a\u4e2d\u2026' : '\u786e\u8ba4\u7ed1\u5b9a'),
           ),
@@ -276,6 +349,288 @@ class _FamMeState extends State<FamMe> {
                   color: active ? const Color(0xFF2E7D4F) : const Color(0xFF5A6472))),
         ),
       ]),
+    );
+  }
+}
+
+/// 左侧圆形头像：淡淡水波纹环绕动画。
+class _RippleAvatar extends StatefulWidget {
+  final String asset;
+  const _RippleAvatar({required this.asset});
+  @override
+  State<_RippleAvatar> createState() => _RippleAvatarState();
+}
+
+class _RippleAvatarState extends State<_RippleAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 2400))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 84,
+      height: 84,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) => CustomPaint(
+          painter: _RipplePainter(_c.value),
+          child: Center(
+            child: Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFEBF1FB), shape: BoxShape.circle),
+              child: ClipOval(
+                  child: Image.asset(widget.asset,
+                      width: 64, height: 64, fit: BoxFit.cover)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RipplePainter extends CustomPainter {
+  final double t;
+  const _RipplePainter(this.t);
+  @override
+  void paint(Canvas canvas, Size s) {
+    final c = Offset(s.width / 2, s.height / 2);
+    for (var i = 0; i < 2; i++) {
+      final p = (t + i * 0.5) % 1.0;
+      canvas.drawCircle(
+          c,
+          30 + p * 12,
+          Paint()
+            ..color = const Color(0xFF3478D9).withOpacity(0.18 * (1 - p))
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RipplePainter old) => old.t != t;
+}
+
+/// 字体大小选择页：小/中/大三档，全 App 实时生效。
+class _FontSizePage extends StatefulWidget {
+  const _FontSizePage();
+  @override
+  State<_FontSizePage> createState() => _FontSizePageState();
+}
+
+class _FontSizePageState extends State<_FontSizePage> {
+  static const _names = ['小', '中', '大'];
+  static const _descs = ['标准大小，看得清', '稍大一点，更轻松', '最大字号，专为老花眼'];
+  static const _scales = [1.0, 1.15, 1.3];
+
+  Future<void> _pick(double v) async {
+    chatScale.value = v;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('chat_text_scale', v);
+    } catch (_) {}
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FD),
+      appBar: AppBar(
+        title: const Text('字体大小', style: TextStyle(color: Color(0xFF222222))),
+        backgroundColor: const Color(0xFFF7F9FD),
+        scrolledUnderElevation: 0,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          AfuCard(
+            padding: EdgeInsets.zero,
+            child: Column(children: [
+              for (var i = 0; i < _names.length; i++)
+                AfuPressable(
+                  onTap: () => _pick(_scales[i]),
+                  borderRadius: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 18),
+                    decoration: BoxDecoration(
+                      border: i == _names.length - 1
+                          ? null
+                          : const Border(
+                              bottom: BorderSide(
+                                  color: Color(0xFFEDF1F7), width: 1)),
+                    ),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(_names[i],
+                                  style: const TextStyle(
+                                      fontSize: 21,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF222222))),
+                              const SizedBox(height: 4),
+                              Text(_descs[i],
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Color(0xFF6B7686))),
+                            ]),
+                      ),
+                      ValueListenableBuilder<double>(
+                        valueListenable: chatScale,
+                        builder: (_, v, __) => (v - _scales[i]).abs() < 0.01
+                            ? const Icon(Icons.check_circle,
+                                size: 28, color: Color(0xFF3478D9))
+                            : const SizedBox(width: 28),
+                      ),
+                    ]),
+                  ),
+                ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 编辑资料页：修改昵称、上传自定义头像。
+class _EditProfilePage extends StatefulWidget {
+  final String nickname;
+  final String asset;
+  const _EditProfilePage({required this.nickname, required this.asset});
+  @override
+  State<_EditProfilePage> createState() => _EditProfilePageState();
+}
+
+class _EditProfilePageState extends State<_EditProfilePage> {
+  late final TextEditingController _nameC =
+      TextEditingController(text: widget.nickname);
+  String? _picked;
+
+  @override
+  void dispose() {
+    _nameC.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameC.text.trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (name.isNotEmpty) {
+        await prefs.setString('nickname', name);
+      }
+      if (_picked != null) await prefs.setString('avatar', _picked!);
+    } catch (_) {}
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FD),
+      appBar: AppBar(
+        title: const Text('编辑资料', style: TextStyle(color: Color(0xFF222222))),
+        backgroundColor: const Color(0xFFF7F9FD),
+        scrolledUnderElevation: 0,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          AfuCard(
+            child: Column(children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(
+                    color: Color(0xFFEBF1FB), shape: BoxShape.circle),
+                child: ClipOval(
+                    child: Image.asset(widget.asset,
+                        width: 92, height: 92, fit: BoxFit.cover)),
+              ),
+              const SizedBox(height: 12),
+              AfuPressable(
+                onTap: () {
+                  // 【等待后端接口开发完成】头像上传接口就绪后在此接入
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('头像上传功能即将上线')));
+                },
+                borderRadius: 14,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text('上传头像',
+                      style: TextStyle(fontSize: 18, color: Color(0xFF3478D9))),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          AfuCard(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('昵称',
+                      style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF222222))),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _nameC,
+                    style: const TextStyle(
+                        fontSize: 20, color: Color(0xFF222222)),
+                    decoration: InputDecoration(
+                      hintText: '输入新昵称',
+                      hintStyle: const TextStyle(
+                          fontSize: 19, color: Color(0xFF6B7686)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 22, vertical: 19),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide:
+                            const BorderSide(color: Color(0xFFDCE6F7)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(22),
+                        borderSide:
+                            const BorderSide(color: Color(0xFFDCE6F7)),
+                      ),
+                    ),
+                  ),
+                ]),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3478D9),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              child: const Text('保存'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

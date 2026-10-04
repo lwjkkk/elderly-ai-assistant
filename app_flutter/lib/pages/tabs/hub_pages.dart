@@ -12,6 +12,7 @@ import '../../afu/afu_widgets.dart';
 import '../../afu/afu_chat_page.dart' show AfuMessage, AfuBubble;
 import '../../services/api.dart';
 import 'consult_drug_chat_tab.dart';
+import '../bind_page.dart';
 import 'meds_tab.dart';
 import 'vitals_tab.dart';
 import 'me_tab.dart';
@@ -726,12 +727,309 @@ class _LinkRow extends StatelessWidget {
 /// 家人相伴 V3：人物头图 + 引用分享 + 问事同款输入栏。
 /// 健康数据自动同步家属端（后端原有接口），本页卡片只做引用到对话，不推送。
 /// 记录本地持久化；后端家属消息接口就绪后替换 _loadHistory/_saveHistory 即可。
+/// 家人互动：会话列表（借鉴微信"先选人、再进对话"的交互思路，不复刻UI）。
+/// 展示已绑定的所有亲属，点击某条再进入与TA的单独对话页。
 class FamilyTab extends StatefulWidget {
   const FamilyTab({super.key});
   @override
   State<FamilyTab> createState() => _FamilyTabState();
 }
 
+/// 会话列表里一条绑定关系的展示信息。
+class _FamConvItem {
+  final String name; // 对方昵称
+  final String key; // 该会话的本地存储键（按人区分）
+  final String preview; // 最后一条消息预览
+  final bool active; // 是否已确认绑定
+  const _FamConvItem({
+    required this.name,
+    required this.key,
+    this.preview = '',
+    this.active = true,
+  });
+}
+
+class _FamilyTabState extends State<FamilyTab> {
+  bool _loading = true;
+  List<_FamConvItem> _convs = [];
+  String _role = 'elder';
+
+  /// 打开绑定页：长辈生成邀请码、家属输入邀请码完成绑定。
+  /// （个人中心已按要求不再承载亲属绑定/邀请码模块，绑定入口统一放在「家人互动」）
+  void _openBind() {
+    Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) =>
+            AfuSubPage(title: '添加家人', child: BindPage(role: _role))));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final items = <_FamConvItem>[];
+    try {
+      _role = await ApiService.getRole() ?? 'elder';
+      final binds = await ApiService.bindList();
+      var idx = 0;
+      for (final b in binds) {
+        final m = b is Map
+            ? Map<String, dynamic>.from(b as Map)
+            : <String, dynamic>{};
+        final active = (m['status'] ?? '').toString() == 'active';
+        final name = (m['other_nickname'] ??
+                m['nickname'] ??
+                m['elder_nickname'] ??
+                m['family_nickname'] ??
+                '家人 $idx')
+            .toString();
+        final key = 'family_chat_${name}_$idx';
+        final item = _FamConvItem(name: name, key: key, active: active);
+        items.add(item);
+        idx++;
+      }
+      // 读取每个会话的最后一条消息作预览
+      for (var i = 0; i < items.length; i++) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final raw = prefs.getString(items[i].key);
+          if (raw != null && raw.isNotEmpty) {
+            final list = jsonDecode(raw) as List;
+            if (list.isNotEmpty) {
+              final last =
+                  Map<String, dynamic>.from(list.last as Map);
+              final kind = (last['kind'] ?? 'text').toString();
+              final txt = (last['text'] ?? (last['title'] ?? '')).toString();
+              final preview = kind == 'image'
+                  ? '[图片]'
+                  : (kind == 'audio' ? '[语音]' : txt);
+              items[i] = _FamConvItem(
+                  name: items[i].name,
+                  key: items[i].key,
+                  preview: preview,
+                  active: items[i].active);
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    if (mounted) setState(() { _convs = items; _loading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FD),
+      appBar: AppBar(
+        // 全局规则：不再显示页面顶部标题
+        backgroundColor: const Color(0xFFF7F9FD),
+        scrolledUnderElevation: 0,
+        actions: [
+          IconButton(
+            tooltip: '添加家人',
+            iconSize: 30,
+            onPressed: _openBind,
+            icon: const Icon(Icons.person_add_outlined,
+                color: AfuColors.primaryDeep),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          color: AfuColors.primaryDeep,
+          child: _loading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                      color: AfuColors.primaryDeep))
+              : _convs.isEmpty
+                  ? ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      children: [
+                        _guideBox(),
+                        const SizedBox(height: 16),
+                        _helpCard(),
+                      ],
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      children: [
+                        for (final c in _convs) _convTile(c),
+                        const SizedBox(height: 16),
+                        _dynamicCard(),
+                        const SizedBox(height: 16),
+                        _helpCard(),
+                      ],
+                    ),
+        ),
+      ),
+    );
+  }
+
+  /// 单个亲戚条目卡片：点击进入与该亲属的对话。
+  Widget _convTile(_FamConvItem c) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AfuPressable(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => FamConversationPage(
+                name: c.name, storeKey: c.key))),
+        borderRadius: 22,
+        child: AfuCard(
+          child: Row(children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: const BoxDecoration(
+                color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+            child: const Icon(Icons.person,
+                size: 40, color: AfuColors.primaryDeep),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(c.name,
+                style:
+                    AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+          ),
+          const SizedBox(width: 10),
+          const Text('去对话 >',
+              style: TextStyle(fontSize: 17, color: Color(0xFF8A94A6))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// 家人互动空状态：简约对话插图 + 友好提示。
+  /// 家人互动空状态内容：简约对话插图 + 友好提示（白色圆角卡）。
+  Widget _guideBox() {
+    return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFDCE6F7)),
+            boxShadow: [
+              BoxShadow(
+                  color: AfuColors.primaryDeep.withOpacity(0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6)),
+            ],
+          ),
+          child: Column(children: [
+            // 简约插图：两个对话气泡
+            Container(
+              width: 120,
+              height: 96,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8EFFD),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: CustomPaint(painter: _FamEmptyPainter()),
+            ),
+            const SizedBox(height: 20),
+            const Text('还没有聊天记录',
+                style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF222222))),
+            const SizedBox(height: 12),
+            const Text('点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
+                style: TextStyle(
+                    fontSize: 19, color: Color(0xFF555555), height: 1.6),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _openBind,
+                child: const Text('去绑定家人'),
+              ),
+            ),
+          ]),
+    );
+  }
+
+  /// 长辈健康动态卡：最新用药提醒 + 最新体征记录。
+  /// 数据走现有列表接口自动读取（绑定长辈自动同步，无需新后端接口）。
+  Widget _dynamicCard() {
+    return const _ElderDynamic();
+  }
+
+  /// 家人互联帮助提示卡。
+  Widget _helpCard() {
+    return AfuCard(
+      child: Row(children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+              color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+          child: const Icon(Icons.handshake_outlined,
+              size: 30, color: AfuColors.primaryDeep),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('家人互联小提示',
+                    style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF222222))),
+                SizedBox(height: 6),
+                Text('绑定长辈后，可查看长辈健康记录，及时收到用药提醒',
+                    style: TextStyle(
+                        fontSize: 18,
+                        color: Color(0xFF222222),
+                        height: 1.5)),
+              ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// 家人互动空状态简约插图：两个对话气泡。
+class _FamEmptyPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size s) {
+    final stroke = Paint()
+      ..color = const Color(0xFF7AA5F0)
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = const Color(0xFF7AA5F0)
+      ..style = PaintingStyle.fill;
+    final b1 = RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, s.width * 0.58, s.height * 0.46),
+        const Radius.circular(12));
+    canvas.drawRRect(b1, stroke);
+    for (var i = 0; i < 3; i++) {
+      canvas.drawCircle(
+          Offset(s.width * (0.16 + i * 0.13), s.height * 0.23), 3, fill);
+    }
+    final b2 = RRect.fromRectAndRadius(
+        Rect.fromLTWH(s.width * 0.36, s.height * 0.52, s.width * 0.64,
+            s.height * 0.48),
+        const Radius.circular(12));
+    canvas.drawRRect(
+        b2, Paint()..color = const Color(0xFF7AA5F0).withOpacity(0.18));
+    canvas.drawRRect(b2, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// 单条消息的数据模型（本地持久化）。
 class _FamMsg {
   final bool isMe;
   final String kind;
@@ -740,14 +1038,15 @@ class _FamMsg {
   final List<String> lines;
   final String image;
   final int dur;
-  const _FamMsg(
-      {required this.isMe,
-      this.kind = 'text',
-      this.text = '',
-      this.title = '',
-      this.lines = const [],
-      this.image = '',
-      this.dur = 0});
+  const _FamMsg({
+    required this.isMe,
+    this.kind = 'text',
+    this.text = '',
+    this.title = '',
+    this.lines = const [],
+    this.image = '',
+    this.dur = 0,
+  });
 
   Map<String, dynamic> toJson() => {
         'isMe': isMe,
@@ -764,26 +1063,36 @@ class _FamMsg {
         kind: (j['kind'] ?? 'text').toString(),
         text: (j['text'] ?? '').toString(),
         title: (j['title'] ?? '').toString(),
-        lines: [for (final e in (j['lines'] as List? ?? [])) e.toString()],
+        lines: [
+          for (final e in (j['lines'] as List? ?? [])) e.toString()
+        ],
         image: (j['image'] ?? '').toString(),
         dur: (j['dur'] as num? ?? 0).toInt(),
       );
 }
 
-class _FamilyTabState extends State<FamilyTab> {
-  bool? _bound;
+/// 与某一亲属的单聊页面。storeKey 用于按人区分本地消息。
+class FamConversationPage extends StatefulWidget {
+  final String name;
+  final String storeKey;
+  const FamConversationPage(
+      {super.key, required this.name, required this.storeKey});
+  @override
+  State<FamConversationPage> createState() => _FamConversationState();
+}
+
+class _FamConversationState extends State<FamConversationPage> {
   List<_FamMsg> _msgs = [];
   final _input = TextEditingController();
   final _list = ScrollController();
   bool _holding = false;
   final _rec = AudioRecorder();
   DateTime? _recStart;
-  static const _storeKey = 'family_chat_v1';
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _loadHistory();
   }
 
   @override
@@ -796,24 +1105,10 @@ class _FamilyTabState extends State<FamilyTab> {
     super.dispose();
   }
 
-  Future<void> _init() async {
-    try {
-      final binds = await ApiService.bindList();
-      final has = binds.any((b) {
-        final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-        return m['status'] == 'active';
-      });
-      if (mounted) setState(() => _bound = has);
-    } catch (_) {
-      if (mounted) setState(() => _bound = false);
-    }
-    await _loadHistory();
-  }
-
   Future<void> _loadHistory() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storeKey);
+      final raw = prefs.getString(widget.storeKey);
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List;
       _msgs = [
@@ -828,7 +1123,7 @@ class _FamilyTabState extends State<FamilyTab> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          _storeKey, jsonEncode([for (final m in _msgs) m.toJson()]));
+          widget.storeKey, jsonEncode([for (final m in _msgs) m.toJson()]));
     } catch (_) {}
   }
 
@@ -850,7 +1145,6 @@ class _FamilyTabState extends State<FamilyTab> {
     _push(_FamMsg(isMe: true, text: t));
   }
 
-  /// 家人聊天：长按录音，松手直接发出录音（不转文字；问事页保持转文字不变）。
   Future<void> _voiceStart() async {
     try {
       if (!await _rec.hasPermission()) throw Exception('no mic');
@@ -864,7 +1158,7 @@ class _FamilyTabState extends State<FamilyTab> {
       if (mounted) {
         setState(() => _holding = false);
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('录音不可用，请打字聊天')));
+            const SnackBar(content: Text('录音不可用，请用文字')));
       }
     }
   }
@@ -877,22 +1171,25 @@ class _FamilyTabState extends State<FamilyTab> {
           ? 0
           : DateTime.now().difference(_recStart!).inSeconds;
       if (path != null && secs >= 1) {
-        // TODO(后端家属消息接口)：把录音文件上传，服务端下发给对方
-        _push(_FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
+        _push(
+            _FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
       }
     } catch (_) {}
     _recStart = null;
     if (mounted) setState(() => _holding = false);
   }
 
-  /// 引用分享：把某条历史记录引用到对话里（数据本身自动同步，不在这里推送）。
+  /// 快捷卡片：0体检报告 1问事记录 2打卡记录。
   Future<void> _quote(int i) async {
     if (i == 0) {
       try {
         final list = await ApiService.reportList();
         if (list.isEmpty) {
           _push(const _FamMsg(
-              isMe: true, kind: 'health', title: '体检报告', lines: ['还没有上传过体检报告']));
+              isMe: true,
+              kind: 'health',
+              title: '体检报告',
+              lines: ['还没有上传过体检报告']));
           return;
         }
         final m = Map<String, dynamic>.from(list.first as Map);
@@ -906,7 +1203,10 @@ class _FamilyTabState extends State<FamilyTab> {
         ]));
       } catch (_) {
         _push(const _FamMsg(
-            isMe: true, kind: 'health', title: '体检报告', lines: ['报告加载失败，稍后再试']));
+            isMe: true,
+            kind: 'health',
+            title: '体检报告',
+            lines: ['报告读取失败，稍后再试']));
       }
       return;
     }
@@ -914,7 +1214,10 @@ class _FamilyTabState extends State<FamilyTab> {
       final h = ChatHistory.items.where((m) => !m.thinking).toList();
       if (h.length < 2) {
         _push(const _FamMsg(
-            isMe: true, kind: 'health', title: '问事记录', lines: ['还没有问过问题']));
+            isMe: true,
+            kind: 'health',
+            title: '问事记录',
+            lines: ['还没有使用过问事']));
         return;
       }
       final q = h[h.length - 2].text;
@@ -932,7 +1235,8 @@ class _FamilyTabState extends State<FamilyTab> {
         final map = m is Map
             ? Map<String, dynamic>.from(m as Map)
             : <String, dynamic>{};
-        final slots = map['slots'] is List ? List.from(map['slots']) : [];
+        final slots =
+            map['slots'] is List ? List.from(map['slots']) : [];
         for (final s in slots) {
           total++;
           final sm = s is Map
@@ -945,19 +1249,20 @@ class _FamilyTabState extends State<FamilyTab> {
           isMe: true,
           kind: 'health',
           title: '打卡记录',
-          lines: ['今日已打卡 $taken / $total 次']));
+          lines: ['今天已打卡 $taken / $total 次']));
     } catch (_) {
       _push(const _FamMsg(
-          isMe: true, kind: 'health', title: '打卡记录', lines: ['打卡记录加载失败，稍后再试']));
+          isMe: true, kind: 'health', title: '打卡记录', lines: ['打卡记录读取失败，稍后再试']));
     }
   }
 
-  /// 加号弹窗：上传图片 / 引用历史健康记录。
+  /// 加号菜单：上传图片 / 引用健康记录。
   void _plusMenu() {
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
@@ -986,7 +1291,7 @@ class _FamilyTabState extends State<FamilyTab> {
           ListTile(
             leading: const Icon(Icons.format_quote_outlined,
                 size: 32, color: AfuColors.primaryDeep),
-            title: const Text('引用历史健康记录', style: AfuElderText.body),
+            title: const Text('引用健康记录', style: AfuElderText.body),
             onTap: () {
               Navigator.of(context).pop();
               showModalBottomSheet<void>(
@@ -998,16 +1303,15 @@ class _FamilyTabState extends State<FamilyTab> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     for (var k = 0; k < 3; k++)
                       ListTile(
-                        leading: Icon(
-                            [
-                              Icons.description_outlined,
-                              Icons.chat_bubble_outline,
-                              Icons.check_circle_outline
-                            ][k],
+                        leading: Icon([
+                          Icons.description_outlined,
+                          Icons.chat_bubble_outline,
+                          Icons.check_circle_outline
+                        ][k],
                             size: 32,
                             color: AfuColors.primaryDeep),
                         title: Text(
-                            ['引用最近体检报告', '引用最近问事记录', '引用今日打卡记录'][k],
+                            ['体检报告', '问事记录', '打卡记录'][k],
                             style: AfuElderText.body),
                         onTap: () {
                           Navigator.of(context).pop();
@@ -1024,110 +1328,35 @@ class _FamilyTabState extends State<FamilyTab> {
     );
   }
 
-  void _moreMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            leading: const Icon(Icons.person_add_outlined,
-                size: 32, color: AfuColors.primaryDeep),
-            title: const Text('添加家属', style: AfuElderText.body),
-            onTap: () {
-              Navigator.of(context).pop();
-              HubNav.go(3);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined,
-                size: 32, color: AfuColors.primaryDeep),
-            title: const Text('家属隐私权限管理', style: AfuElderText.body),
-            onTap: () {
-              Navigator.of(context).pop();
-              showDialog<void>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('家属隐私权限',
-                      style: TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.bold)),
-                  content: const Text('家属可查看您的用药、体征与报告记录。详细权限管理即将上线。',
-                      style: TextStyle(fontSize: 19, height: 1.5)),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child:
-                            const Text('知道了', style: TextStyle(fontSize: 19))),
-                  ],
-                ),
-              );
-            },
-          ),
-        ]),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_bound == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF7F9FD),
-        appBar: AppBar(
-            title: const Text('家人相伴'),
-            backgroundColor: const Color(0xFFF7F9FD),
-            scrolledUnderElevation: 0),
-        body:
-            const Center(child: CircularProgressIndicator(color: AfuColors.primaryDeep)),
-      );
-    }
-    if (!_bound!) return _guide();
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FD),
       appBar: AppBar(
-        title: const Text('家人相伴'),
+        title: Text(widget.name),
         backgroundColor: const Color(0xFFF7F9FD),
         scrolledUnderElevation: 0,
-        actions: [
-          IconButton(
-            tooltip: '更多',
-            iconSize: 30,
-            onPressed: _moreMenu,
-            icon: const Icon(Icons.more_horiz, color: AfuColors.primaryDeep),
-          ),
-        ],
+        leading: IconButton(
+          tooltip: '返回',
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back, color: AfuColors.primaryDeep),
+        ),
       ),
       body: SafeArea(
         child: Column(children: [
-          if (_msgs.isEmpty) ...[
-          const SizedBox(height: 6),
-          Container(
-            width: 112,
-            height: 112,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              border: Border.all(color: const Color(0xFFDCE6F7), width: 3),
-              boxShadow: [
-                BoxShadow(
-                    color: AfuColors.primaryDeep.withOpacity(0.10),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4)),
-              ],
-            ),
-            padding: const EdgeInsets.all(5),
-            child: ClipOval(child: Image.asset('assets/assistant.png', fit: BoxFit.cover)),
-          ),
-          ],
-          _QuickBar(onTap: _quote),
           Expanded(
             child: _msgs.isEmpty
                 ? const Padding(
                     padding: EdgeInsets.only(top: 24),
-                    child: Text('还没有聊天记录\n点上方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
-                        style: TextStyle(fontSize: 18, color: Color(0xFF555555), height: 1.8),
-                        textAlign: TextAlign.center),
+                    child: Center(
+                      child: Text(
+                          '还没有聊天记录\n点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
+                          style: TextStyle(
+                              fontSize: 18,
+                              color: Color(0xFF555555),
+                              height: 1.8),
+                          textAlign: TextAlign.center),
+                    ),
                   )
                 : ListView.builder(
                     controller: _list,
@@ -1148,70 +1377,7 @@ class _FamilyTabState extends State<FamilyTab> {
       ),
     );
   }
-
-  Widget _guide() {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
-      appBar: AppBar(
-          title: const Text('家人相伴'),
-          backgroundColor: const Color(0xFFF7F9FD),
-          scrolledUnderElevation: 0),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: const Color(0xFFDCE6F7)),
-                boxShadow: [
-                  BoxShadow(
-                      color: AfuColors.primaryDeep.withOpacity(0.08),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6)),
-                ],
-              ),
-              child: Column(children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: const BoxDecoration(
-                      color: Color(0xFFE8EFFD), shape: BoxShape.circle),
-                  child: const Icon(Icons.favorite,
-                      size: 52, color: AfuColors.primaryDeep),
-                ),
-                const SizedBox(height: 20),
-                const Text('暂未绑定家属',
-                    style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF222222))),
-                const SizedBox(height: 12),
-                const Text('还没有绑定家人，绑定后可以和家人聊天、一键共享健康信息、接收家人关怀提醒。',
-                    style: TextStyle(
-                        fontSize: 19, color: Color(0xFF555555), height: 1.5),
-                    textAlign: TextAlign.center),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => HubNav.go(3),
-                    child: const Text('去添加家属'),
-                  ),
-                ),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
-
-/// 快捷引用卡：横向居中，把历史记录引用到对话里一起讨论。
 class _QuickBar extends StatelessWidget {
   final ValueChanged<int> onTap;
   const _QuickBar({required this.onTap});
@@ -1623,8 +1789,117 @@ class SettingsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FD),
-      appBar: AppBar(title: const Text('个人中心'), backgroundColor: const Color(0xFFF7F9FD), scrolledUnderElevation: 0),
+      // 全局规则：不再显示页面顶部标题栏
       body: const SafeArea(child: MeTab(role: 'elder')),
+    );
+  }
+}
+
+/// 长辈健康动态：读取最新用药提醒与最新体征记录，点击前往健康总览。
+class _ElderDynamic extends StatefulWidget {
+  const _ElderDynamic();
+  @override
+  State<_ElderDynamic> createState() => _ElderDynamicState();
+}
+
+class _ElderDynamicState extends State<_ElderDynamic> {
+  late final Future<List<String>> _future = _load();
+
+  static Future<List<String>> _load() async {
+    String med = '暂无用药提醒';
+    String vit = '暂无体征记录';
+    try {
+      final meds = await ApiService.medsToday();
+      for (final m in meds) {
+        final map =
+            m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
+        final name = (map['name'] ?? '').toString();
+        final slots = map['slots'] is List ? List.from(map['slots']) : [];
+        for (final s in slots) {
+          final sm =
+              s is Map ? Map<String, dynamic>.from(s as Map) : <String, dynamic>{};
+          if ((sm['status'] ?? 'pending').toString() == 'pending' &&
+              name.isNotEmpty) {
+            final slot = (sm['slot'] ?? '').toString();
+            med = '$name ${slot.isEmpty ? '今日' : slot}待服用';
+            break;
+          }
+        }
+        if (med != '暂无用药提醒') break;
+      }
+    } catch (_) {}
+    try {
+      final vs = await ApiService.vitalsList(days: 30);
+      if (vs.isNotEmpty) {
+        final m = vs is List
+            ? Map<String, dynamic>.from(vs.first as Map)
+            : <String, dynamic>{};
+        final type = (m['type'] ?? '').toString();
+        if (type == 'bp') {
+          vit = '血压 ${m['systolic'] ?? '-'}/${m['diastolic'] ?? '-'}';
+        } else {
+          vit = '$type ${m['value'] ?? ''}'.trim();
+        }
+      }
+    } catch (_) {}
+    return [med, vit];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AfuCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+                color: Color(0xFFE6F4EA), shape: BoxShape.circle),
+            child: const Icon(Icons.monitor_heart_outlined,
+                size: 30, color: Color(0xFF2E7D4F)),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text('长辈健康动态',
+                style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF222222))),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        FutureBuilder<List<String>>(
+          future: _future,
+          builder: (c, s) {
+            final rows = s.data ?? const ['正在加载…', '正在加载…'];
+            return Column(children: [
+              for (final r in rows)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Icon(Icons.circle,
+                        size: 10, color: AfuColors.primaryDeep),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(r,
+                          style: const TextStyle(
+                              fontSize: 18,
+                              color: Color(0xFF222222),
+                              height: 1.5)),
+                    ),
+                  ]),
+                ),
+            ]);
+          },
+        ),
+        const SizedBox(height: 4),
+        AfuPressable(
+          onTap: () => HubNav.go(0),
+          borderRadius: 12,
+          child: const Text('可前往健康总览查看完整记录',
+              style: TextStyle(fontSize: 16, color: Color(0xFF6B7686))),
+        ),
+      ]),
     );
   }
 }

@@ -17,18 +17,16 @@ class MeTab extends StatefulWidget {
 }
 
 class _MeTabState extends State<MeTab> {
-  List binds = [];
-  String inviteCode = '';
-  String inviteMsg = '';
   String avatarAsset = kAvatarAssets[0];
 String nickname = '长辈';
   bool notifyOn = true;
+  // 【对话记录同步家属】开关状态（后端接口待开发，先本地记住）
+  bool syncToFamily = true;
   double fontScale = 1.0;
 
   @override
   void initState() {
     super.initState();
-    load();
     _loadPrefs();
   }
 
@@ -42,26 +40,8 @@ String nickname = '长辈';
       avatarAsset = prefs.getString('avatar') ?? kAvatarAssets[0];
 notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
+      syncToFamily = prefs.getBool('sync_to_family') ?? true;
     } catch (_) {}
-    if (mounted) setState(() {});
-  }
-
-  Future<void> genInvite() async {
-    try {
-      inviteCode = await ApiService.createInvite();
-      inviteMsg = '';
-    } catch (e) {
-      inviteMsg = ApiService.friendly(e);
-    }
-    if (mounted) setState(() {});
-  }
-
-  Future<void> load() async {
-    try {
-      binds = await ApiService.bindList();
-    } catch (_) {
-      binds = [];
-    }
     if (mounted) setState(() {});
   }
 
@@ -138,20 +118,21 @@ notifyOn = prefs.getBool('notify_on') ?? true;
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: load,
+      onRefresh: _loadPrefs,
       color: AfuColors.primaryDeep,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
-          const SizedBox(height: 16),
-          _bindCard(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
+          // 隐私开关：对话摘要自动同步给家属
+          _privacyCard(),
+          const SizedBox(height: 24),
           _optionsCard(),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(
+            child: ElevatedButton(
               onPressed: () async {
                 await ApiService.clearAuth();
                 if (context.mounted) {
@@ -161,13 +142,16 @@ notifyOn = prefs.getBool('notify_on') ?? true;
                       (r) => false);
                 }
               },
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Color(0xFFA8BFE4), width: 1.5),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3478D9),
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w700),
               ),
-              child: const Text('退出登录', style: TextStyle(fontSize: 20)),
+              child: const Text('退出登录'),
             ),
           ),
         ],
@@ -175,8 +159,60 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     );
   }
 
-  Widget _profileCard() {
+  /// 隐私开关：【对话记录同步家属】
+  /// 开启后，AI 对话中自动提取的健康摘要会同步给已绑定家属。
+  /// 注：对话摘要提取与自动同步均由后端完成。
+  /// 【等待后端接口开发完成】目前后端尚无隐私开关接口，
+  /// 此处先做本地状态与 UI 占位，接口就绪后改为调用即可。
+  /// 语义已与后端确认：关闭 = 摘要照常生成、长者自己仍可见，仅“家属拉不到”（方案②）。
+  /// 因此历史已生成的摘要不删除，家属端 /api/sync 的 chat_summaries 返回空即可。
+  Widget _privacyCard() {
     return AfuCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(
+                color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+            child: const Icon(Icons.sync_outlined,
+                size: 30, color: AfuColors.primaryDeep),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('对话记录同步家属',
+                      style: AfuElderText.body
+                          .copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  const Text('开启后，AI 对话中整理的健康摘要会同步给已绑定家属；关闭后仅自己可见，记录仍会保留',
+                      style: TextStyle(
+                          fontSize: 16, color: Color(0xFF6B7686), height: 1.4)),
+                ]),
+          ),
+          Switch(
+            value: syncToFamily,
+            activeColor: AfuColors.primaryDeep,
+            onChanged: (v) async {
+              setState(() => syncToFamily = v);
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('sync_to_family', v);
+              } catch (_) {}
+              // 【等待后端接口开发完成】后端开关接口就绪后，在此调用上报
+            },
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  /// 头像区：无白色卡片底板，直接放在页面底色上。
+  Widget _profileCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       child: Row(children: [
         Container(
           width: 76,
@@ -215,114 +251,6 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     );
   }
 
-  Widget _bindCard() {
-    return AfuCard(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('亲人绑定',
-            style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        const Text('已绑定亲人，双方可互相查看健康信息与发送关怀提醒',
-            style: AfuElderText.secondary),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: genInvite,
-            icon: const Icon(Icons.qr_code_2_outlined, size: 26),
-            label: const Text('生成邀请码'),
-          ),
-        ),
-        if (inviteCode.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F8FD),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFDCE6F7)),
-            ),
-            child: Column(children: [
-              SelectableText(inviteCode,
-                  style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      color: AfuColors.primaryDeep)),
-              const SizedBox(height: 4),
-              const Text('30分钟内有效，把这串码告诉家人',
-                  style: AfuElderText.secondary),
-            ]),
-          ),
-        ],
-        if (inviteMsg.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(inviteMsg,
-              style: const TextStyle(fontSize: 18, color: Colors.red)),
-        ],
-        const SizedBox(height: 12),
-        if (binds.isEmpty)
-          const Text('暂无绑定', style: AfuElderText.secondary)
-        else
-          for (final b in binds) _bindRow(b),
-      ]),
-    );
-  }
-
-  Widget _bindRow(dynamic b) {
-    final m =
-        b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-    final name = (m['other_nickname'] ?? m['nickname'] ?? '对方').toString();
-    final status = (m['status'] ?? '').toString();
-    final code = (m['invite_code'] ?? '').toString();
-    final active = status == 'active';
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FD),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: const BoxDecoration(
-              color: Color(0xFFE8EFFD), shape: BoxShape.circle),
-          child: const Icon(Icons.person,
-              size: 30, color: AfuColors.primaryDeep),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name,
-                style: AfuElderText.body
-                    .copyWith(fontWeight: FontWeight.w700)),
-            if (code.isNotEmpty)
-              Text('邀请码 $code', style: AfuElderText.secondary),
-          ]),
-        ),
-        Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: active
-                ? const Color(0xFFE6F4EA)
-                : const Color(0xFFF0F1F5),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Text(active ? '已绑定' : status,
-              style: TextStyle(
-                  fontSize: 17,
-                  color: active
-                      ? const Color(0xFF2E7D4F)
-                      : const Color(0xFF555555))),
-        ),
-      ]),
-    );
-  }
-
   Widget _optionsCard() {
     return AfuCard(
       padding: EdgeInsets.zero,
@@ -346,13 +274,73 @@ notifyOn = prefs.getBool('notify_on') ?? true;
                 },
               ),
             )),
-        _optRow(Icons.text_fields_outlined, '字体大小调节',
-            sub: fontLabel, onTap: _openFontPage),
+        _fontInline(),
         _optRow(Icons.cleaning_services_outlined, '清除缓存',
             onTap: _clearCache),
         _optRow(Icons.info_outline, '关于我们', onTap: _about, last: true),
       ]),
     );
+  }
+
+  /// 字体大小行内三胶囊：小/中/大横排，点击直接切换并即时生效，不跳二级页。
+  Widget _fontInline() {
+    const names = ['小', '中', '大'];
+    const scales = [1.0, 1.15, 1.3];
+    return AfuCard(
+      child: Row(children: [
+        const Text('字体大小',
+            style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF222222))),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ValueListenableBuilder<double>(
+            valueListenable: chatScale,
+            builder: (_, v, __) => Row(children: [
+              for (var i = 0; i < names.length; i++) ...[
+                Expanded(
+                  child: AfuPressable(
+                    onTap: () => _pickScale(scales[i]),
+                    borderRadius: 18,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: (v - scales[i]).abs() < 0.01
+                            ? const Color(0xFF2F6FD6)
+                            : const Color(0xFFF0F1F5),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Text(names[i],
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            color: (v - scales[i]).abs() < 0.01
+                                ? Colors.white
+                                : const Color(0xFF555555),
+                          )),
+                    ),
+                  ),
+                ),
+                if (i < names.length - 1) const SizedBox(width: 10),
+              ],
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  /// 选择字号：全局实时生效并本地持久化。
+  Future<void> _pickScale(double v) async {
+    chatScale.value = v;
+    fontScale = v;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('chat_text_scale', v);
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   Widget _optRow(IconData icon, String title,
