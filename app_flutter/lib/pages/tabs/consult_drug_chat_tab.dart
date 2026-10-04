@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../../services/api.dart';
@@ -19,6 +20,29 @@ class ConsultsTab extends StatefulWidget {
 class _ConsultsTabState extends State<ConsultsTab> {
   List items = [];
   bool loading = true;
+  bool uploading = false;
+
+  Future<void> pickAndUpload() async {
+    if (uploading) return;
+    final r = await FilePicker.platform.pickFiles(type: FileType.audio, withData: true);
+    final f = (r == null || r.files.isEmpty) ? null : r.files.first;
+    if (f == null || f.bytes == null) return;
+    setState(() => uploading = true);
+    try {
+      await ApiService.uploadConsult(f.bytes!, f.name);
+      await refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('录音上传成功，家属端同步可见')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('上传失败，请重试')));
+      }
+    }
+    if (mounted) setState(() => uploading = false);
+  }
   @override
   void initState() { super.initState(); refresh(); }
   Future<void> refresh() async {
@@ -36,7 +60,19 @@ class _ConsultsTabState extends State<ConsultsTab> {
         const SizedBox(height: 8),
         const Text('录音上传后家属端同步可见，可点播放链接收听', style: TextStyle(fontSize: 18)),
         const SizedBox(height: 8),
-        if (items.isEmpty) const Text('暂无咨询记录', style: TextStyle(fontSize: 20)),
+        SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: uploading ? null : pickAndUpload,
+              icon: uploading
+                  ? const SizedBox(width: 24, height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+                  : const Icon(Icons.mic, size: 28),
+              label: const Text('上传录音', style: TextStyle(fontSize: 20)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty) const Text('暂无咨询记录', style: TextStyle(fontSize: 20)),
         ...items.map((e) {
           final m = Map<String, dynamic>.from(e as Map);
           final title = (m['hospital'] ?? m['doctor'] ?? m['created_at'] ?? '一条咨询').toString();
