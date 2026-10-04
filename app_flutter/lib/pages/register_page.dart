@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api.dart';
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
@@ -17,6 +18,7 @@ class _RegisterPageState extends State<RegisterPage> {
   String msg = '';
   bool showPwd = false;
   bool loading = false;
+int avatarIdx = 0;
 
   int get minLen => role == 'elder' ? 6 : 8;
 
@@ -71,6 +73,10 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() { loading = true; msg = ''; });
     try {
       await ApiService.register(phone: phone.text.trim(), password: pwd.text, role: role, nickname: nick.text.trim());
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('avatar', kAvatarAssets[avatarIdx]);
+      } catch (_) {}
       if (mounted) setState(() => msg = '\u6ce8\u518c\u6210\u529f\uff0c\u8bf7\u8fd4\u56de\u767b\u5f55');
     } catch (e) {
       if (mounted) setState(() => msg = '\u6ce8\u518c\u5931\u8d25\uff1a' + ApiService.friendly(e));
@@ -149,6 +155,8 @@ class _RegisterPageState extends State<RegisterPage> {
               style: const TextStyle(fontSize: 21, color: Color(0xFF222222)),
               decoration: _dec('\u53d6\u4e2a\u597d\u8bb0\u7684\u540d\u5b57'),
             )),
+            _label('选择头像'),
+            _avatarRow(),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -196,7 +204,33 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  Widget _label(String s) {
+  Widget _avatarRow() {
+    return Wrap(
+      spacing: 14,
+      runSpacing: 14,
+      children: [
+        for (var i = 0; i < kAvatarAssets.length; i++)
+          AfuPressable(
+            onTap: () => setState(() => avatarIdx = i),
+            borderRadius: 48,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: avatarIdx == i ? AfuColors.primary : const Color(0xFFDCE6F7),
+                    width: avatarIdx == i ? 3 : 1.5),
+              ),
+              child: ClipOval(
+                child: Image.asset(kAvatarAssets[i], width: 72, height: 72, fit: BoxFit.cover),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+Widget _label(String s) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(

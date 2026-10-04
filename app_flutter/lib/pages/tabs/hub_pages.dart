@@ -1623,7 +1623,7 @@ class SettingsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FD),
-      appBar: AppBar(title: const Text('设置'), backgroundColor: const Color(0xFFF7F9FD), scrolledUnderElevation: 0),
+      appBar: AppBar(title: const Text('个人中心'), backgroundColor: const Color(0xFFF7F9FD), scrolledUnderElevation: 0),
       body: const SafeArea(child: MeTab(role: 'elder')),
     );
   }

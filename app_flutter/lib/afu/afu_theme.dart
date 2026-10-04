@@ -17,7 +17,14 @@ class AfuColors {
   static const danger = Color(0xFFE57373);
 }
 
+const kAvatarAssets = <String>[
+  'assets/avatars/avatar1.png',
+  'assets/avatars/avatar2.png',
+  'assets/avatars/avatar3.png',
+  'assets/avatars/avatar4.png',
+];
 class AfuRadius {
+
   static const card = 20.0;
   static const bubble = 20.0;
   static const field = 24.0;

@@ -342,7 +342,7 @@ class _ChatTabState extends State<ChatTab> {
   /// 快捷入口：0查药品 1问症状 2看报告 3语音咨询
   Future<void> onQuick(int i) async {
     if (i == 0) {
-      HubNav.go(1, 'drugs');
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => AfuSubPage(title: '查药', child: const DrugQueryTab())));
       return;
     }
     if (i == 1) {
@@ -496,7 +496,7 @@ class _ChatTabState extends State<ChatTab> {
       busy: busy,
       inputController: inputC,
       onQuickEntry: onQuick,
-      onTipMore: () => HubNav.go(1, 'news'),
+      onTipMore: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
       textScale: 1.0,
       onSend: send,
       onVoiceStart: startHoldToTalk,
