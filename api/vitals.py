@@ -195,43 +195,53 @@ VITALS_RECOGNIZE_PROMPT = (
     "SYSTOLIC: 收缩压（仅血压）\n"
     "DIASTOLIC: 舒张压（仅血压）\n"
     "VALUE: 数值（血糖/心率/体重）\n"
-    "UNIT: 单位（如 mmHg / mmol/L / bpm / kg）\n"
+    "UNIT: 原始单位（如 mmHg / mmol/L / mg/dL / bpm / kg）\n"
+    "CONFIDENCE: 识别置信度，0 到 1 之间的小数（如 0.92）\n"
     "如果识别不出有效体征数值，只输出：NONE"
 )
 
 
 @router.post("/recognize", response_model=VitalsRecognizeOut)
 def recognize_vital(payload: VitalsRecognizeRequest,
+                    db: Session = Depends(get_db),
                     current: User = Depends(get_current_user)):
-    """体征拍照识别：血压计/血糖仪照片 → 数值。识别结果不落库，
-    前端展示给老人确认后，再调 POST /api/vitals 落库。"""
+    """体征拍照识别：血压计/血糖仪/体重秤/心率表照片 → 数值。
+    识别结果不落库，前端展示给老人确认后，再调 POST /api/vitals 落库。"""
+    # 沿用老人/家属归属校验（家属需绑定，老人默认自己）
+    resolve_elder_id(db, current, payload.elder_id)
+
     try:
         ocr_text = recognize_image(payload.image_base64)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
-        raise HTTPException(status_code=400, detail="图片识别失败，请重新拍摄清晰的设备屏幕再试")
+        raise HTTPException(status_code=400, detail="照片无法识别，请重拍一张清晰的")
 
     if not ocr_text.strip():
-        raise HTTPException(status_code=400, detail="未识别到文字，请拍清楚测量仪屏幕")
+        raise HTTPException(status_code=400, detail="照片中未识别到数字，请拍清楚测量仪屏幕")
 
     llm_out = call_qwen(
         VITALS_RECOGNIZE_PROMPT,
         f"识别到的文字如下：\n{ocr_text}",
     )
     if "NONE" in llm_out.upper():
-        raise HTTPException(status_code=400, detail="未能从照片中识别出有效体征数值")
+        raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
 
     parsed = _parse_vitals_llm(llm_out, payload.vital_type)
     if parsed is None:
-        raise HTTPException(status_code=400, detail="识别结果异常，请人工确认后手动录入")
+        raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
 
-    parsed["raw_text"] = ocr_text
+    parsed["ocr_text"] = ocr_text
     return VitalsRecognizeOut(**parsed)
 
 
+# 各体征类型对应的固定单位
+_UNIT_BY_TYPE = {"bp": "mmHg", "bs": "mmol/L", "hr": "次/分", "weight": "kg"}
+
+
 def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
-    """从 LLM 输出里提取体征字段。血压必须有收缩压+舒张压；其他必须有 value。"""
+    """从 LLM 输出里提取体征字段，按类型固定单位并换算。
+    bp 必须有收缩压+舒张压；bs/hr/weight 必须有 value。"""
     def _gint(p):
         m = re.search(rf"{p}[:：]\s*([+-]?\d+)", text)
         return int(m.group(1)) if m else None
@@ -240,17 +250,22 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
         m = re.search(rf"{p}[:：]\s*([+-]?\d+(?:\.\d+)?)", text)
         return float(m.group(1)) if m else None
 
-    t = hint_type or "bp"  # 默认按血压解析
+    def _gunit(p="UNIT"):
+        m = re.search(rf"{p}[:：]\s*(\S+)", text)
+        return m.group(1).strip() if m else ""
+
+    t = (hint_type or "").lower() or "bp"
     m_type = re.search(r"TYPE[:：]\s*(\w+)", text)
     if m_type:
-        t = m_type.group(1).strip().lower()
-        if t not in VALID_TYPES:
-            t = hint_type or "bp"
+        cand = m_type.group(1).strip().lower()
+        if cand in VALID_TYPES:
+            t = cand
 
-    result = {"type": t, "systolic": None, "diastolic": None, "value": None, "unit": None}
-    m_unit = re.search(r"UNIT[:：]\s*(\S+)", text)
-    if m_unit:
-        result["unit"] = m_unit.group(1).strip()
+    result = {"type": t, "systolic": None, "diastolic": None, "value": None,
+              "unit": _UNIT_BY_TYPE.get(t), "confidence": 0.85}
+    conf = _gfloat("CONFIDENCE")
+    if conf is not None:
+        result["confidence"] = round(min(max(conf, 0.0), 1.0), 2)
 
     if t == "bp":
         sys, dia = _gint("SYSTOLIC"), _gint("DIASTOLIC")
@@ -261,5 +276,14 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
         val = _gfloat("VALUE")
         if val is None:
             return None
-        result["value"] = val
+        if t == "bs":
+            # 血糖统一换算成 mmol/L（mg/dL ÷ 18）
+            if _gunit().lower() in ("mg/dl", "mgdL", "mg/dl"):
+                val = val / 18.0
+            result["value"] = round(val, 2)
+        elif t == "weight":
+            # 体重保留一位小数
+            result["value"] = round(val, 1)
+        else:  # hr
+            result["value"] = float(int(round(val)))
     return result

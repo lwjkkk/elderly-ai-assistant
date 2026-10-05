@@ -247,7 +247,8 @@ class VitalsOut(BaseModel):
 
 class VitalsRecognizeRequest(BaseModel):
     """体征拍照识别请求体（仿拍照查药：图片 → 数值）"""
-    image_base64: str = Field(..., description="血压计/血糖仪照片 base64")
+    image_base64: str = Field(..., description="血压计/血糖仪/体重秤/心率表照片 base64")
+    elder_id: int | None = Field(None, description="家属代识别时指定老人id")
     vital_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight，减少歧义")
 
 
@@ -258,7 +259,8 @@ class VitalsRecognizeOut(BaseModel):
     diastolic: int | None = None
     value: float | None = None
     unit: str | None = None
-    raw_text: str
+    confidence: float | None = None
+    ocr_text: str
     disclaimer: str = HEALTH_DISCLAIMER
 
 
