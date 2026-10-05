@@ -18,6 +18,12 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     # 昵称：绑定后双方在"我的"页能看到对方昵称
     nickname = Column(String(50), nullable=False)
+    # 性别：男/女/空字符串（空=未设置，资料编辑页可多端同步）
+    gender = Column(String(10), nullable=True, default=None)
+    # 出生年月：YYYY-MM（资料编辑页可多端同步）
+    birth_ym = Column(String(7), nullable=True, default=None)
+    # 头像 URL：上传后存文件，返回相对路径（资料编辑页可多端同步）
+    avatar_url = Column(String(500), nullable=True, default=None)
     # 隐私开关：是否把对话摘要同步给家属。1=同步（默认），0=不同步。仅老人本人可改。
     sync_summary_to_family = Column(Boolean, default=True, nullable=False)
 
