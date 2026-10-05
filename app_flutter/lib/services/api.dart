@@ -376,6 +376,41 @@ class ApiService {
   }
 
   /// audio_url 是相对路径，前端拼 baseUrl。
+  static Future<List<int>> avatarBytes(String url) async {
+    final res = await _dio.get(url,
+        options: Options(responseType: ResponseType.bytes));
+    final d = res.data;
+    if (d is List<int>) return d;
+    return List<int>.from(d as List);
+  }
+
+  static String avatarFullUrl(String? url) {
+    if (url == null || url.isEmpty) return '';
+    if (url.startsWith('http')) return url;
+    return '${AppConfig.baseUrl}$url';
+  }
+
+  /// 用户资料：GET /api/users/profile -> {id, nickname, gender, birth_ym, avatar_url}。
+  static Future<Map<String, dynamic>> getProfile() async {
+    final res = await _dio.get('/api/users/profile');
+    return Map<String, dynamic>.from(res.data);
+  }
+
+  /// 更新资料：PUT /api/users/profile，全可选，只传改了的字段。
+  static Future<Map<String, dynamic>> updateProfile(
+      {String? nickname,
+      String? gender,
+      String? birthYm,
+      List<int>? avatarBytes}) async {
+    final res = await _dio.put('/api/users/profile', data: {
+      if (nickname != null) 'nickname': nickname,
+      if (gender != null) 'gender': gender,
+      if (birthYm != null) 'birth_ym': birthYm,
+      if (avatarBytes != null) 'avatar_base64': base64Encode(avatarBytes),
+    });
+    return Map<String, dynamic>.from(res.data);
+  }
+
   static String consultAudioUrl(String audioUrl) {
     if (audioUrl.startsWith('http')) return audioUrl;
     return '${AppConfig.baseUrl}$audioUrl';

@@ -557,9 +557,12 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   late final TextEditingController _nameC =
       TextEditingController(text: widget.nickname);
   String? _picked;
+  String _remoteAvatar = '';
+  bool _avatarChanged = false;
   String _gender = '';
   String _birthYm = '';
   bool _busyAvatar = false;
+  bool _loadingProfile = true;
 
   @override
   void initState() {
@@ -568,17 +571,66 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   }
 
   Future<void> _loadLocal() async {
+    // 远端优先：GET /api/users/profile，失败则用本地。
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final r = await ApiService.getProfile();
       if (!mounted) return;
+      final nick = (r['nickname'] ?? '').toString();
+      final url = (r['avatar_url'] ?? '').toString();
       setState(() {
-        final a = prefs.getString('avatar');
-        if (a != null && a.isNotEmpty) _picked = a;
-        _gender = prefs.getString('gender') ?? '';
-        _birthYm = prefs.getString('birth_ym') ?? '';
-        final n = prefs.getString('nickname');
-        if (n != null && n.isNotEmpty) _nameC.text = n;
+        if (nick.isNotEmpty) _nameC.text = nick;
+        _gender = (r['gender'] ?? '').toString();
+        _birthYm = (r['birth_ym'] ?? '').toString();
+        _remoteAvatar = url;
+        _loadingProfile = false;
       });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (nick.isNotEmpty) {
+          await prefs.setString('nickname', nick);
+        }
+        await prefs.setString('gender', _gender);
+        await prefs.setString('birth_ym', _birthYm);
+        await prefs.setString('avatar_url', url);
+      } catch (_) {}
+      await _syncAvatarFile(url);
+    } catch (_) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        setState(() {
+          final a = prefs.getString('avatar');
+          if (a != null && a.isNotEmpty) _picked = a;
+          _gender = prefs.getString('gender') ?? '';
+          _birthYm = prefs.getString('birth_ym') ?? '';
+          final n = prefs.getString('nickname');
+          if (n != null && n.isNotEmpty) _nameC.text = n;
+          _remoteAvatar = prefs.getString('avatar_url') ?? '';
+          _loadingProfile = false;
+        });
+      } catch (_) {
+        if (mounted) {
+          setState(() => _loadingProfile = false);
+        }
+      }
+    }
+  }
+
+  /// 远端头像落本地文件，各处头像（个人中心/聊天）同步更新。
+  Future<void> _syncAvatarFile(String url) async {
+    if (url.isEmpty) return;
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final dest = File('${dir.path}/avatar.jpg');
+      if (await dest.exists()) {
+        if (mounted) setState(() => _picked = dest.path);
+        return;
+      }
+      final bytes = await ApiService.avatarBytes(
+          ApiService.avatarFullUrl(url));
+      if (bytes.isEmpty) return;
+      await dest.writeAsBytes(bytes, flush: true);
+      if (mounted) setState(() => _picked = dest.path);
     } catch (_) {}
   }
 
@@ -589,17 +641,50 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   }
 
   Future<void> _save() async {
+    final name = _nameC.text.trim();
+    List<int>? avatarBytes;
+    if (_avatarChanged && _picked != null) {
+      try {
+        avatarBytes = await File(_picked!).readAsBytes();
+      } catch (_) {}
+    }
     try {
+      final r = await ApiService.updateProfile(
+        nickname: name.isEmpty ? null : name,
+        gender: _gender,
+        birthYm: _birthYm.isEmpty ? null : _birthYm,
+        avatarBytes: avatarBytes,
+      );
       final prefs = await SharedPreferences.getInstance();
-      final name = _nameC.text.trim();
-      if (name.isNotEmpty) {
-        await prefs.setString('nickname', name);
+      final nick = (r['nickname'] ?? '').toString();
+      if (nick.isNotEmpty) {
+        await prefs.setString('nickname', nick);
       }
-      if (_picked != null) await prefs.setString('avatar', _picked!);
-      await prefs.setString('gender', _gender);
-      await prefs.setString('birth_ym', _birthYm);
-    } catch (_) {}
-    if (mounted) Navigator.of(context).pop();
+      await prefs.setString(
+          'gender', (r['gender'] ?? '').toString());
+      await prefs.setString(
+          'birth_ym', (r['birth_ym'] ?? '').toString());
+      final url = (r['avatar_url'] ?? '').toString();
+      await prefs.setString('avatar_url', url);
+      if (_picked != null) {
+        await prefs.setString('avatar', _picked!);
+      }
+      if (mounted) {
+        setState(() {
+          _remoteAvatar = url;
+          _avatarChanged = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('资料已保存，多端已同步')));
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                '保存失败：${ApiService.friendly(e)}')));
+      }
+    }
   }
 
   /// 头像：拍照/相册 -> 圆形裁剪（可缩放移动）-> 存应用目录。
@@ -667,7 +752,12 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       final dir = await getApplicationDocumentsDirectory();
       final dest = File('${dir.path}/avatar.jpg');
       await File(cropped.path).copy(dest.path);
-      if (mounted) setState(() => _picked = dest.path);
+      if (mounted) {
+        setState(() {
+          _picked = dest.path;
+          _avatarChanged = true;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -947,16 +1037,34 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                           offset: const Offset(0, 4)),
                     ]),
                 child: ClipOval(
-                    child: _busyAvatar
+                    child: _busyAvatar ||
+                            _loadingProfile
                         ? const Center(
                             child: CircularProgressIndicator(
                                 color: Color(0xFF345C87)))
-                        : Image(
-                            image: avatarImage(
-                                _picked ?? widget.asset),
-                            width: 106,
-                            height: 106,
-                            fit: BoxFit.cover)),
+                        : _remoteAvatar.isNotEmpty
+                            ? Image.network(
+                                ApiService.avatarFullUrl(
+                                    _remoteAvatar),
+                                width: 106,
+                                height: 106,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    Image(
+                                        image: avatarImage(
+                                            _picked ??
+                                                widget.asset),
+                                        width: 106,
+                                        height: 106,
+                                        fit: BoxFit.cover),
+                              )
+                            : Image(
+                                image: avatarImage(
+                                    _picked ??
+                                        widget.asset),
+                                width: 106,
+                                height: 106,
+                                fit: BoxFit.cover)),
               ),
               const SizedBox(height: 16),
               AfuPressable(
