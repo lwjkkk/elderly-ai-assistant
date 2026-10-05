@@ -50,6 +50,22 @@ def init_db():
         "start_date",
         "ALTER TABLE medications ADD COLUMN start_date VARCHAR(10)",
     )
+    # 用户资料（多端同步）：性别/出生年月/头像
+    _add_column_if_missing(
+        "users",
+        "gender",
+        "ALTER TABLE users ADD COLUMN gender VARCHAR(10)",
+    )
+    _add_column_if_missing(
+        "users",
+        "birth_ym",
+        "ALTER TABLE users ADD COLUMN birth_ym VARCHAR(7)",
+    )
+    _add_column_if_missing(
+        "users",
+        "avatar_url",
+        "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)",
+    )
 
 
 def _add_column_if_missing(table: str, column: str, ddl: str):

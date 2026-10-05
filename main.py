@@ -21,6 +21,7 @@ from api.reports import router as reports_router
 from api.weather import router as weather_router
 from api.sync import router as sync_router
 from api.privacy import router as privacy_router
+from api.users import router as users_router
 from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
@@ -59,6 +60,7 @@ app.include_router(reports_router)  # 体检报告 /api/reports
 app.include_router(weather_router)  # 天气 /api/weather
 app.include_router(sync_router)     # 增量同步 /api/sync
 app.include_router(privacy_router)  # 隐私开关 /api/privacy
+app.include_router(users_router)    # 用户资料 /api/users
 
 
 @app.get("/")
