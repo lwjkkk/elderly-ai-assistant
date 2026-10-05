@@ -170,6 +170,13 @@ def export_pdf(vital_type: str | None = None,
         query = query.filter(Vitals.type == vital_type)
     records = query.order_by(Vitals.measured_at).all()
 
+    # 无数据时直接返回 4xx + 中文提示，避免前端拿到空 PDF
+    if not records:
+        raise HTTPException(
+            status_code=400,
+            detail="该老人近期暂无体征记录，无法导出，请先录入体征数据",
+        )
+
     elder = db.query(User).filter(User.id == target).first()
     pdf_bytes = generate_vitals_pdf(records, elder.nickname if elder else "老人", HEALTH_DISCLAIMER)
 
