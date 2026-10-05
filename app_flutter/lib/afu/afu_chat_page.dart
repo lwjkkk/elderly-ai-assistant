@@ -32,6 +32,7 @@ class AfuElderChatPage extends StatefulWidget {
   final ValueChanged<String> onSend;
   final VoidCallback onVoiceStart;
   final VoidCallback onVoiceEnd;
+  final bool voiceActive;
   final VoidCallback onToggleTextScale;
   final Widget? header;
   final TextEditingController? inputController;
@@ -44,6 +45,7 @@ class AfuElderChatPage extends StatefulWidget {
     required this.onSend,
     required this.onVoiceStart,
     required this.onVoiceEnd,
+    this.voiceActive = false,
     required this.onToggleTextScale,
     this.inputController,
     this.onQuickEntry,
@@ -153,6 +155,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
                 onSubmit: _submit,
                 onVoiceStart: widget.onVoiceStart,
                 onVoiceEnd: widget.onVoiceEnd,
+                voiceActive: widget.voiceActive,
               ),
             ],
           ),
@@ -324,7 +327,7 @@ class _TipBody extends StatelessWidget {
 /// 卡片样式：左上角圆形图标 + 右侧两字标题 + 标题下方灰色小字说明，无底部装饰图。
 /// 查药 / 自查 / 咨询不再做独立卡片入口，统一由 AI 对话完成。
 class _FuncCards extends StatelessWidget {
-  final ValueChanged<int> onTap; // 0=体征 1=报告
+  final ValueChanged<int> onTap; // 0=体征 1=报告 2=症状自查
   const _FuncCards({required this.onTap});
 
   @override
@@ -348,6 +351,15 @@ class _FuncCards extends StatelessWidget {
           tint: const Color(0xFFEDF4FB),
           main: const Color(0xFF345C87),
           onTap: () => onTap(1),
+        ),
+        const SizedBox(height: 16),
+        _funcCard(
+          icon: Icons.health_and_safety_outlined,
+          title: '症状自查',
+          desc: '描述不适，智能评估风险',
+          tint: const Color(0xFFEDF4FB),
+          main: const Color(0xFF345C87),
+          onTap: () => onTap(2),
         ),
       ]),
     );
@@ -597,12 +609,14 @@ class _InputBar extends StatefulWidget {
   final VoidCallback onSubmit;
   final VoidCallback onVoiceStart;
   final VoidCallback onVoiceEnd;
+  final bool voiceActive;
   const _InputBar({
     required this.controller,
     required this.busy,
     required this.onSubmit,
     required this.onVoiceStart,
     required this.onVoiceEnd,
+    this.voiceActive = false,
   });
 
   @override
@@ -612,6 +626,25 @@ class _InputBar extends StatefulWidget {
 class _InputBarState extends State<_InputBar> {
   bool _holding = false;
   bool _focused = false;
+
+  @override
+  void didUpdateWidget(covariant _InputBar old) {
+    super.didUpdateWidget(old);
+    if (old.voiceActive != widget.voiceActive &&
+        _holding != widget.voiceActive) {
+      setState(() => _holding = widget.voiceActive);
+    }
+  }
+
+  void _toggleVoice() {
+    if (_holding) {
+      setState(() => _holding = false);
+      widget.onVoiceEnd();
+    } else {
+      setState(() => _holding = true);
+      widget.onVoiceStart();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -625,9 +658,13 @@ class _InputBarState extends State<_InputBar> {
       ),
       child: Row(children: [
         GestureDetector(
+          // Web 端桌面点击无法长按：单击切换开始/停止；移动端仍可按住说话
+          onTap: _toggleVoice,
           onLongPressStart: (_) {
-            setState(() => _holding = true);
-            widget.onVoiceStart();
+            if (!_holding) {
+              setState(() => _holding = true);
+              widget.onVoiceStart();
+            }
           },
           onLongPressEnd: (_) {
             setState(() => _holding = false);

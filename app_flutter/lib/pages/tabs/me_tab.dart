@@ -162,6 +162,34 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () async {
+                await ApiService.clearAuth();
+                if (context.mounted) {
+                  Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const LoginPage()),
+                      (r) => false);
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF345C87),
+                side:
+                    const BorderSide(color: Color(0xFF345C87), width: 1.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(
+                    fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              child: const Text('切换账号'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
             child: ElevatedButton(
               onPressed: () async {
                 await ApiService.clearAuth();
@@ -575,6 +603,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('chat_text_scale', v);
+      await prefs.setBool('font_explicit', true);
     } catch (_) {}
     if (mounted) setState(() {});
   }
@@ -607,6 +636,8 @@ class _FontPageState extends State<_FontPage> {
   Future<void> _pick(double v) async {
     chatScale.value = v;
     try {
+      final prefs0 = await SharedPreferences.getInstance();
+      await prefs0.setBool('font_explicit', true);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('chat_text_scale', v);
     } catch (_) {}

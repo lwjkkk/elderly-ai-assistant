@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
@@ -284,7 +285,7 @@ try { _showImage = await ApiService.getRole() != 'elder'; } catch (_) {}
       await ApiService.uploadReport(await f.readAsBytes(), f.name, mine: widget.mine);
       refresh();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('上传成功')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(kIsWeb ? '当前浏览器不支持语音识别，请手动输入（建议用手机App）' : '上传成功')));
       }
     } catch (e) {
       if (mounted) {
@@ -382,18 +383,84 @@ class _ChatTabState extends State<ChatTab> {
 
   /// 快捷卡片：0 体征（直接进体征记录页，支持上传/查看）
   ///           1 报告（直接进体检报告解读页，支持上传）
-  /// 查药 / 自查 / 咨询不再做独立卡片入口，老人直接在输入框文字或语音提问即可。
+  ///           2 症状自查（专用接口，展示红黄绿风险）
   Future<void> onQuick(int i) async {
     if (i == 0) {
       Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AfuSubPage(title: '体征', child: VitalsTab())));
       return;
     }
+    if (i == 2) {
+      Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) =>
+              const AfuSubPage(title: '症状自查', child: SymptomTab())));
+      return;
+    }
     Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => const AfuSubPage(title: '报告', child: ReportTab())));
   }
 
+  /// 症状关键词：命中则走专用自查接口并展示风险等级，而非普通问答。
+  static const _symptomKeys = [
+    '头晕', '头痛', '头疼', '发烧', '发热', '咳嗽', '胸闷', '心慌', '心悸',
+    '气短', '腹痛', '肚子疼', '胃疼', '恶心', '呕吐', '腹泻', '失眠',
+    '乏力', '疼痛', '麻木', '发麻', '水肿', '感冒', '咽痛', '牙疼',
+    '腰疼', '腿疼', '背疼', '不舒服', '难受', '眩晕', '耳鸣', '皮疹',
+  ];
+
+  bool _looksLikeSymptom(String t) {
+    if (t.length > 60) return false;
+    for (final k in _symptomKeys) {
+      if (t.contains(k)) return true;
+    }
+    return false;
+  }
+
   Future<void> send(String text) async {
+    final t = text.trim();
+    if (t.isEmpty || busy) return;
+    if (_looksLikeSymptom(t)) {
+      await _sendSymptom(t);
+      return;
+    }
+    await _sendChat(t);
+  }
+
+  /// 症状自查：调专用接口，气泡内展示红黄绿风险 + 建议。
+  Future<void> _sendSymptom(String t) async {
+    setState(() {
+      msgs.add({'role': 'me', 'text': t});
+      msgs.add({'role': 'thinking', 'text': ''});
+      busy = true;
+    });
+    try {
+      final r = await ApiService.symptomCheck(t);
+      final risk = (r['risk'] ?? 'green').toString();
+      final advice = (r['advice_text'] ?? '').toString();
+      final tag = risk == 'red'
+          ? '【症状自查·高风险】'
+          : risk == 'yellow'
+              ? '【症状自查·中风险】'
+              : '【症状自查·低风险】';
+      final tail = risk == 'red'
+          ? '\n请立即拨打120'
+          : risk == 'yellow'
+              ? '\n建议尽快就医'
+              : '';
+      msgs.removeWhere((m) => m['role'] == 'thinking');
+      msgs.add({
+        'role': 'ai',
+        'text': '$tag\n${advice.isEmpty ? '已记录你的症状，请注意观察' : advice}$tail'
+      });
+    } catch (_) {
+      msgs.removeWhere((m) => m['role'] == 'thinking');
+      await _sendChat(t);
+      return;
+    }
+    if (mounted) setState(() => busy = false);
+  }
+
+  Future<void> _sendChat(String text) async {
     final t = text.trim();
     if (t.isEmpty || busy) return;
     setState(() {
@@ -430,8 +497,17 @@ class _ChatTabState extends State<ChatTab> {
     if (listening) return;
     try {
       final stt = SpeechToText();
-      final ok = await stt.initialize();
-      if (!ok) throw Exception('init failed');
+      var initErr = '';
+      final ok = await stt
+          .initialize(
+            onError: (e) => initErr = e.errorMsg,
+          )
+          .timeout(const Duration(seconds: 8),
+              onTimeout: () => false);
+      if (!ok) {
+        throw Exception(
+            initErr.isEmpty ? 'init failed' : initErr);
+      }
       String? locale;
       try {
         final locales = await stt.locales();
@@ -449,19 +525,24 @@ class _ChatTabState extends State<ChatTab> {
         pauseFor: const Duration(seconds: 30),
         partialResults: true,
         onResult: (res) {
-          if (res.finalResult && res.recognizedWords.trim().isNotEmpty) {
-            if (_autoSend) {
+          final words = res.recognizedWords.trim();
+          if (words.isEmpty) return;
+          if (_autoSend) {
+            if (res.finalResult) {
               _autoSend = false;
               stopHoldToTalk();
-              send(res.recognizedWords.trim());
+              send(words);
             }
+            return;
           }
+          // 手动模式：实时把识别文字填进输入框，松手即停、文字保留可编辑
+          if (mounted) inputC.text = words;
         },
       );
     } catch (_) {
       if (mounted) {
         setState(() => listening = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音不可用，请打字提问')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音不可用，请检查麦克风权限')));
       }
     }
   }
@@ -493,6 +574,7 @@ class _ChatTabState extends State<ChatTab> {
       onSend: send,
       onVoiceStart: startHoldToTalk,
       onVoiceEnd: stopHoldToTalk,
+      voiceActive: listening,
       onToggleTextScale: () async {
         const steps = [1.0, 1.15, 1.3];
         var i = steps.indexWhere((s) => (s - chatScale.value).abs() < 0.01);

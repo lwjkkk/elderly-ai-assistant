@@ -59,11 +59,11 @@ class _FamilyHomeState extends State<FamilyHome> {
         builder: (_, accent, __) => BottomNavigationBar(
               currentIndex: idx,
               type: BottomNavigationBarType.fixed,
-              selectedFontSize: 16,
-              unselectedFontSize: 16,
+              selectedFontSize: 15,
+              unselectedFontSize: 14,
               selectedItemColor: accent ?? const Color(0xFF345C87),
               unselectedItemColor: const Color(0xFF6B7280),
-              onTap: (i) => setState(() => idx = i),
+              onTap: (i) => setState(() => idx = (i == 1 && idx == 1) ? 0 : i),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined, size: 30), label: '健康总览'),
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline, size: 30), label: 'AI问事'),
@@ -469,6 +469,7 @@ class _FontSizePageState extends State<_FontSizePage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('chat_text_scale', v);
+      await prefs.setBool('font_explicit', true);
     } catch (_) {}
     if (mounted) setState(() {});
   }
