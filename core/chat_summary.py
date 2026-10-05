@@ -14,15 +14,21 @@ from core.qwen_llm import call_qwen
 logger = logging.getLogger(__name__)
 
 # 业务分类 → 判定关键词。命中才落库，其余模块（教程/办事/生活常识）不落库。
+# 覆盖老人常见体征/慢病问法（血压/血糖/心率/胸闷等），避免健康对话漏判（BUG-009）
 _CATEGORY_KEYWORDS = {
     "drug": ["查药", "药盒", "说明书", "这个药", "这个药是", "药的作用", "副作用", "禁忌",
-             "药品", "药名", "什么药", "能一起吃"],
+             "药品", "药名", "什么药", "能一起吃", "药怎么吃", "吃药", "服", "药", "剂量",
+             "说明书"],
     "med": ["用药", "吃药", "服药", "药提醒", "什么时候吃", "怎么吃", "忘吃", "漏吃",
-            "吃几次", "饭前", "饭后", "一次吃"],
+            "吃几次", "饭前", "饭后", "一次吃", "停药", "换药", "降压药", "降糖药",
+            "胰岛素", "药盒", "怎么吃"],
     "selfcheck": ["症状", "头疼", "头痛", "头晕", "发烧", "发热", "咳嗽", "感冒",
-                  "哪里不舒服", "不舒服", "自查", "乏力", "胸闷", "恶心", "睡不着"],
+                  "哪里不舒服", "不舒服", "自查", "乏力", "胸闷", "恶心", "睡不着",
+                  "血压", "血压高", "血压低", "血糖", "血糖高", "血糖低", "心率", "心跳",
+                  "心慌", "心悸", "气短", "失眠", "拉肚子", "腹泻", "便秘", "关节",
+                  "腰疼", "腿疼", "血压计", "血糖仪", "血脂", "尿酸", "转氨酶", "心悸"],
     "consult": ["咨询", "问诊", "挂号", "医院", "医生", "就诊", "看病", "预约",
-                "住院", "复查", "门诊"],
+                "住院", "复查", "门诊", "体检", "报告", "指标"],
 }
 
 
@@ -78,13 +84,18 @@ def extract_risk(question: str, answer: str, category: str) -> str | None:
 
 
 def save_summary_sync(elder_id: int, question: str, answer: str, module: str):
-    """同步落库：判定分类→提炼摘要→写入 chat_summaries（独立 session，供后台线程用）。"""
+    """同步落库：判定分类→提炼摘要→写入 chat_summaries（独立 session，供后台线程用）。
+    兜底：LLM 提炼失败时用问题截断作为记录，保证健康类对话不因模型不可用而丢失。"""
     category = classify_category(question)
     if not category:
         return False
     summary = _extract_summary(question, answer)
     if not summary:
-        return False
+        # 兜底：本地 LLM 未跑/提炼失败时，用问题本身截断作为摘要，
+        # 确保家属端仍能看到这条健康/用药/症状对话记录（修复 BUG-009）
+        summary = question.strip()
+        if len(summary) > 80:
+            summary = summary[:80] + "…"
     risk = extract_risk(question, answer, category)
 
     db = SessionLocal()
