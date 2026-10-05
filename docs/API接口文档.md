@@ -973,7 +973,7 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | answer | string | 完整回答 |
-| module | string | 命中模块：`phone` / `services` / `daily_life` |
+| module | string | 命中模块：`phone` / `services` / `daily_life` / `health` |
 | steps | array | 操作步骤数组 |
 | disclaimer | string | 免责声明 |
 
@@ -986,7 +986,9 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | 鉴权 | POST | `/api/auth/register` | 否 | Day1 |
 | 鉴权 | POST | `/api/auth/login` | 否 | Day1 |
 | 鉴权 | POST | `/api/auth/refresh` | 是 | Day1 |
-| 绑定 | POST | `/api/bind/invite` | 是(老人) | Day1 |
+| 鉴权 | POST | `/api/auth/send_sms_code` | 否 | Day5（新增） |
+| 鉴权 | POST | `/api/auth/login_by_code` | 否 | Day5（新增） |
+| 绑定 | POST | `/api/bind/invite` | 是(老人/家属均可) | Day1 |
 | 绑定 | POST | `/api/bind/accept` | 是(家属) | Day1 |
 | 绑定 | GET | `/api/bind/list` | 是 | Day1 |
 | 用药 | POST | `/api/meds` | 是 | Day2 |
@@ -997,10 +999,12 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | 用药 | POST | `/api/meds/checkin` | 是 | Day2 |
 | 查药 | POST | `/api/drugs/query` | 是 | Day2 |
 | 查药 | POST | `/api/drugs/query-name` | 是 | Day2 |
+| 查药 | GET | `/api/drugs/records` | 是 | Day5（新增） |
 | 体征 | POST | `/api/vitals` | 是 | Day3 |
 | 体征 | GET | `/api/vitals` | 是 | Day3 |
 | 体征 | GET | `/api/vitals/trend` | 是 | Day3 |
 | 体征 | GET | `/api/vitals/export` | 是 | Day3 |
+| 体征 | POST | `/api/vitals/recognize` | 是 | Day5（新增） |
 | 问诊 | POST | `/api/consults/upload` | 是 | Day3 |
 | 问诊 | GET | `/api/consults` | 是 | Day3 |
 | 问诊 | GET | `/api/consults/audio/{filename}` | 否 | Day3 |
@@ -1010,8 +1014,11 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | 报告 | GET | `/api/reports` | 是 | Day4 |
 | 报告 | GET | `/api/reports/image/{filename}` | 否 | Day4 |
 | 天气 | GET | `/api/weather/remind` | 是 | Day4 |
-| 同步 | GET | `/api/sync` | 是 | Day6（增量同步） |
+| 同步 | GET | `/api/sync` | 是 | Day6（增量同步，含drug_queries/chat_summaries） |
 | 问答 | POST | `/api/chat` | 否 | Day5 |
+| 问答 | GET | `/api/chat/summaries` | 是 | Day5（新增） |
+| 隐私 | GET | `/api/privacy` | 是(仅老人) | Day5（新增） |
+| 隐私 | PUT | `/api/privacy` | 是(仅老人) | Day5（新增） |
 
 ---
 
@@ -1037,6 +1044,7 @@ GET /api/sync?elder_id=1&since=2026-10-02T00:00:00
 | v1.0 | 2026-10-02 | C | 初始版本（基于计划文档推测） |
 | v2.0 | 2026-10-02 | C | 基于 backend 分支实际代码重写，修正所有接口路径、参数、响应格式 |
 | v2.1 | 2026-10-03 | C | 同步 A 最新提交：新增 `/api/sync` 增量同步接口；统一医疗接口免责声明文案（以 `core/disclaimer.py` 为准）；VitalsOut/SymptomOut/HealthReportOut 响应新增 `disclaimer` 字段；接口总数 28→29 |
+| v3.0 | 2026-10-05 | C | 同步 A/B 联调后新增功能：新增7个接口（短信验证码登录2个、查药记录、体征拍照识别、对话摘要、隐私开关2个），接口总数 29→36；meds 新增 start_date；vitals 支持补录日期 measured_at；bind/invite 权限放开（老人/家属均可）；sync 扩展 drug_queries/chat_summaries；体征导出无数据返回400 |
 
 ---
 
