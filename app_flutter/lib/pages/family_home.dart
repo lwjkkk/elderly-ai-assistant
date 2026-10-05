@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
@@ -50,24 +51,27 @@ class _FamilyHomeState extends State<FamilyHome> {
       FamMe(),
     ];
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
+      backgroundColor: const Color(0xFFF7FAFD),
       // 全局规则：不再显示页面顶部标题栏，各页面内容直接铺满
       body: SafeArea(key: ValueKey(idx), child: pages[idx]),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: idx,
-        type: BottomNavigationBarType.fixed,
-        selectedFontSize: 16,
-        unselectedFontSize: 16,
-        selectedItemColor: AfuColors.primaryDeep,
-        unselectedItemColor: const Color(0xFF5A6472),
-        onTap: (i) => setState(() => idx = i),
+      bottomNavigationBar: ValueListenableBuilder<Color?>(
+        valueListenable: HubNav.accent,
+        builder: (_, accent, __) => BottomNavigationBar(
+              currentIndex: idx,
+              type: BottomNavigationBarType.fixed,
+              selectedFontSize: 16,
+              unselectedFontSize: 16,
+              selectedItemColor: accent ?? const Color(0xFF345C87),
+              unselectedItemColor: const Color(0xFF6B7280),
+              onTap: (i) => setState(() => idx = i),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined, size: 30), label: '健康总览'),
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline, size: 30), label: 'AI问事'),
           BottomNavigationBarItem(icon: Icon(Icons.family_restroom_outlined, size: 30), label: '家人互动'),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline, size: 30), label: '个人中心'),
-        ],
-      ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -85,6 +89,8 @@ class _FamMeState extends State<FamMe> {
   String nickname = '\u5bb6\u5c5e';
   List binds = [];
   final codeC = TextEditingController();
+  String? inviteCode;
+  bool generating = false;
   String msg = '';
   bool binding = false;
 
@@ -139,6 +145,20 @@ class _FamMeState extends State<FamMe> {
     if (mounted) setState(() => binding = false);
   }
 
+  Future<void> _genInvite() async {
+    if (generating) return;
+    setState(() => generating = true);
+    try {
+      inviteCode = await ApiService.createInvite();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('生成失败：${ApiService.friendly(e)}')));
+      }
+    }
+    if (mounted) setState(() => generating = false);
+  }
+
   Future<void> _logout() async {
     await ApiService.clearAuth();
     if (mounted) {
@@ -151,14 +171,14 @@ class _FamMeState extends State<FamMe> {
   Widget build(BuildContext context) {
     return RefreshIndicator(
       onRefresh: _load,
-      color: AfuColors.primaryDeep,
+      color: const Color(0xFF345C87),
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           _fontEntry(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           _bindCard(),
           const SizedBox(height: 24),
           SizedBox(
@@ -166,8 +186,11 @@ class _FamMeState extends State<FamMe> {
             child: ElevatedButton(
               onPressed: _logout,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3478D9),
+                backgroundColor: const Color(0xFF345C87),
                 foregroundColor: Colors.white,
+                elevation: 2,
+                shadowColor:
+                    const Color(0xFF345C87).withOpacity(0.3),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
@@ -192,9 +215,9 @@ class _FamMeState extends State<FamMe> {
             width: 56,
             height: 56,
             decoration: const BoxDecoration(
-                color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+                color: Color(0xFFEDF4FB), shape: BoxShape.circle),
             child: const Icon(Icons.text_fields_outlined,
-                size: 30, color: AfuColors.primaryDeep),
+                size: 30, color: Color(0xFF345C87)),
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -202,17 +225,17 @@ class _FamMeState extends State<FamMe> {
                 style: TextStyle(
                     fontSize: 21,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF222222))),
+                    color: Color(0xFF212936))),
           ),
           ValueListenableBuilder<double>(
             valueListenable: chatScale,
             builder: (_, v, __) => Text(
               v >= 1.3 ? '大' : (v > 1.05 ? '中' : '小'),
-              style: const TextStyle(fontSize: 19, color: Color(0xFF6B7686)),
+              style: const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
             ),
           ),
           const SizedBox(width: 6),
-          const Icon(Icons.chevron_right, size: 28, color: Color(0xFF8A94A6)),
+          const Icon(Icons.chevron_right, size: 28, color: Color(0xFF6B7280)),
         ]),
       ),
     );
@@ -220,17 +243,19 @@ class _FamMeState extends State<FamMe> {
 
 
   /// 头像信息区：左侧圆形头像（水波纹环绕）+ 右侧用户名与编辑入口。
+  /// 头像信息区：无白色卡片底，与长辈端一致，直接放在页面底色上，配波浪动态背景。
   Widget _profileCard() {
-    return AfuCard(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        _RippleAvatar(asset: avatarAsset),
+        _FamRippleAvatar(asset: avatarAsset),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,
               style: const TextStyle(
                   fontSize: 21,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF222222))),
+                  color: Color(0xFF212936))),
         ),
         AfuPressable(
           onTap: () async {
@@ -240,16 +265,26 @@ class _FamMeState extends State<FamMe> {
             await _load();
             if (mounted) setState(() {});
           },
-          borderRadius: 14,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Text('编辑',
-                style: TextStyle(fontSize: 17, color: Color(0xFF6B7686))),
+          borderRadius: 16,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEDF4FB),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Text('编辑',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF345C87))),
           ),
         ),
       ]),
     );
   }
+
+
 
 
   Widget _bindCard() {
@@ -261,24 +296,24 @@ class _FamMeState extends State<FamMe> {
         const SizedBox(height: 12),
         TextField(
           controller: codeC,
-          style: const TextStyle(fontSize: 21, color: Color(0xFF222222)),
+          style: const TextStyle(fontSize: 21, color: Color(0xFF212936)),
           decoration: InputDecoration(
             hintText: '\u8bf7\u8f93\u51656\u4f4d\u9080\u8bf7\u7801',
-            hintStyle: const TextStyle(fontSize: 19, color: Color(0xFF6B7686)),
+            hintStyle: const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
             filled: true,
             fillColor: Colors.white,
             contentPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: Color(0xFFDCE6F7)),
+              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: Color(0xFFDCE6F7)),
+              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: AfuColors.primary, width: 2),
+              borderSide: const BorderSide(color: Color(0xFF345C87), width: 2),
             ),
           ),
         ),
@@ -287,15 +322,79 @@ class _FamMeState extends State<FamMe> {
           width: double.infinity,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3478D9),
+              backgroundColor: const Color(0xFF345C87),
               foregroundColor: Colors.white,
+              elevation: 2,
+              shadowColor:
+                  const Color(0xFF345C87).withOpacity(0.3),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              textStyle: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w700),
             ),
             onPressed: binding ? null : _doBind,
             child: Text(binding ? '\u7ed1\u5b9a\u4e2d\u2026' : '\u786e\u8ba4\u7ed1\u5b9a'),
           ),
         ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEDF4FB),
+              foregroundColor: const Color(0xFF345C87),
+              elevation: 2,
+              shadowColor:
+                  const Color(0xFF345C87).withOpacity(0.25),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20)),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            onPressed: generating ? null : _genInvite,
+            child: Text(generating ? '生成中…' : '生成邀请码'),
+          ),
+        ),
+        if (inviteCode != null && inviteCode!.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+                horizontal: 18, vertical: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEDF4FB),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Text('邀请码：$inviteCode',
+                    style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF212936))),
+              ),
+              AfuPressable(
+                onTap: () {
+                  Clipboard.setData(
+                      ClipboardData(text: inviteCode!));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('邀请码已复制')));
+                },
+                borderRadius: 12,
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text('复制',
+                      style: TextStyle(
+                          fontSize: 18, color: const Color(0xFF345C87))),
+                ),
+              ),
+            ]),
+          ),
+        ],
         if (msg.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(msg, style: const TextStyle(fontSize: 18, color: Color(0xFFB3261E))),
@@ -319,15 +418,15 @@ class _FamMeState extends State<FamMe> {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FD),
+        color: const Color(0xFFEDF4FB),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(children: [
         Container(
           width: 52,
           height: 52,
-          decoration: const BoxDecoration(color: Color(0xFFEBF1FB), shape: BoxShape.circle),
-          child: const Icon(Icons.person, size: 30, color: AfuColors.primaryDeep),
+          decoration: const BoxDecoration(color: Color(0xFFFFFFFF), shape: BoxShape.circle),
+          child: const Icon(Icons.person, size: 30, color: Color(0xFF345C87)),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -340,85 +439,17 @@ class _FamMeState extends State<FamMe> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? const Color(0xFFE6F4EA) : const Color(0xFFF0F1F5),
+            color: active ? const Color(0xFFFFFFFF) : const Color(0xFFFFFFFF),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(active ? '\u5df2\u7ed1\u5b9a' : status,
               style: TextStyle(
                   fontSize: 17,
-                  color: active ? const Color(0xFF2E7D4F) : const Color(0xFF5A6472))),
+                  color: active ? const Color(0xFF345C87) : const Color(0xFF6B7280))),
         ),
       ]),
     );
   }
-}
-
-/// 左侧圆形头像：淡淡水波纹环绕动画。
-class _RippleAvatar extends StatefulWidget {
-  final String asset;
-  const _RippleAvatar({required this.asset});
-  @override
-  State<_RippleAvatar> createState() => _RippleAvatarState();
-}
-
-class _RippleAvatarState extends State<_RippleAvatar>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 2400))
-    ..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 84,
-      height: 84,
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (_, __) => CustomPaint(
-          painter: _RipplePainter(_c.value),
-          child: Center(
-            child: Container(
-              width: 68,
-              height: 68,
-              decoration: const BoxDecoration(
-                  color: Color(0xFFEBF1FB), shape: BoxShape.circle),
-              child: ClipOval(
-                  child: Image.asset(widget.asset,
-                      width: 64, height: 64, fit: BoxFit.cover)),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RipplePainter extends CustomPainter {
-  final double t;
-  const _RipplePainter(this.t);
-  @override
-  void paint(Canvas canvas, Size s) {
-    final c = Offset(s.width / 2, s.height / 2);
-    for (var i = 0; i < 2; i++) {
-      final p = (t + i * 0.5) % 1.0;
-      canvas.drawCircle(
-          c,
-          30 + p * 12,
-          Paint()
-            ..color = const Color(0xFF3478D9).withOpacity(0.18 * (1 - p))
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 3);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RipplePainter old) => old.t != t;
 }
 
 /// 字体大小选择页：小/中/大三档，全 App 实时生效。
@@ -445,10 +476,10 @@ class _FontSizePageState extends State<_FontSizePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
+      backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
-        title: const Text('字体大小', style: TextStyle(color: Color(0xFF222222))),
-        backgroundColor: const Color(0xFFF7F9FD),
+        title: const Text('字体大小', style: TextStyle(color: Color(0xFF212936))),
+        backgroundColor: const Color(0xFFF7FAFD),
         scrolledUnderElevation: 0,
       ),
       body: ListView(
@@ -469,7 +500,7 @@ class _FontSizePageState extends State<_FontSizePage> {
                           ? null
                           : const Border(
                               bottom: BorderSide(
-                                  color: Color(0xFFEDF1F7), width: 1)),
+                                  color: Color(0xFFEDF4FB), width: 1)),
                     ),
                     child: Row(children: [
                       Expanded(
@@ -480,19 +511,19 @@ class _FontSizePageState extends State<_FontSizePage> {
                                   style: const TextStyle(
                                       fontSize: 21,
                                       fontWeight: FontWeight.w700,
-                                      color: Color(0xFF222222))),
+                                      color: Color(0xFF212936))),
                               const SizedBox(height: 4),
                               Text(_descs[i],
                                   style: const TextStyle(
                                       fontSize: 16,
-                                      color: Color(0xFF6B7686))),
+                                      color: Color(0xFF6B7280))),
                             ]),
                       ),
                       ValueListenableBuilder<double>(
                         valueListenable: chatScale,
                         builder: (_, v, __) => (v - _scales[i]).abs() < 0.01
                             ? const Icon(Icons.check_circle,
-                                size: 28, color: Color(0xFF3478D9))
+                                size: 28, color: Color(0xFF345C87))
                             : const SizedBox(width: 28),
                       ),
                     ]),
@@ -541,10 +572,10 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
+      backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
-        title: const Text('编辑资料', style: TextStyle(color: Color(0xFF222222))),
-        backgroundColor: const Color(0xFFF7F9FD),
+        title: const Text('编辑资料', style: TextStyle(color: Color(0xFF212936))),
+        backgroundColor: const Color(0xFFF7FAFD),
         scrolledUnderElevation: 0,
       ),
       body: ListView(
@@ -556,9 +587,9 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                 width: 96,
                 height: 96,
                 decoration: const BoxDecoration(
-                    color: Color(0xFFEBF1FB), shape: BoxShape.circle),
+                    color: Color(0xFFEDF4FB), shape: BoxShape.circle),
                 child: ClipOval(
-                    child: Image.asset(widget.asset,
+                    child: Image(image: avatarImage(widget.asset),
                         width: 92, height: 92, fit: BoxFit.cover)),
               ),
               const SizedBox(height: 12),
@@ -572,7 +603,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                 child: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Text('上传头像',
-                      style: TextStyle(fontSize: 18, color: Color(0xFF3478D9))),
+                      style: TextStyle(fontSize: 18, color: Color(0xFF345C87))),
                 ),
               ),
             ]),
@@ -586,16 +617,16 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                       style: TextStyle(
                           fontSize: 21,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF222222))),
+                          color: Color(0xFF212936))),
                   const SizedBox(height: 10),
                   TextField(
                     controller: _nameC,
                     style: const TextStyle(
-                        fontSize: 20, color: Color(0xFF222222)),
+                        fontSize: 20, color: Color(0xFF212936)),
                     decoration: InputDecoration(
                       hintText: '输入新昵称',
                       hintStyle: const TextStyle(
-                          fontSize: 19, color: Color(0xFF6B7686)),
+                          fontSize: 19, color: Color(0xFF6B7280)),
                       filled: true,
                       fillColor: Colors.white,
                       contentPadding: const EdgeInsets.symmetric(
@@ -603,12 +634,12 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(22),
                         borderSide:
-                            const BorderSide(color: Color(0xFFDCE6F7)),
+                            const BorderSide(color: Color(0xFFD8E6F3)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(22),
                         borderSide:
-                            const BorderSide(color: Color(0xFFDCE6F7)),
+                            const BorderSide(color: Color(0xFFD8E6F3)),
                       ),
                     ),
                   ),
@@ -620,7 +651,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
             child: ElevatedButton(
               onPressed: _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3478D9),
+                backgroundColor: const Color(0xFF345C87),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(
@@ -633,4 +664,73 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       ),
     );
   }
+}
+
+/// 家属个人中心头像水波纹：浅蓝半透明圆环，柔和循环向外扩散。
+class _FamRippleAvatar extends StatefulWidget {
+  final String asset;
+  const _FamRippleAvatar({required this.asset});
+  @override
+  State<_FamRippleAvatar> createState() => _FamRippleAvatarState();
+}
+
+class _FamRippleAvatarState extends State<_FamRippleAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 2600))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 88,
+      height: 88,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) => CustomPaint(
+          painter: _FamRipplePainter(_c.value),
+          child: Center(
+            child: Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                  color: Color(0xFFEDF4FB), shape: BoxShape.circle),
+              child: ClipOval(
+                  child: Image(image: avatarImage(widget.asset),
+                      width: 64, height: 64, fit: BoxFit.cover)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FamRipplePainter extends CustomPainter {
+  final double t;
+  const _FamRipplePainter(this.t);
+  @override
+  void paint(Canvas canvas, Size s) {
+    final c = Offset(s.width / 2, s.height / 2);
+    for (var i = 0; i < 2; i++) {
+      final p = (t + i * 0.5) % 1.0;
+      canvas.drawCircle(
+          c,
+          30 + p * 14,
+          Paint()
+            ..color =
+                const Color(0xFF345C87).withOpacity(0.35 * (1 - p))
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FamRipplePainter old) => old.t != t;
 }

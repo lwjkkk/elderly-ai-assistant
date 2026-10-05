@@ -114,7 +114,7 @@ class AfuThinkingBubble extends StatelessWidget {
           const SizedBox(
             width: 22,
             height: 22,
-            child: CircularProgressIndicator(strokeWidth: 3, color: AfuColors.primary),
+            child: CircularProgressIndicator(strokeWidth: 3, color: const Color(0xFF345C87)),
           ),
           const SizedBox(width: 12),
           Text(text, style: AfuElderText.secondary),

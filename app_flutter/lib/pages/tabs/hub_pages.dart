@@ -26,6 +26,9 @@ final notifyEnabled = ValueNotifier<bool>(true);
 
 class HubNav {
   static final tab = ValueNotifier<int>(0);
+
+  /// 底部 Tab 高亮：进入本人功能内页时，健康总览 Tab 切为功能同系色，离开恢复。
+  static final accent = ValueNotifier<Color?>(null);
   static String? pendingSection;
 
   static void go(int index, [String? section]) {
@@ -740,11 +743,13 @@ class _FamConvItem {
   final String name; // 对方昵称
   final String key; // 该会话的本地存储键（按人区分）
   final String preview; // 最后一条消息预览
+  final String avatar; // 后端返回的自定义头像（URL/路径），空则用默认占位
   final bool active; // 是否已确认绑定
   const _FamConvItem({
     required this.name,
     required this.key,
     this.preview = '',
+    this.avatar = '',
     this.active = true,
   });
 }
@@ -786,7 +791,8 @@ class _FamilyTabState extends State<FamilyTab> {
                 '家人 $idx')
             .toString();
         final key = 'family_chat_${name}_$idx';
-        final item = _FamConvItem(name: name, key: key, active: active);
+        final avatar = (m['avatar'] ?? m['avatar_url'] ?? m['other_avatar'] ?? '').toString();
+        final item = _FamConvItem(name: name, key: key, active: active, avatar: avatar);
         items.add(item);
         idx++;
       }
@@ -809,7 +815,8 @@ class _FamilyTabState extends State<FamilyTab> {
                   name: items[i].name,
                   key: items[i].key,
                   preview: preview,
-                  active: items[i].active);
+                  active: items[i].active,
+                  avatar: items[i].avatar);
             }
           }
         } catch (_) {}
@@ -821,46 +828,50 @@ class _FamilyTabState extends State<FamilyTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
+      backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
         // 全局规则：不再显示页面顶部标题
-        backgroundColor: const Color(0xFFF7F9FD),
-        scrolledUnderElevation: 0,
-        actions: [
-          IconButton(
-            tooltip: '添加家人',
-            iconSize: 30,
-            onPressed: _openBind,
-            icon: const Icon(Icons.person_add_outlined,
-                color: AfuColors.primaryDeep),
-          ),
-        ],
+        backgroundColor: const Color(0xFFF7FAFD),
+        scrolledUnderElevation: 0
       ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _load,
-          color: AfuColors.primaryDeep,
+          color: const Color(0xFF345C87),
           child: _loading
               ? const Center(
                   child: CircularProgressIndicator(
-                      color: AfuColors.primaryDeep))
+                      color: const Color(0xFF345C87)))
               : _convs.isEmpty
                   ? ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       children: [
                         _guideBox(),
-                        const SizedBox(height: 16),
-                        _helpCard(),
+                        // 长辈健康动态 / 家人互联小提示仅家属端展示，长辈视角不出现
+                        if (_role == 'family') ...[
+                          const SizedBox(height: 16),
+                          _helpCard(),
+                        ],
                       ],
                     )
                   : ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       children: [
                         for (final c in _convs) _convTile(c),
-                        const SizedBox(height: 16),
-                        _dynamicCard(),
-                        const SizedBox(height: 16),
-                        _helpCard(),
+                        // 长辈健康动态 / 家人互联小提示仅家属端展示，长辈视角只保留家人列表与去对话
+                        if (_role == 'family') ...[
+                          const SizedBox(height: 16),
+                          _dynamicCard(),
+                          const SizedBox(height: 16),
+                          _helpCard(),
+                        ],
+                        // 长辈视角：列表下方补充家人互联小贴士，填充空白
+                        // 间距：tiles 自带底部 12 + 此处 4 = 16；底部 padding 20 + 4 = 24
+                        if (_role != 'family') ...[
+                          const SizedBox(height: 4),
+                          const _ElderTipCard(),
+                          const SizedBox(height: 4),
+                        ],
                       ],
                     ),
         ),
@@ -879,14 +890,7 @@ class _FamilyTabState extends State<FamilyTab> {
         borderRadius: 22,
         child: AfuCard(
           child: Row(children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(
-                color: Color(0xFFE8EFFD), shape: BoxShape.circle),
-            child: const Icon(Icons.person,
-                size: 40, color: AfuColors.primaryDeep),
-          ),
+          _FamAvatar(avatar: c.avatar),
           const SizedBox(width: 14),
           Expanded(
             child: Text(c.name,
@@ -895,7 +899,7 @@ class _FamilyTabState extends State<FamilyTab> {
           ),
           const SizedBox(width: 10),
           const Text('去对话 >',
-              style: TextStyle(fontSize: 17, color: Color(0xFF8A94A6))),
+              style: TextStyle(fontSize: 17, color: Color(0xFF6B7280))),
           ]),
         ),
       ),
@@ -911,10 +915,10 @@ class _FamilyTabState extends State<FamilyTab> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFDCE6F7)),
+            border: Border.all(color: const Color(0xFFD8E6F3)),
             boxShadow: [
               BoxShadow(
-                  color: AfuColors.primaryDeep.withOpacity(0.08),
+                  color: const Color(0xFF345C87).withOpacity(0.08),
                   blurRadius: 16,
                   offset: const Offset(0, 6)),
             ],
@@ -925,7 +929,7 @@ class _FamilyTabState extends State<FamilyTab> {
               width: 120,
               height: 96,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8EFFD),
+                color: const Color(0xFFEDF4FB),
                 borderRadius: BorderRadius.circular(24),
               ),
               padding: const EdgeInsets.all(16),
@@ -936,16 +940,20 @@ class _FamilyTabState extends State<FamilyTab> {
                 style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF222222))),
+                    color: Color(0xFF212936))),
             const SizedBox(height: 12),
             const Text('点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
                 style: TextStyle(
-                    fontSize: 19, color: Color(0xFF555555), height: 1.6),
+                    fontSize: 19, color: Color(0xFF6B7280), height: 1.6),
                 textAlign: TextAlign.center),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF345C87),
+                  foregroundColor: Colors.white,
+                ),
                 onPressed: _openBind,
                 child: const Text('去绑定家人'),
               ),
@@ -968,9 +976,9 @@ class _FamilyTabState extends State<FamilyTab> {
           width: 56,
           height: 56,
           decoration: const BoxDecoration(
-              color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+              color: Color(0xFFEDF4FB), shape: BoxShape.circle),
           child: const Icon(Icons.handshake_outlined,
-              size: 30, color: AfuColors.primaryDeep),
+              size: 30, color: const Color(0xFF345C87)),
         ),
         const SizedBox(width: 12),
         const Expanded(
@@ -981,12 +989,12 @@ class _FamilyTabState extends State<FamilyTab> {
                     style: TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF222222))),
+                        color: Color(0xFF212936))),
                 SizedBox(height: 6),
                 Text('绑定长辈后，可查看长辈健康记录，及时收到用药提醒',
                     style: TextStyle(
                         fontSize: 18,
-                        color: Color(0xFF222222),
+                        color: Color(0xFF6B7280),
                         height: 1.5)),
               ]),
         ),
@@ -1000,13 +1008,13 @@ class _FamEmptyPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size s) {
     final stroke = Paint()
-      ..color = const Color(0xFF7AA5F0)
+      ..color = const Color(0xFF345C87)
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
     final fill = Paint()
-      ..color = const Color(0xFF7AA5F0)
+      ..color = const Color(0xFF345C87)
       ..style = PaintingStyle.fill;
     final b1 = RRect.fromRectAndRadius(
         Rect.fromLTWH(0, 0, s.width * 0.58, s.height * 0.46),
@@ -1021,7 +1029,7 @@ class _FamEmptyPainter extends CustomPainter {
             s.height * 0.48),
         const Radius.circular(12));
     canvas.drawRRect(
-        b2, Paint()..color = const Color(0xFF7AA5F0).withOpacity(0.18));
+        b2, Paint()..color = const Color(0xFF345C87).withOpacity(0.18));
     canvas.drawRRect(b2, stroke);
   }
 
@@ -1075,8 +1083,16 @@ class _FamMsg {
 class FamConversationPage extends StatefulWidget {
   final String name;
   final String storeKey;
+
+  /// 健康总览一键询问：prefill 预填输入框，autoText 进页自动发送一条业务记录。
+  final String? prefill;
+  final String? autoText;
   const FamConversationPage(
-      {super.key, required this.name, required this.storeKey});
+      {super.key,
+      required this.name,
+      required this.storeKey,
+      this.prefill,
+      this.autoText});
   @override
   State<FamConversationPage> createState() => _FamConversationState();
 }
@@ -1092,6 +1108,9 @@ class _FamConversationState extends State<FamConversationPage> {
   @override
   void initState() {
     super.initState();
+    if ((widget.prefill ?? '').isNotEmpty) {
+      _input.text = widget.prefill!;
+    }
     _loadHistory();
   }
 
@@ -1117,6 +1136,10 @@ class _FamConversationState extends State<FamConversationPage> {
       ];
       if (mounted) setState(() {});
     } catch (_) {}
+    // 一键询问带入的业务记录：历史加载完后再追加发送，避免被覆盖
+    if ((widget.autoText ?? '').isNotEmpty && mounted) {
+      _push(_FamMsg(isMe: true, text: widget.autoText!));
+    }
   }
 
   Future<void> _saveHistory() async {
@@ -1854,9 +1877,9 @@ class _ElderDynamicState extends State<_ElderDynamic> {
             width: 56,
             height: 56,
             decoration: const BoxDecoration(
-                color: Color(0xFFE6F4EA), shape: BoxShape.circle),
+                color: Color(0xFFEDF4FB), shape: BoxShape.circle),
             child: const Icon(Icons.monitor_heart_outlined,
-                size: 30, color: Color(0xFF2E7D4F)),
+                size: 30, color: Color(0xFF345C87)),
           ),
           const SizedBox(width: 12),
           const Expanded(
@@ -1864,7 +1887,7 @@ class _ElderDynamicState extends State<_ElderDynamic> {
                 style: TextStyle(
                     fontSize: 21,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF222222))),
+                    color: Color(0xFF212936))),
           ),
         ]),
         const SizedBox(height: 12),
@@ -1878,13 +1901,13 @@ class _ElderDynamicState extends State<_ElderDynamic> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(children: [
                     const Icon(Icons.circle,
-                        size: 10, color: AfuColors.primaryDeep),
+                        size: 10, color: const Color(0xFF345C87)),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(r,
                           style: const TextStyle(
                               fontSize: 18,
-                              color: Color(0xFF222222),
+                              color: Color(0xFF212936),
                               height: 1.5)),
                     ),
                   ]),
@@ -1897,7 +1920,101 @@ class _ElderDynamicState extends State<_ElderDynamic> {
           onTap: () => HubNav.go(0),
           borderRadius: 12,
           child: const Text('可前往健康总览查看完整记录',
-              style: TextStyle(fontSize: 16, color: Color(0xFF6B7686))),
+              style: TextStyle(fontSize: 16, color: Color(0xFF6B7280))),
+        ),
+      ]),
+    );
+  }
+}
+
+/// 联系人动态头像：优先展示后端返回的用户自定义头像（http 远端或本地路径），
+/// 无自定义头像时展示默认占位图标。跟随后端接口返回实时刷新。
+/// 【等待后端接口开发完成】bind 接口暂未返回头像字段（avatar/avatar_url），
+/// 字段就绪后 _load 中已预留读取逻辑，无需改 UI。
+class _FamAvatar extends StatelessWidget {
+  final String avatar;
+  const _FamAvatar({required this.avatar});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget inner;
+    if (avatar.startsWith('http')) {
+      inner = ClipOval(
+        child: Image.network(avatar,
+            width: 72,
+            height: 72,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const _FamAvatarFallback()),
+      );
+    } else if (avatar.isNotEmpty) {
+      inner = ClipOval(
+        child: Image.asset(avatar,
+            width: 72,
+            height: 72,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const _FamAvatarFallback()),
+      );
+    } else {
+      inner = const _FamAvatarFallback();
+    }
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Container(
+        decoration: const BoxDecoration(
+            color: Color(0xFFE8EFFD), shape: BoxShape.circle),
+        child: inner,
+      ),
+    );
+  }
+}
+
+class _FamAvatarFallback extends StatelessWidget {
+  const _FamAvatarFallback();
+  @override
+  Widget build(BuildContext context) {
+    return const Icon(Icons.person, size: 40, color: const Color(0xFF345C87));
+  }
+}
+
+/// 长辈视角家人互联小贴士：纯前端提示卡，无后端依赖。
+class _ElderTipCard extends StatelessWidget {
+  const _ElderTipCard();
+  @override
+  Widget build(BuildContext context) {
+    return AfuCard(
+      child: Row(children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: const BoxDecoration(
+              color: Color(0xFFEDF4FB), shape: BoxShape.circle),
+          child: const Icon(Icons.handshake_outlined,
+              size: 30, color: const Color(0xFF345C87)),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('家人互联小贴士',
+                    style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF212936))),
+                SizedBox(height: 6),
+                Text('绑定家属后，家属可及时查看您的用药提醒和健康记录，帮助您按时用药。',
+                    style: TextStyle(
+                        fontSize: 18,
+                        color: Color(0xFF6B7280),
+                        height: 1.5)),
+                SizedBox(height: 6),
+                Text('有问题可随时点击去对话联系家属。',
+                    style: TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF6B7280),
+                        height: 1.5)),
+              ]),
         ),
       ]),
     );

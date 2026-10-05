@@ -19,7 +19,7 @@ class _LoginPageState extends State<LoginPage> {
   final pwd = TextEditingController();
   final code = TextEditingController();
   String role = 'elder';
-  bool useCode = false;
+  bool useCode = true;
   bool showPwd = true;
   bool loading = false;
   bool sending = false;
@@ -118,10 +118,12 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FD),
+      backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
-        title: const Text('登录'),
-        backgroundColor: const Color(0xFFF7F9FD),
+        title: const Text('登录',
+            style: TextStyle(
+                color: Color(0xFF182F4D), fontWeight: FontWeight.w700)),
+        backgroundColor: const Color(0xFFF7FAFD),
         scrolledUnderElevation: 0,
       ),
       body: SafeArea(
@@ -137,56 +139,48 @@ class _LoginPageState extends State<LoginPage> {
                   shape: BoxShape.circle,
                   color: Colors.white,
                   border:
-                      Border.all(color: const Color(0xFFDCE6F7), width: 3),
+                      Border.all(color: const Color(0xFFDCE7F5), width: 2),
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
                     child: Image.asset('assets/assistant_face.png',
                         fit: BoxFit.cover)),
               ),
-              const SizedBox(height: 10),
-              const Text('欢迎回来',
-                  style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF222222))),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: const Color(0xFFDCE6F7)),
-                ),
+                  border: Border.all(color: const Color(0xFFAFC6E0))),
                 child: Row(children: [
-                  for (final e in [
-                    ('elder', '我是长辈'),
-                    ('family', '我是家属')
-                  ])
+                  for (var _i = 0; _i < 2; _i++) ...[
                     Expanded(
                       child: AfuPressable(
-                        onTap: () => _pickRole(e.$1),
+                        onTap: () => _pickRole(_i == 0 ? 'elder' : 'family'),
                         borderRadius: 22,
                         child: Container(
                           padding:
                               const EdgeInsets.symmetric(vertical: 14),
                           decoration: BoxDecoration(
-                            color: role == e.$1
-                                ? AfuColors.primary
-                                : Colors.transparent,
+                            color: role == (_i == 0 ? 'elder' : 'family')
+                                ? const Color(0xFF40689B)
+                                : const Color(0xFFFFFFFF),
                             borderRadius: BorderRadius.circular(22),
                           ),
-                          child: Text(e.$2,
+                          child: Text(_i == 0 ? '我是长辈' : '我是家属',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w700,
-                                  color: role == e.$1
-                                      ? Colors.white
-                                      : const Color(0xFF555555))),
+                                  color: role == (_i == 0 ? 'elder' : 'family')
+                                      ? const Color(0xFFFFFFFF)
+                                      : const Color(0xFF182F4D))),
                         ),
                       ),
                     ),
+                    if (_i == 0) const SizedBox(width: 10),
+                  ],
                 ]),
               ),
               const SizedBox(height: 16),
@@ -202,7 +196,7 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: const Color(0xFFDCE6F7)),
+                  border: Border.all(color: const Color(0xFFAFC6E0)),
                 ),
                 child: Row(children: [
                   Expanded(
@@ -225,23 +219,38 @@ class _LoginPageState extends State<LoginPage> {
               ),
               const SizedBox(height: 12),
               if (useCode)
-                Row(children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Expanded(
                     child: _field(
                       label: '短信验证码',
-                      hint: '请输入短信里的数字',
+                      hint: '请在这里输入',
                       controller: code,
                       keyboard: TextInputType.number,
                     ),
                   ),
                   const SizedBox(width: 10),
-                  SizedBox(
-                    width: 150,
-                    height: 76,
-                    child: ElevatedButton(
+                  Column(children: [
+                    const SizedBox(height: 30),
+                    SizedBox(
+                      width: 150,
+                      height: 72,
+                      child: ElevatedButton(
                       onPressed: (sending || cooldown > 0)
                           ? null
                           : _sendCode,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFDCE7F5),
+                        foregroundColor: const Color(0xFF40689B),
+                        elevation: 2,
+                        shadowColor: const Color(0xFF40689B)
+                            .withOpacity(0.25),
+                        disabledBackgroundColor:
+                            const Color(0xFFE9ECEF),
+                        disabledForegroundColor:
+                            const Color(0xFF6B7280),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22)),
+                      ),
                       child: Text(
                           sending
                               ? '发送中…'
@@ -249,9 +258,12 @@ class _LoginPageState extends State<LoginPage> {
                                   ? '$cooldown秒后重发'
                                   : '获取验证码'),
                           textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 18)),
+                          style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700)),
+                      ),
                     ),
-                  ),
+                  ]),
                 ])
               else
                 _field(
@@ -259,19 +271,15 @@ class _LoginPageState extends State<LoginPage> {
                   hint: isElder ? '请输入密码（已显示）' : '请输入密码（已隐藏）',
                   controller: pwd,
                   obscure: !showPwd,
-                  suffix: AfuPressable(
-                    onTap: () =>
+                  suffix: IconButton(
+                    onPressed: () =>
                         setState(() => showPwd = !showPwd),
-                    borderRadius: 24,
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(
-                          showPwd
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 32,
-                          color: AfuColors.primaryDeep),
-                    ),
+                    icon: Icon(
+                        showPwd
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 32,
+                        color: const Color(0xFF40689B)),
                   ),
                 ),
               if (err != null) ...[
@@ -296,17 +304,38 @@ class _LoginPageState extends State<LoginPage> {
                 height: 64,
                 child: ElevatedButton(
                   onPressed: loading ? null : _login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF40689B),
+                    foregroundColor: Colors.white,
+                    elevation: 3,
+                    shadowColor: const Color(0xFF40689B)
+                        .withOpacity(0.35),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24)),
+                  ),
                   child: Text(loading ? '登录中…' : '登录',
-                      style: const TextStyle(fontSize: 22)),
+                      style: const TextStyle(
+                          fontSize: 24, fontWeight: FontWeight.w700)),
                 ),
               ),
-              TextButton(
-                onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const RegisterPage())),
-                child: const Text('没有账号？去注册',
-                    style: TextStyle(fontSize: 21)),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('没有账号？',
+                      style:
+                          TextStyle(fontSize: 21, color: Color(0xFF6B7280))),
+                  TextButton(
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const RegisterPage())),
+                    child: const Text('去注册',
+                        style: TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF40689B))),
+                  ),
+                ],
               ),
             ]),
           ),
@@ -317,19 +346,37 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _modeChip(String text, bool active) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        color: active ? AfuColors.primary : Colors.transparent,
+        color: active
+            ? const Color(0xFF40689B)
+            : const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(22),
       ),
-      child: Text(text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: active ? Colors.white : const Color(0xFF222222))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: active
+                    ? const Color(0xFFFFFFFF)
+                    : const Color(0xFF6B7280))),
+        if (active) ...[
+          const SizedBox(height: 4),
+          Container(
+            width: 28,
+            height: 3,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFFFF),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
+      ]),
     );
   }
+
   Widget _field({
     required String label,
     required String hint,
@@ -343,18 +390,21 @@ class _LoginPageState extends State<LoginPage> {
         children: [
           Text(label,
               style: const TextStyle(
-                  fontSize: 20,
+                  fontSize: 22,
+                  height: 1.0,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF222222))),
+                  color: Color(0xFF182F4D))),
           const SizedBox(height: 8),
           Container(
+            height: 72,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(22),
               boxShadow: [
                 BoxShadow(
                     color:
-                        AfuColors.primaryDeep.withOpacity(0.06),
+                        const Color(0xFF40689B).withOpacity(0.06),
                     blurRadius: 10,
                     offset: const Offset(0, 3)),
               ],
@@ -363,12 +413,16 @@ class _LoginPageState extends State<LoginPage> {
               controller: controller,
               keyboardType: keyboard,
               obscureText: obscure,
+              cursorColor: const Color(0xFF40689B),
+              expands: !obscure,
+              maxLines: obscure ? 1 : null,
+              textAlignVertical: TextAlignVertical.center,
               style:
-                  const TextStyle(fontSize: 21, color: Color(0xFF222222)),
+                  const TextStyle(fontSize: 22, color: Color(0xFF182F4D)),
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: const TextStyle(
-                    fontSize: 19, color: Color(0xFF8A94A6)),
+                    fontSize: 20, color: Color(0xFF6B7280)),
                 filled: true,
                 fillColor: Colors.white,
                 suffixIcon: suffix == null
@@ -381,21 +435,21 @@ class _LoginPageState extends State<LoginPage> {
                 suffixIconConstraints: const BoxConstraints(
                     minWidth: 56, minHeight: 56),
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 22, vertical: 19),
+                    horizontal: 22),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
                   borderSide:
-                      const BorderSide(color: Color(0xFFDCE6F7)),
+                      const BorderSide(color: Color(0xFFAFC6E0)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
                   borderSide:
-                      const BorderSide(color: Color(0xFFDCE6F7)),
+                      const BorderSide(color: Color(0xFFAFC6E0)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
                   borderSide: const BorderSide(
-                      color: AfuColors.primary, width: 2),
+                      color: Color(0xFF40689B), width: 2),
                 ),
               ),
             ),

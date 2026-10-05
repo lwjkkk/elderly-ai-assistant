@@ -1,6 +1,8 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
+import 'med_form.dart';
 import '../../theme.dart';
 
 /// Day2：今日清单(GET /api/meds/today → slots) + 打卡 + 录药
@@ -35,7 +37,7 @@ class _MedsTabState extends State<MedsTab> {
   }
 
   Color statusColor(String s) {
-    if (s == 'taken') return Colors.green;
+    if (s == 'taken') return const Color(0xFF345C87);
     if (s == 'missed') return Colors.red;
     return Colors.orange;
   }
@@ -62,97 +64,103 @@ class _MedsTabState extends State<MedsTab> {
     }
   }
 
-  Future<void> showAddDialog() async {
-    final nameC = TextEditingController();
-    final doseC = TextEditingController(text: '20mg');
-    final freqC = TextEditingController(text: '每日2次');
-    final timeC = TextEditingController(text: '08:00,20:00');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('录入药品', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF222222))),
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: nameC,
-              style: const TextStyle(fontSize: 20, color: Color(0xFF222222)),
-              decoration: InputDecoration(
-                labelText: '药名*',
-                labelStyle: const TextStyle(fontSize: 18),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: doseC,
-              style: const TextStyle(fontSize: 20, color: Color(0xFF222222)),
-              decoration: InputDecoration(
-                labelText: '剂量* 如20mg',
-                labelStyle: const TextStyle(fontSize: 18),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: freqC,
-              style: const TextStyle(fontSize: 20, color: Color(0xFF222222)),
-              decoration: InputDecoration(
-                labelText: '频次* 如每日2次',
-                labelStyle: const TextStyle(fontSize: 18),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: timeC,
-              style: const TextStyle(fontSize: 20, color: Color(0xFF222222)),
-              decoration: InputDecoration(
-                labelText: '时间点* HH:MM逗号分隔',
-                labelStyle: const TextStyle(fontSize: 18),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
-            child: const Text('取消', style: TextStyle(fontSize: 19)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(c, true),
-            style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
-            child: const Text('保存', style: TextStyle(fontSize: 19)),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && nameC.text.trim().isNotEmpty) {
-      try {
-        await ApiService.addMed(
-          name: nameC.text.trim(),
-          dosage: doseC.text.trim(),
-          frequency: freqC.text.trim(),
-          times: timeC.text.trim().split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
-        );
-        refresh();
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('保存失败：${ApiService.friendly(e)}')));
-        }
+  Future<void> _openManual() async {
+    await _medFormDialog();
+  }
+
+  /// 拍照录入：唤起相机拍照，识别后回填药名/剂量/频次，
+  /// 开始用药日期与提醒用药时间点仍由用户手动填写。
+  Future<void> _pickPhoto() async {
+    try {
+      final f = await ImagePicker()
+          .pickImage(source: ImageSource.camera, maxWidth: 1600);
+      if (f == null) return;
+      final bytes = await f.readAsBytes();
+      final r = await ApiService.queryDrugByImage(bytes.toList());
+      final ocr = (r['ocr_text'] ?? '').toString();
+      var name = '';
+      var dose = '';
+      var freq = '';
+      if (ocr.trim().isNotEmpty) {
+        final lines = [
+          for (final l in ocr.split('\n'))
+            if (l.trim().isNotEmpty) l.trim(),
+        ];
+        if (lines.isNotEmpty) name = lines.first;
+        final dm = RegExp(r'\d+\.?\d*\s*(mg|g|ml|片|粒|颗|袋|支)')
+            .firstMatch(ocr);
+        if (dm != null) dose = dm.group(0) ?? '';
+        final fm = RegExp(r'(每日\d*次|每天\d*次|一日\d*次|一天\d*次|每\d+小时一次)')
+            .firstMatch(ocr);
+        if (fm != null) freq = fm.group(0) ?? '';
+      }
+      if (!mounted) return;
+      await _medFormDialog(
+          presetName: name,
+          presetDose: dose,
+          presetFreq: freq,
+          autoNote: '已自动识别填充，可手动修改');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('识别失败：${ApiService.friendly(e)}')));
       }
     }
   }
 
+  /// 录入药品弹窗：浅灰白底、超大圆角、整体下移留白。
+  /// 字段自上而下：药名 / 剂量 / 频次 / 开始用药日期 / 提醒用药时间点。
+  Future<void> _medFormDialog(
+      {String? presetName,
+      String? presetDose,
+      String? presetFreq,
+      String? autoNote}) async {
+    final data = await showMedFormDialog(context,
+        presetName: presetName,
+        presetDose: presetDose,
+        presetFreq: presetFreq,
+        autoNote: autoNote);
+    if (data == null) return;
+    try {
+      await ApiService.addMed(
+        name: data['name'] as String,
+        dosage: data['dosage'] as String,
+        frequency: data['frequency'] as String,
+        times: List<String>.from(data['times'] as List),
+      );
+      refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('保存失败：${ApiService.friendly(e)}')));
+      }
+    }
+  }
+
+
+Widget _topBtn(String text, VoidCallback onTap) {
+    return SizedBox(
+      height: 56,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF345C87),
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shadowColor: const Color(0xFF345C87).withOpacity(0.25),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
+        ),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
+    if (loading) return Center(child: CircularProgressIndicator(color: const Color(0xFF345C87)));
     final cards = <Widget>[];
     for (final m in items) {
       final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
@@ -167,12 +175,16 @@ class _MedsTabState extends State<MedsTab> {
         final done = status == 'taken';
         cards.add(Card(
           child: ListTile(
-            title: Text('$name $dosage  $slot', style: const TextStyle(fontSize: 22)),
-            subtitle: Text(statusText(status),
-                style: TextStyle(fontSize: 18, color: statusColor(status))),
+            title: Text(name, style: const TextStyle(fontSize: 22)),
+            subtitle: Text('$slot吃$dosage',
+                style: TextStyle(fontSize: 18, color: Color(0xFF212936))),
             trailing: widget.readOnly
                 ? null
                 : ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF345C87),
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: done ? null : () => doCheckin(medId.toInt(), slot),
                     child: Text(done ? '已打卡' : '打卡', style: const TextStyle(fontSize: 20)),
                   ),
@@ -181,42 +193,72 @@ class _MedsTabState extends State<MedsTab> {
       }
     }
     return RefreshIndicator(
+      color: const Color(0xFF345C87),
       onRefresh: refresh,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 今日小贴士：优先展示用药提醒与时间，无提醒则展示当日温度与穿衣建议
-          const _MedsTipCard(),
-          const SizedBox(height: 12),
           Row(children: [
-            const Text('今日用药', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF222222))),
-            const Spacer(),
-            if (!widget.readOnly)
-              ElevatedButton.icon(
-                  onPressed: showAddDialog,
-                  icon: const Icon(Icons.add),
-                  label: const Text('录药')),
+            const Text('今日用药', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF212936))),
           ]),
+          if (!widget.readOnly) ...[
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: _topBtn('手动录入', _openManual)),
+              const SizedBox(width: 12),
+              Expanded(child: _topBtn('拍照录入', _pickPhoto)),
+            ]),
+            const SizedBox(height: 16),
+          ],
           if (err.isNotEmpty) AppErrorCard(message: err, onRetry: refresh),
           if (cards.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
               child: Column(children: [
-                // 简易插画：药丸 + 对勾
-                SizedBox(
-                  width: 120,
-                  height: 96,
-                  child: CustomPaint(painter: _MedsEmptyPainter()),
-                ),
+                // 空状态：胶囊图形在标题左侧、对勾图形在标题右侧，不再交叉
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 92,
+                        height: 72,
+                        child:
+                            CustomPaint(painter: _CapsulePainter()),
+                      ),
+                      const SizedBox(width: 20),
+                      const Flexible(
+                        child: Text('今天还没有用药安排',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF212936))),
+                      ),
+                      const SizedBox(width: 20),
+                      SizedBox(
+                        width: 60,
+                        height: 60,
+                        child: CustomPaint(painter: _CheckPainter()),
+                      ),
+                    ]),
                 const SizedBox(height: 16),
-                const Text('今天还没有用药安排',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF222222))),
-                const SizedBox(height: 8),
-                const Text('点右上角录药，把每天要吃的药记下来吧',
-                    style: TextStyle(fontSize: 18, color: Color(0xFF6B7686), height: 1.5),
+                const Text('点击右上角把每天要吃的药记录下来',
+                    style: TextStyle(
+                        fontSize: 20,
+                        color: Color(0xFF6B7280),
+                        height: 1.6),
+                    textAlign: TextAlign.center),
+                const Text('养成记录习惯，帮助您按时用药',
+                    style: TextStyle(
+                        fontSize: 20,
+                        color: Color(0xFF6B7280),
+                        height: 1.6),
                     textAlign: TextAlign.center),
               ]),
             ),
+          if (cards.isEmpty) const _MedScienceCard(),
+          // 科普卡与底部 Tab 栏间距：列表 padding 16 + 此处 8 = 24
+          if (cards.isEmpty) const SizedBox(height: 8),
           ...cards,
         ],
       ),
@@ -224,122 +266,102 @@ class _MedsTabState extends State<MedsTab> {
   }
 }
 
-/// 用药页今日小贴士：优先查当前用户用药提醒并展示对应时间；
-/// 无用药提醒时调用天气，展示当日温度与穿衣建议。
-class _MedsTipCard extends StatefulWidget {
-  const _MedsTipCard();
-  @override
-  State<_MedsTipCard> createState() => _MedsTipCardState();
-}
-
-class _MedsTipCardState extends State<_MedsTipCard> {
-  late final Future<String?> _future = _load();
-
-  static Future<String?> _load() async {
-    try {
-      final meds = await ApiService.medsToday();
-      for (final m in meds) {
-        final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
-        final name = (map['name'] ?? '').toString();
-        final slots = map['slots'] is List ? List.from(map['slots']) : [];
-        for (final s in slots) {
-          final sm = s is Map ? Map<String, dynamic>.from(s as Map) : <String, dynamic>{};
-          if ((sm['status'] ?? 'pending').toString() == 'pending' && name.isNotEmpty) {
-            final slot = (sm['slot'] ?? '').toString();
-            return '用药提醒：$name ${slot.isEmpty ? '今日' : slot}服用，别忘了按时吃药';
-          }
-        }
-      }
-    } catch (_) {}
-    try {
-      Map<String, dynamic>? d;
-      try {
-        var perm = await Geolocator.checkPermission();
-        if (perm == LocationPermission.denied) {
-          perm = await Geolocator.requestPermission();
-        }
-        if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
-          final pos = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.low,
-            timeLimit: const Duration(seconds: 8),
-          );
-          d = await ApiService.weatherRemind(lat: pos.latitude, lon: pos.longitude);
-        }
-      } catch (_) {}
-      d ??= await ApiService.weatherRemind();
-      final text = (d['text'] ?? '').toString();
-      final tip = (d['tip'] ?? '').toString();
-      final body = (text + tip).trim();
-      if (body.isNotEmpty) return '今日天气：$body';
-    } catch (_) {}
-    return '记得按时作息、均衡饮食';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<String?>(
-      future: _future,
-      builder: (c, s) {
-        if (s.connectionState == ConnectionState.waiting) {
-          return const Card(
-            child: Padding(
-              padding: EdgeInsets.all(18),
-              child: Text('正在查看提醒…', style: TextStyle(fontSize: 19, color: Color(0xFF222222))),
-            ),
-          );
-        }
-        if (s.data == null) return const SizedBox.shrink();
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Row(children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(color: Color(0xFFFFF3E2), shape: BoxShape.circle),
-                child: const Icon(Icons.lightbulb_outline, size: 28, color: Color(0xFFB07A2A)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(s.data!,
-                    style: const TextStyle(fontSize: 19, color: Color(0xFF222222), height: 1.5)),
-              ),
-            ]),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// 用药空状态简易插画：胶囊药丸 + 对勾。
-class _MedsEmptyPainter extends CustomPainter {
+/// 用药空状态插画（一）：胶囊药丸，低饱和健康蓝绿色。
+class _CapsulePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size s) {
     final stroke = Paint()
-      ..color = const Color(0xFF7AA5F0)
+      ..color = const Color(0xFF5FA9A6)
       ..strokeWidth = 4
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
     final fill = Paint()
-      ..color = const Color(0xFFE8EFFD)
+      ..color = const Color(0xFFE2F2F0)
       ..style = PaintingStyle.fill;
     final body = RRect.fromRectAndRadius(
-        Rect.fromLTWH(s.width * 0.12, s.height * 0.22, s.width * 0.60, s.height * 0.44),
-        const Radius.circular(20));
+        Rect.fromLTWH(
+            s.width * 0.06, s.height * 0.22, s.width * 0.88, s.height * 0.56),
+        const Radius.circular(22));
     canvas.drawRRect(body, fill);
     canvas.drawRRect(body, stroke);
     canvas.drawLine(
-        Offset(s.width * 0.42, s.height * 0.22), Offset(s.width * 0.42, s.height * 0.66), stroke);
-    final cc = Offset(s.width * 0.80, s.height * 0.62);
-    canvas.drawCircle(cc, s.height * 0.20, stroke);
+        Offset(s.width * 0.50, s.height * 0.22),
+        Offset(s.width * 0.50, s.height * 0.78),
+        stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// 用药空状态插画（二）：对勾圆环，低饱和健康蓝绿色。
+class _CheckPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size s) {
+    final stroke = Paint()
+      ..color = const Color(0xFF5FA9A6)
+      ..strokeWidth = 4
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final cc = Offset(s.width * 0.5, s.height * 0.5);
+    canvas.drawCircle(cc, s.width * 0.42, stroke);
     final tick = Path()
-      ..moveTo(cc.dx - s.height * 0.10, cc.dy)
-      ..lineTo(cc.dx - s.height * 0.02, cc.dy + s.height * 0.08)
-      ..lineTo(cc.dx + s.height * 0.11, cc.dy - s.height * 0.09);
+      ..moveTo(cc.dx - s.width * 0.22, cc.dy)
+      ..lineTo(cc.dx - s.width * 0.04, cc.dy + s.width * 0.16)
+      ..lineTo(cc.dx + s.width * 0.24, cc.dy - s.width * 0.18);
     canvas.drawPath(tick, stroke);
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// 无用药安排时的浅色科普卡：浅蓝白底，圆角与普通卡片统一。
+class _MedScienceCard extends StatelessWidget {
+  const _MedScienceCard();
+  @override
+  Widget build(BuildContext context) {
+    const tips = [
+      '用药前请确认药名、剂量和服用时间',
+      '降压药、降糖药请按医嘱规律服用',
+      '如有不适，请及时联系家属或就医',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5FB),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE3EAF5)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('常见药科普',
+            style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF212936))),
+        const SizedBox(height: 10),
+        for (final tip in tips)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('·  ',
+                      style: TextStyle(
+                          fontSize: 18,
+                          color: Color(0xFF2F6FD6),
+                          height: 1.5)),
+                  Expanded(
+                    child: Text(tip,
+                        style: const TextStyle(
+                            fontSize: 18,
+                            color: Color(0xFF212936),
+                            height: 1.5)),
+                  ),
+                ]),
+          ),
+      ]),
+    );
+  }
 }
