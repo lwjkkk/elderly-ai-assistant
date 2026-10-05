@@ -52,6 +52,8 @@ class Medication(Base):
     frequency = Column(String(50), nullable=False)      # 频次，如 每日1次 / 每日3次
     # 服药时间点列表，如 ["08:00"] 或 ["08:00","12:00","18:00"]
     times = Column(JSON, nullable=False, default=list)
+    # 开始用药日期（YYYY-MM-DD），可空；用于定时推送/按日统计对齐
+    start_date = Column(String(10), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 

@@ -1,5 +1,6 @@
 # 体征接口：录入血压/血糖/心率/体重，按天聚合趋势查询，导出 PDF
 
+import re
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -9,14 +10,33 @@ from sqlalchemy.orm import Session
 
 from db.database import get_db
 from db.models import User, FamilyBinding, Vitals
-from db.schemas import VitalsCreate, VitalsOut, TrendPoint
+from db.schemas import (
+    VitalsCreate, VitalsOut, VitalsRecognizeRequest, VitalsRecognizeOut, TrendPoint,
+)
 from core.security import get_current_user
 from core.disclaimer import HEALTH_DISCLAIMER
+from core.ocr import recognize_image
+from core.qwen_llm import call_qwen
 from services.pdf_export import generate_vitals_pdf
 
 router = APIRouter(prefix="/api/vitals", tags=["体征"])
 
 VALID_TYPES = {"bp", "bs", "hr", "weight"}
+
+
+def _parse_measured_at(value: str | None):
+    """把前端传来的日期/时间解析为 datetime；解析失败或为空时返回 None（用默认当前时间）。
+    支持 'YYYY-MM-DD'、'YYYY-MM-DD HH:MM'、ISO 'YYYY-MM-DDTHH:MM:SS' 等格式。"""
+    if not value:
+        return None
+    v = value.strip().replace("Z", "+00:00")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(v, fmt)
+        except ValueError:
+            continue
+    # 无法解析则忽略该字段，走默认时间
+    return None
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
@@ -57,6 +77,7 @@ def create_vital(payload: VitalsCreate,
         systolic=payload.systolic,
         diastolic=payload.diastolic,
         value=payload.value,
+        measured_at=_parse_measured_at(payload.measured_at),
     )
     db.add(vital)
     db.commit()
@@ -157,3 +178,81 @@ def export_pdf(vital_type: str | None = None,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=vitals_{target}.pdf"},
     )
+
+
+# 体征识别提示词：解析测量设备屏幕/照片上的数值，只输出固定结构
+VITALS_RECOGNIZE_PROMPT = (
+    "你是体征识别助手。根据测量设备（血压计/血糖仪/心率表/体重秤）照片识别到的文字，"
+    "提取体征数值。只输出以下格式，没有的字段省略，不要解释：\n"
+    "TYPE: bp 或 bs 或 hr 或 weight（血压/血糖/心率/体重）\n"
+    "SYSTOLIC: 收缩压（仅血压）\n"
+    "DIASTOLIC: 舒张压（仅血压）\n"
+    "VALUE: 数值（血糖/心率/体重）\n"
+    "UNIT: 单位（如 mmHg / mmol/L / bpm / kg）\n"
+    "如果识别不出有效体征数值，只输出：NONE"
+)
+
+
+@router.post("/recognize", response_model=VitalsRecognizeOut)
+def recognize_vital(payload: VitalsRecognizeRequest,
+                    current: User = Depends(get_current_user)):
+    """体征拍照识别：血压计/血糖仪照片 → 数值。识别结果不落库，
+    前端展示给老人确认后，再调 POST /api/vitals 落库。"""
+    try:
+        ocr_text = recognize_image(payload.image_base64)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="图片识别失败，请重新拍摄清晰的设备屏幕再试")
+
+    if not ocr_text.strip():
+        raise HTTPException(status_code=400, detail="未识别到文字，请拍清楚测量仪屏幕")
+
+    llm_out = call_qwen(
+        VITALS_RECOGNIZE_PROMPT,
+        f"识别到的文字如下：\n{ocr_text}",
+    )
+    if "NONE" in llm_out.upper():
+        raise HTTPException(status_code=400, detail="未能从照片中识别出有效体征数值")
+
+    parsed = _parse_vitals_llm(llm_out, payload.vital_type)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="识别结果异常，请人工确认后手动录入")
+
+    parsed["raw_text"] = ocr_text
+    return VitalsRecognizeOut(**parsed)
+
+
+def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
+    """从 LLM 输出里提取体征字段。血压必须有收缩压+舒张压；其他必须有 value。"""
+    def _gint(p):
+        m = re.search(rf"{p}[:：]\s*([+-]?\d+)", text)
+        return int(m.group(1)) if m else None
+
+    def _gfloat(p):
+        m = re.search(rf"{p}[:：]\s*([+-]?\d+(?:\.\d+)?)", text)
+        return float(m.group(1)) if m else None
+
+    t = hint_type or "bp"  # 默认按血压解析
+    m_type = re.search(r"TYPE[:：]\s*(\w+)", text)
+    if m_type:
+        t = m_type.group(1).strip().lower()
+        if t not in VALID_TYPES:
+            t = hint_type or "bp"
+
+    result = {"type": t, "systolic": None, "diastolic": None, "value": None, "unit": None}
+    m_unit = re.search(r"UNIT[:：]\s*(\S+)", text)
+    if m_unit:
+        result["unit"] = m_unit.group(1).strip()
+
+    if t == "bp":
+        sys, dia = _gint("SYSTOLIC"), _gint("DIASTOLIC")
+        if sys is None or dia is None:
+            return None
+        result["systolic"], result["diastolic"] = sys, dia
+    else:
+        val = _gfloat("VALUE")
+        if val is None:
+            return None
+        result["value"] = val
+    return result

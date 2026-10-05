@@ -142,6 +142,7 @@ class MedicationCreate(BaseModel):
     dosage: str = Field(..., description="剂量，如 1片")
     frequency: str = Field(..., description="频次，如 每日1次")
     times: list[str] = Field(..., description="服药时间点，如 ['08:00']")
+    start_date: str | None = Field(None, description="开始用药日期 YYYY-MM-DD")
     elder_id: int | None = Field(None, description="家属代录时指定老人id；老人自己录可不填")
 
 
@@ -151,6 +152,7 @@ class MedicationUpdate(BaseModel):
     dosage: str | None = None
     frequency: str | None = None
     times: list[str] | None = None
+    start_date: str | None = None
 
 
 class MedicationOut(BaseModel):
@@ -161,6 +163,7 @@ class MedicationOut(BaseModel):
     dosage: str
     frequency: str
     times: list[str]
+    start_date: str | None = None
 
     class Config:
         from_attributes = True
@@ -224,6 +227,7 @@ class VitalsCreate(BaseModel):
     systolic: int | None = Field(None, description="收缩压（血压时必填）")
     diastolic: int | None = Field(None, description="舒张压（血压时必填）")
     value: float | None = Field(None, description="通用数值：血糖/心率/体重")
+    measured_at: str | None = Field(None, description="记录日期/时间，如 2026-10-05 或 2026-10-05T09:12:00，默认当前时间")
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
 
@@ -239,6 +243,23 @@ class VitalsOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VitalsRecognizeRequest(BaseModel):
+    """体征拍照识别请求体（仿拍照查药：图片 → 数值）"""
+    image_base64: str = Field(..., description="血压计/血糖仪照片 base64")
+    vital_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight，减少歧义")
+
+
+class VitalsRecognizeOut(BaseModel):
+    """体征拍照识别返回体（不落库，前端确认后走 POST /api/vitals）"""
+    type: str | None = None
+    systolic: int | None = None
+    diastolic: int | None = None
+    value: float | None = None
+    unit: str | None = None
+    raw_text: str
+    disclaimer: str = HEALTH_DISCLAIMER
 
 
 class TrendPoint(BaseModel):
