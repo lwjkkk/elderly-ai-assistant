@@ -1,3 +1,5 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # 解决 Windows 下 torch/numpy OpenMP 运行时重复初始化冲突
 import torch  # noqa: F401  必须在所有 import 最前：Windows 下晚加载会因 conda 旧 VC++ 运行库
 # 导致 torch/lib/shm.dll 加载失败(WinError 127)；进程最早期导入可复用已加载的新版运行库。
 
