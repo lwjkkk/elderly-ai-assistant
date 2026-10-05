@@ -33,6 +33,26 @@ class UserOut(BaseModel):
         from_attributes = True  # 允许直接从 ORM 对象转换
 
 
+class UserProfileUpdate(BaseModel):
+    """资料编辑请求体：全可选，只传改了的字段"""
+    nickname: str | None = Field(default=None, max_length=50, description="昵称")
+    gender: str | None = Field(default=None, description="性别：男/女/空字符串(空=未设置)")
+    birth_ym: str | None = Field(default=None, description="出生年月，格式 YYYY-MM")
+    avatar_base64: str | None = Field(default=None, description="圆形裁剪后的头像图 base64(jpg)")
+
+
+class UserProfileOut(BaseModel):
+    """资料编辑后一次性返回完整资料，前端用它刷新本地"""
+    id: int
+    nickname: str
+    gender: str | None = None
+    birth_ym: str | None = None
+    avatar_url: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class LoginRequest(BaseModel):
     """登录请求体"""
     phone: str = Field(..., pattern=PHONE_PATTERN, description="11位手机号")
