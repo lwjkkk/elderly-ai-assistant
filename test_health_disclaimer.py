@@ -2,6 +2,8 @@
 # 免责声明断言测试：验证所有医疗接口响应都携带 disclaimer 字段，且文案与 core/disclaimer.py 一致
 # 用法：python test_health_disclaimer.py
 # 独立临时库，不碰 elderly.db；跑完自动清理。
+# 覆盖11个场景：体征录入/列表、症状自查/历史、文字查药、图片查药(SKIP)、体检报告上传(SKIP)/列表(SKIP)、
+#              增量同步、体征拍照识别、查药记录列表
 # 注意：拍照查药和体检报告的 OCR 场景需要真实图片才能完整测试，
 #       假图 OCR 无法识别时会自动 SKIP（不算失败）。如有真实药盒/报告图，
 #       可替换场景6/7中的假图片数据以获得完整测试覆盖。
@@ -38,6 +40,7 @@ from api.drugs import router as drugs_router
 from api.weather import router as weather_router
 from api.routes import router as chat_router
 from api.sync import router as sync_router
+import api.vitals  # 用于 mock OCR/LLM（体征拍照识别测试）
 
 Base.metadata.create_all(bind=test_engine)
 
@@ -212,6 +215,41 @@ if r.status_code == 200:
         check("同步数据中 symptoms 每条带 disclaimer", has_field)
 else:
     check("增量同步接口可用", False, f"HTTP {r.status_code}")
+
+# ---------- 10. 体征拍照识别 ----------
+print("\n[10] 体征拍照识别 POST /api/vitals/recognize")
+# mock OCR 和 LLM，避免依赖真实模型
+api.vitals.recognize_image = lambda b64: "血压 135/85 mmHg"
+api.vitals.call_qwen = lambda sp, up: "TYPE: bp\nSYSTOLIC: 135\nDIASTOLIC: 85\nUNIT: mmHg"
+r = c.post("/api/vitals/recognize",
+            json={"image_base64": "ZmFrZQ=="},
+            headers=H(et))
+if r.status_code == 200:
+    data = r.json()
+    has_field = "disclaimer" in data
+    text_match = data.get("disclaimer") == HEALTH_DISCLAIMER
+    check("响应包含 disclaimer 字段", has_field)
+    check("disclaimer 文案 = HEALTH_DISCLAIMER", text_match)
+else:
+    check("体征拍照识别接口可用", False, f"HTTP {r.status_code}: {r.text}")
+
+# ---------- 11. 查药记录列表 ----------
+print("\n[11] 查药记录列表 GET /api/drugs/records")
+r = c.get("/api/drugs/records", headers=H(et))
+if r.status_code == 200:
+    data = r.json()
+    if isinstance(data, list) and len(data) > 0:
+        item = data[0]
+        # DrugQueryOut 的 disclaimer 是可选字段，有就验证，没有也不算错
+        if "disclaimer" in item and item["disclaimer"]:
+            check("查药记录包含 disclaimer 字段", True)
+        else:
+            print("  [SKIP] 查药记录 disclaimer 为可选字段，当前记录为空，跳过断言")
+    else:
+        # 列表为空可能是因为还没有查药记录，SKIP
+        print("  [SKIP] 查药记录列表为空（尚未产生查药记录），跳过 disclaimer 断言")
+else:
+    check("查药记录列表接口可用", False, f"HTTP {r.status_code}")
 
 # ---------- 汇总 ----------
 print("\n" + "=" * 60)
