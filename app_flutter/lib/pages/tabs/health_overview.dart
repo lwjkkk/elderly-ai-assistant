@@ -1511,6 +1511,7 @@ class _MineMedsPageState extends State<_MineMedsPage> {
         dosage: data['dosage'] as String,
         frequency: data['frequency'] as String,
         times: List<String>.from(data['times'] as List),
+        startDate: data['startDate'] as String?,
         mine: !widget.forElder,
       );
       await _refresh();
@@ -1747,10 +1748,14 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
   /// 手动录入体征（含记录日期选择）。
   /// 【等待后端接口开发完成】VitalsCreate 暂无日期字段，日期仅本地展示，
   /// 后端以服务端时间为准；单条编辑/删除暂无 PUT/DELETE 接口。
-    Future<void> _openAdd() async {
-    var type = 'bp';
-    final v1C = TextEditingController();
-    final v2C = TextEditingController();
+    Future<void> _openAdd(
+      {String? presetType, String? presetV1, String? presetV2}) async {
+    var type =
+        (presetType != null && _typeNames.containsKey(presetType))
+            ? presetType!
+            : 'bp';
+    final v1C = TextEditingController(text: presetV1 ?? '');
+    final v2C = TextEditingController(text: presetV2 ?? '');
     var date = DateTime(2026, 10, 5);
     String fmtD(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -2073,11 +2078,13 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
               type: type,
               systolic: int.tryParse(v1C.text.trim()),
               diastolic: int.tryParse(v2C.text.trim()),
+              measuredAt: fmtD(date),
               mine: !widget.forElder);
         } else {
           await ApiService.addVital(
               type: type,
               value: double.tryParse(v1C.text.trim()),
+              measuredAt: fmtD(date),
               mine: !widget.forElder);
         }
         await _refresh();
@@ -2090,20 +2097,73 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
     }
   }
 
-Future<void> _pickPhoto() async {
+bool _recognizing = false;
+
+  /// 体征拍照识别：拍照 -> POST /api/vitals/recognize -> 回填手动表单确认再提交。
+  Future<void> _pickPhoto() async {
+    if (_recognizing) return;
     try {
       final f = await ImagePicker()
           .pickImage(source: ImageSource.camera, maxWidth: 1600);
       if (f == null) return;
-      // 【等待后端接口开发完成】后端暂无体征拍照识别接口，照片暂不上传。
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('体征拍照识别即将上线，请先手动录入')));
+      final bytes = await f.readAsBytes();
+      if (!mounted) return;
+      setState(() => _recognizing = true);
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(
+            child: CircularProgressIndicator(
+                color: Color(0xFF345C87))),
+      );
+      Map<String, dynamic>? r;
+      Object? err;
+      try {
+        r = await ApiService.recognizeVital(bytes.toList(),
+            mine: !widget.forElder);
+      } catch (e) {
+        err = e;
       }
-    } catch (_) {}
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (!mounted) return;
+      setState(() => _recognizing = false);
+      if (err != null) {
+        final detail = ApiService.errorDetail(err);
+        final msg = (ApiService.statusOf(err) == 400 &&
+                detail != null &&
+                detail.isNotEmpty)
+            ? detail
+            : '识别失败：${ApiService.friendly(err)}';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(msg)));
+        return;
+      }
+      final type = (r!['type'] ?? 'bp').toString();
+      final kind =
+          _typeNames.containsKey(type) ? type : 'bp';
+      String v1 = '', v2 = '';
+      if (kind == 'bp') {
+        final ss = r['systolic'], dd = r['diastolic'];
+        v1 = ss == null ? '' : '$ss';
+        v2 = dd == null ? '' : '$dd';
+      } else {
+        final v = r['value'];
+        v1 = v == null ? '' : '$v';
+      }
+      await _openAdd(
+          presetType: kind,
+          presetV1: v1.isEmpty ? null : v1,
+          presetV2: v2.isEmpty ? null : v2);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _recognizing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('识别失败：${ApiService.friendly(e)}')));
+      }
+    }
   }
 
-  Future<void> _export() async {
+Future<void> _export() async {
     if (_exporting) return;
     setState(() => _exporting = true);
     try {
@@ -2119,8 +2179,15 @@ Future<void> _pickPhoto() async {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('导出失败：${ApiService.friendly(e)}')));
+        final detail = ApiService.errorDetail(e);
+        final msg =
+            (ApiService.statusOf(e) == 400 &&
+                    detail != null &&
+                    detail.isNotEmpty)
+                ? detail
+                : '导出失败：${ApiService.friendly(e)}';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(msg)));
       }
     }
     if (mounted) setState(() => _exporting = false);
@@ -2757,53 +2824,191 @@ class _ElderDrugPage extends StatefulWidget {
 }
 
 class _ElderDrugPageState extends State<_ElderDrugPage> {
-  // 【等待后端接口开发完成】查药结果后端不落库，暂无记录可展示；
-  // drug_queries 接口就绪后在此读取并展示（药品/症状/禁忌/总结时间）。
-  final List _items = const [];
+  List _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      _items = await ApiService.drugRecords();
+    } catch (_) {
+      _items = [];
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  String _dname(Map<String, dynamic> m) {
+    final v = (m['input_text'] ?? '').toString().trim();
+    if (v.isNotEmpty) return v;
+    return (m['ocr_text'] ?? '').toString().trim();
+  }
+
+  Future<void> _dDetail(Map<String, dynamic> m) async {
+    final d = (m['created_at'] ?? '').toString();
+    await showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(
+            _dname(m).isEmpty ? '查药详情' : _dname(m),
+            style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: _kText)),
+        content: SingleChildScrollView(
+          child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    '查询时间：${d.length >= 10 ? d.substring(0, 10) : d}',
+                    style: const TextStyle(
+                        fontSize: 19, color: _kText)),
+                const SizedBox(height: 8),
+                Text((m['explanation'] ?? '').toString(),
+                    style: const TextStyle(
+                        fontSize: 19, color: _kText, height: 1.5)),
+                if ((m['disclaimer'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text((m['disclaimer'] ?? '').toString(),
+                      style: const TextStyle(
+                          fontSize: 16, color: _kSub, height: 1.5)),
+                ],
+              ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c),
+              child:
+                  const Text('关闭', style: TextStyle(fontSize: 19, color: _kText))),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    const cols = [
-      _ECol('药品名称', 3),
-      _ECol('查询时间', 2),
-      _ECol('操作', 2, right: true),
-    ];
+    if (_loading) {
+      return Container(
+        color: _kPage,
+        child: const Center(
+            child: CircularProgressIndicator(color: _eDrug)),
+      );
+    }
+    final list = [for (final it in _items) _asMap(it)];
     return Container(
       color: _kPage,
-      child: CustomScrollView(slivers: [
-        if (_items.isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: SizedBox(
+      child: RefreshIndicator(
+        onRefresh: _refresh,
+        color: _eDrug,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          children: [
+            if (list.isNotEmpty)
+              SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => _askElder(context,
-                      record: '查药记录：暂无',
-                      prompt: '看到本次查药记录，想跟您确认，该药品服用后有没有不舒服的反应？'),
+                  onPressed: () {
+                    final m = list.first;
+                    final d =
+                        (m['created_at'] ?? '').toString();
+                    _askElder(context,
+                        record:
+                            '查药记录（${d.length >= 10 ? d.substring(0, 10) : d}）：\n${_dname(m)}',
+                        prompt:
+                            '这次查的药品，服用方法和注意事项都清楚了吗？');
+                  },
                   style: _tintBtn(_eDrug, _eDrugBg),
-                  child:
-                      const Text('一键询问老人', softWrap: false),
+                  child: const Text('一键问医生',
+                      softWrap: false),
                 ),
               ),
+            if (list.isNotEmpty) const SizedBox(height: 16),
+            _MineTable(
+              headers: const ['药品名称', '查询时间', '说明'],
+              flex: const [3, 2, 3],
+              rows: [
+                for (final m in list)
+                  [
+                    AfuPressable(
+                      onTap: () => _dDetail(m),
+                      borderRadius: 8,
+                      child: Row(children: [
+                        Expanded(
+                            child: Text(
+                                _dname(m).isEmpty
+                                    ? '查药记录'
+                                    : _dname(m),
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 17,
+                                    color: _kText,
+                                    height: 1.45))),
+                        const Icon(Icons.chevron_right,
+                            size: 18, color: _kSub),
+                      ]),
+                    ),
+                    _tCell(
+                        ((m['created_at'] ?? '').toString().length >=
+                                10)
+                            ? (m['created_at'])
+                                .toString()
+                                .substring(0, 10)
+                            : '',
+                        color: _kSub2),
+                    _tCell(
+                        _short(
+                            (m['explanation'] ?? '').toString(),
+                            40),
+                        maxLines: 3),
+                  ],
+              ],
+              emptyIcon: Icons.medical_services_outlined,
+              emptyAccent: _eDrug,
+              emptyText: '暂时没有查药信息',
             ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
-          SliverPersistentHeader(
-              pinned: true,
-              delegate: const _EHeadDelegate(_eDrugBg, cols)),
-          SliverList(
-              delegate: SliverChildBuilderDelegate(
-                  (c, i) => const SizedBox.shrink(),
-                  childCount: 0)),
-        ] else
-          const _ESliverEmpty(
-            icon: Icons.medical_services_outlined,
-            accent: _eDrug,
-            text: '暂时没有查药信息',
-          ),
-      ]),
+            if (list.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _startAsk,
+                  style: _tintBtn(_kText, _eDrugBg),
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  label: const Text('一键询问长辈',
+                      softWrap: false),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
+  }
+
+  /// 一键询问长辈：底部面板单选一条查药记录，确认后跳聊天并预填询问语。
+  Future<void> _startAsk() async {
+    final labels = [
+      for (final m in [for (final it in _items) _asMap(it)])
+        '${_cdate(m)}　${_dname(m).isEmpty ? '查药记录' : _dname(m)}',
+    ];
+    final idx = await _pickOneRecord(context,
+        title: '选择查药记录',
+        labels: labels,
+        sendStyle: _tintBtn(_kText, _eDrugBg));
+    if (idx == null || idx < 0 || idx >= _items.length) return;
+    final m = _asMap(_items[idx]);
+    final d = (m['created_at'] ?? '').toString();
+    final date = d.length >= 10 ? d.substring(0, 10) : d;
+    final rec =
+        '查药记录（$date）：${_dname(m).isEmpty ? '' : _dname(m)}\n${_short((m['explanation'] ?? '').toString(), 60)}';
+    await _askElder(context,
+        record: rec, prompt: '关于这次查药，药品的用法和注意事项都清楚了吗？');
   }
 }
 

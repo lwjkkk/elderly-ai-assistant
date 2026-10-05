@@ -127,6 +127,7 @@ class _MedsTabState extends State<MedsTab> {
         dosage: data['dosage'] as String,
         frequency: data['frequency'] as String,
         times: List<String>.from(data['times'] as List),
+        startDate: data['startDate'] as String?,
       );
       refresh();
     } catch (e) {
