@@ -210,19 +210,20 @@ class ApiService {
       {required String name,
       required String dosage,
       required String frequency,
-      required List<String> times}) async {
+      required List<String> times,
+      bool mine = false}) async {
     final body = await withElder({
       'name': name,
       'dosage': dosage,
       'frequency': frequency,
       'times': times,
-    });
+    }, mine);
     final res = await _dio.post('/api/meds', data: body);
     return Map<String, dynamic>.from(res.data);
   }
 
-  static Future<List> medsList() async {
-    final q = await withElder();
+  static Future<List> medsList({bool mine = false}) async {
+    final q = await withElder({}, mine);
     final res = await _dio.get('/api/meds', queryParameters: q);
     return res.data is List ? res.data : [];
   }
@@ -282,11 +283,11 @@ class ApiService {
   }
 
   static Future<List> vitalsList(
-      {String? vitalType, int days = 30}) async {
+      {String? vitalType, int days = 30, bool mine = false}) async {
     final q = await withElder({
       if (vitalType != null) 'vital_type': vitalType,
       'days': days,
-    });
+    }, mine);
     final res = await _dio.get('/api/vitals', queryParameters: q);
     return res.data is List ? res.data : [];
   }
@@ -323,13 +324,16 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> uploadConsult(List<int> bytes, String fileName,
-      {int? duration, String? hospital, String? doctor}) async {
+      {int? duration,
+      String? hospital,
+      String? doctor,
+      bool mine = false}) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: fileName),
       if (duration != null) 'duration': duration,
       if (hospital != null) 'hospital': hospital,
       if (doctor != null) 'doctor': doctor,
-      ...(await withElder()),
+      ...(await withElder({}, mine)),
     });
     final res = await _dio.post('/api/consults/upload', data: form);
     return Map<String, dynamic>.from(res.data);
@@ -373,6 +377,21 @@ class ApiService {
   static String reportImageUrl(String imageUrl) {
     if (imageUrl.startsWith('http')) return imageUrl;
     return '${AppConfig.baseUrl}$imageUrl';
+  }
+
+  /// 体征 PDF 导出：后端 GET /api/vitals/export，返回 PDF 二进制。
+  static Future<List<int>> vitalsExportPdf(
+      {String? vitalType, int days = 30, bool mine = false}) async {
+    final q = await withElder({
+      if (vitalType != null) 'vital_type': vitalType,
+      'days': days,
+    }, mine);
+    final res = await _dio.get('/api/vitals/export',
+        queryParameters: q,
+        options: Options(responseType: ResponseType.bytes));
+    final data = res.data;
+    if (data is List<int>) return data;
+    return [];
   }
 
   // ---------- 5.9 天气 ----------

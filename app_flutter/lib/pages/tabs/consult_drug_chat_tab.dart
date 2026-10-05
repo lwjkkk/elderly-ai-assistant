@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
@@ -22,6 +23,8 @@ class _ConsultsTabState extends State<ConsultsTab> {
   List items = [];
   bool loading = true;
   bool uploading = false;
+  final _player = AudioPlayer();
+  String? _playing;
 
   Future<void> pickAndUpload() async {
     if (uploading) return;
@@ -45,7 +48,38 @@ class _ConsultsTabState extends State<ConsultsTab> {
     if (mounted) setState(() => uploading = false);
   }
   @override
-  void initState() { super.initState(); refresh(); }
+  void initState() {
+    super.initState();
+    refresh();
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  /// 问诊录音回放：点播放，再点停止。
+  Future<void> _togglePlay(String url) async {
+    try {
+      if (_playing == url) {
+        await _player.stop();
+        if (mounted) setState(() => _playing = null);
+        return;
+      }
+      await _player.stop();
+      await _player.play(UrlSource(url));
+      if (mounted) setState(() => _playing = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('播放失败：${ApiService.friendly(e)}')));
+      }
+    }
+  }
   Future<void> refresh() async {
     try { items = await ApiService.consultList(mine: widget.mine); } catch (_) { items = []; }
     if (mounted) setState(() => loading = false);
@@ -53,13 +87,14 @@ class _ConsultsTabState extends State<ConsultsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return const Center(child: CircularProgressIndicator());
+    if (loading) return Center(child: CircularProgressIndicator(color: const Color(0xFF345C87)));
     return RefreshIndicator(
+      color: const Color(0xFF345C87),
       onRefresh: refresh,
       child: ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('咨询记录', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        const Text('问诊录音', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF222222))),
         const SizedBox(height: 8),
-        const Text('录音上传后家属端同步可见，可点播放链接收听', style: TextStyle(fontSize: 18)),
+        const Text('回放长辈与AI问事过程中的问诊录音', style: TextStyle(fontSize: 18, color: Color(0xFF222222))),
         const SizedBox(height: 8),
         SizedBox(
             width: double.infinity,
@@ -78,7 +113,9 @@ class _ConsultsTabState extends State<ConsultsTab> {
           final m = Map<String, dynamic>.from(e as Map);
           final title = (m['hospital'] ?? m['doctor'] ?? m['created_at'] ?? '一条咨询').toString();
           final audio = (m['audio_url'] ?? '').toString();
-          return Card(child: ListTile(title: Text(title, style: const TextStyle(fontSize: 20)), subtitle: audio.isEmpty ? null : Text(audio), trailing: audio.isEmpty ? null : IconButton(icon: const Icon(Icons.play_arrow, size: 32), onPressed: () { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('音频地址：${ApiService.consultAudioUrl(audio)}'))); })));
+          final full = audio.isEmpty ? '' : ApiService.consultAudioUrl(audio);
+          final playing = _playing != null && _playing == full;
+          return Card(child: ListTile(title: Text(title, style: const TextStyle(fontSize: 20)), subtitle: audio.isEmpty ? null : Text(audio), trailing: audio.isEmpty ? null : IconButton(icon: Icon(playing ? Icons.stop_circle : Icons.play_arrow, size: 32), onPressed: () => _togglePlay(full))));
         }),
       ]),
     );
@@ -260,6 +297,7 @@ try { _showImage = await ApiService.getRole() != 'elder'; } catch (_) {}
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: const Color(0xFF345C87),
       onRefresh: refresh,
       child: ListView(padding: const EdgeInsets.all(16), children: [
         Row(children: [

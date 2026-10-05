@@ -14,6 +14,7 @@ class ElderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: '老年助手',
       theme: buildAppTheme(),
       builder: (context, child) {
@@ -29,14 +30,14 @@ class ElderApp extends StatelessWidget {
         future: ApiService.getToken(),
         builder: (c, s) {
           if (s.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            return Scaffold(body: Center(child: CircularProgressIndicator(color: const Color(0xFF345C87))));
           }
           if (s.data == null) return const LoginPage();
           return FutureBuilder<String?>(
             future: ApiService.getRole(),
             builder: (c2, r) {
               if (r.connectionState == ConnectionState.waiting) {
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                return Scaffold(body: Center(child: CircularProgressIndicator(color: const Color(0xFF345C87))));
               }
               if (r.data == 'family') return const FamilyHome();
               return const ElderHome();

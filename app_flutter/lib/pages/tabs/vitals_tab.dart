@@ -119,7 +119,7 @@ class _VitalsTabState extends State<VitalsTab> {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(child: CircularProgressIndicator(color: const Color(0xFF345C87)))
                 : spots.isEmpty
                     ? const Center(child: Text('暂无数据，先记录一条', style: const TextStyle(fontSize: 20, color: Color(0xFF222222))))
                     : LineChart(LineChartData(lineBarsData: [LineChartBarData(spots: spots, isCurved: true, dotData: const FlDotData(show: true))])),

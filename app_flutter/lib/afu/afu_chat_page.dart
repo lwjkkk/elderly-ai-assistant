@@ -10,11 +10,11 @@ import '../services/api.dart';
 /// - 欢迎卡助手形象：assets/assistant.png（透明底全身像，pubspec.yaml 已注册）
 /// - AI 消息头像：assets/assistant_face.png（脸部特写，pubspec.yaml 已注册）
 
-const _kDeep = Color(0xFF3A7BDB);
-const _kBright = Color(0xFF5A9BE6);
-const _kInk = Color(0xFF222222);
-const _kSub = Color(0xFF555555);
-const _kBubbleAi = Color(0xFFF2F6FF);
+const _kDeep = Color(0xFF345C87);
+const _kBright = Color(0xFF345C87);
+const _kInk = Color(0xFF212936);
+const _kSub = Color(0xFF6B7280);
+const _kBubbleAi = Color(0xFFEDF4FB);
 
 /// 消息模型：纯展示用。
 class AfuMessage {
@@ -120,7 +120,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Color(0xFFF7F9FD), Color(0xFFF7F9FD)],
+              colors: [Color(0xFFF7FAFD), Color(0xFFF7FAFD)],
             ),
           ),
           child: Column(
@@ -168,17 +168,17 @@ class _PrivacyDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: const Color(0xFFF2F6FF),
+      backgroundColor: const Color(0xFFEDF4FB),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        side: const BorderSide(color: Color(0xFFDCE6F7)),
+        side: const BorderSide(color: Color(0xFFD8E6F3)),
       ),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 72,
           height: 72,
           decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-          child: const Icon(Icons.shield_outlined, size: 40, color: Color(0xFF7AA5F0)),
+          child: const Icon(Icons.shield_outlined, size: 40, color: Color(0xFF345C87)),
         ),
         const SizedBox(height: 16),
         const Text('隐私保护说明',
@@ -192,6 +192,10 @@ class _PrivacyDialog extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF345C87),
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('知道了'),
           ),
@@ -286,9 +290,9 @@ class _TipBody extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(20, 10, 20, 6),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF2F6FF),
+        color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDCE6F7)),
+        border: Border.all(color: const Color(0xFFD8E6F3)),
         boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
       ),
       child: Column(children: [
@@ -297,7 +301,7 @@ class _TipBody extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: const Icon(Icons.lightbulb_outline, size: 28, color: Color(0xFF7AA5F0)),
+            child: const Icon(Icons.lightbulb_outline, size: 28, color: Color(0xFF345C87)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -332,8 +336,8 @@ class _FuncCards extends StatelessWidget {
           icon: Icons.show_chart_outlined,
           title: '体征',
           desc: '记录血压、血糖、心率、体重',
-          tint: const Color(0xFFEFEAFA),
-          main: const Color(0xFF7A63B8),
+          tint: const Color(0xFFEDF4FB),
+          main: const Color(0xFF345C87),
           onTap: () => onTap(0),
         ),
         const SizedBox(height: 16),
@@ -341,8 +345,8 @@ class _FuncCards extends StatelessWidget {
           icon: Icons.description_outlined,
           title: '报告',
           desc: '上传体检单，智能读懂结果',
-          tint: const Color(0xFFE8F4F4),
-          main: const Color(0xFF2A7F7F),
+          tint: const Color(0xFFEDF4FB),
+          main: const Color(0xFF345C87),
           onTap: () => onTap(1),
         ),
       ]),
@@ -365,7 +369,7 @@ class _FuncCards extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFDCE6F7)),
+          border: Border.all(color: const Color(0xFFD8E6F3)),
           boxShadow: [
             BoxShadow(
                 color: _kDeep.withOpacity(0.06),
@@ -418,7 +422,7 @@ class _WelcomeCard extends StatelessWidget {
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE8F0FF), Color(0xFFF2F6FF)],
+            colors: [Color(0xFFEDF4FB), Color(0xFFFFFFFF)],
           ),
           borderRadius: BorderRadius.circular(28),
           boxShadow: [
@@ -496,7 +500,7 @@ class _AiRowState extends State<_AiRow> {
               decoration: BoxDecoration(
                 color: _kBubbleAi,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFDCE6F7)),
+                border: Border.all(color: const Color(0xFFD8E6F3)),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(
@@ -572,7 +576,7 @@ class _ThinkingRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: _kBubbleAi,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFDCE6F7)),
+            border: Border.all(color: const Color(0xFFD8E6F3)),
           ),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
@@ -634,9 +638,9 @@ class _InputBarState extends State<_InputBar> {
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _holding ? const Color(0xFFE57373) : const Color(0xFFE3EDFF),
+              color: _holding ? const Color(0xFFE57373) : const Color(0xFFEDF4FB),
             ),
-            child: Icon(_holding ? Icons.mic : Icons.mic_none, size: 30, color: _holding ? Colors.white : const Color(0xFF7AA5F0)),
+            child: Icon(_holding ? Icons.mic : Icons.mic_none, size: 30, color: _holding ? Colors.white : const Color(0xFF345C87)),
           ),
         ),
         const SizedBox(width: 8),
@@ -654,15 +658,15 @@ class _InputBarState extends State<_InputBar> {
                 hintText: '请输入问题，长按话筒可说话',
                 hintStyle: const TextStyle(fontSize: 18, color: _kSub),
                 filled: true,
-                fillColor: const Color(0xFFF5F8FD),
+                fillColor: const Color(0xFFFFFFFF),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(28),
-                  borderSide: const BorderSide(color: Color(0xFFC4D6FA)),
+                  borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(28),
-                  borderSide: const BorderSide(color: Color(0xFFC4D6FA)),
+                  borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(28),
@@ -681,7 +685,7 @@ class _InputBarState extends State<_InputBar> {
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: widget.busy ? const Color(0xFFC9D4EA) : _kDeep,
+              color: widget.busy ? const Color(0xFF6B7280) : _kDeep,
               boxShadow: widget.busy
                   ? null
                   : [BoxShadow(color: _kDeep.withOpacity(0.14), blurRadius: 8, offset: const Offset(0, 3))],

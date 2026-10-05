@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// 柔和风设计 token：低饱和蓝 + 柔和浅底 + 大圆角。
@@ -23,6 +25,15 @@ const kAvatarAssets = <String>[
   'assets/avatars/avatar3.png',
   'assets/avatars/avatar4.png',
 ];
+
+/// 头像解析：预设走 Asset，注册页自定义上传的本地照片走 File。
+ImageProvider avatarImage(String path) {
+  if (kAvatarAssets.contains(path)) return AssetImage(path);
+  try {
+    if (File(path).existsSync()) return FileImage(File(path));
+  } catch (_) {}
+  return const AssetImage('assets/avatars/avatar1.png');
+}
 class AfuRadius {
 
   static const card = 20.0;
