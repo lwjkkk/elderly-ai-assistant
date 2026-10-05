@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
 import '../services/api.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'tabs/hub_pages.dart' show chatScale;
 import 'elder_home.dart';
 import 'family_home.dart';
 import 'register_page.dart';
@@ -33,6 +35,18 @@ class _LoginPageState extends State<LoginPage> {
       role = r;
       showPwd = r == 'elder';
     });
+    _applyRoleFontDefault();
+  }
+
+  /// 按角色默认字号：长辈中(1.15)/家属小(1.0)，用户手动调过则不再覆盖。
+  Future<void> _applyRoleFontDefault() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('font_explicit') == true) return;
+      final v = role == 'elder' ? 1.15 : 1.0;
+      await prefs.setDouble('chat_text_scale', v);
+      chatScale.value = v;
+    } catch (_) {}
   }
 
   Future<void> _sendCode() async {
@@ -93,6 +107,7 @@ class _LoginPageState extends State<LoginPage> {
               phone: phone.text.trim(), password: pwd.text);
       role = (r['role'] ?? role).toString();
       if (!mounted) return;
+      await _applyRoleFontDefault();
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
