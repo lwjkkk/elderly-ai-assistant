@@ -172,6 +172,23 @@ class ApiService {
 
 
   /// 把报错翻译成长辈能看懂的话，各页面直接用。
+  static int? statusOf(Object e) {
+    if (e is DioException) return e.response?.statusCode;
+    return null;
+  }
+
+  /// 后端 detail 原文（用于 400 这类业务提示，直接展示不加"失败"前缀）。
+  static String? errorDetail(Object e) {
+    if (e is DioException) {
+      final data = e.response?.data;
+      if (data is Map && data['detail'] != null) {
+        return data['detail'].toString();
+      }
+      if (data is String && data.isNotEmpty) return data;
+    }
+    return null;
+  }
+
   static String friendly(Object e) {
     if (e is DioException) {
       final code = e.response?.statusCode;
@@ -211,12 +228,15 @@ class ApiService {
       required String dosage,
       required String frequency,
       required List<String> times,
+      String? startDate,
       bool mine = false}) async {
     final body = await withElder({
       'name': name,
       'dosage': dosage,
       'frequency': frequency,
       'times': times,
+      if (startDate != null && startDate.isNotEmpty)
+        'start_date': startDate,
     }, mine);
     final res = await _dio.post('/api/meds', data: body);
     return Map<String, dynamic>.from(res.data);
@@ -271,14 +291,30 @@ class ApiService {
       {required String type,
       int? systolic,
       int? diastolic,
-      double? value, bool mine = false}) async {
+      double? value,
+      String? measuredAt,
+      bool mine = false}) async {
     final body = await withElder({
       'type': type,
       if (systolic != null) 'systolic': systolic,
       if (diastolic != null) 'diastolic': diastolic,
       if (value != null) 'value': value,
+      if (measuredAt != null && measuredAt.isNotEmpty)
+        'measured_at': measuredAt,
     }, mine);
     final res = await _dio.post('/api/vitals', data: body);
+    return Map<String, dynamic>.from(res.data);
+  }
+
+  /// 体征拍照识别：POST /api/vitals/recognize，返回 {type, systolic?, diastolic?,
+  /// value?, unit?, confidence?, ocr_text}，只识别不落库。
+  static Future<Map<String, dynamic>> recognizeVital(List<int> bytes,
+      {String? vitalType, bool mine = false}) async {
+    final body = await withElder({
+      'image_base64': base64Encode(bytes),
+      if (vitalType != null) 'vital_type': vitalType,
+    }, mine);
+    final res = await _dio.post('/api/vitals/recognize', data: body);
     return Map<String, dynamic>.from(res.data);
   }
 
@@ -350,6 +386,12 @@ class ApiService {
     final body = await withElder({'input_text': text});
     final res = await _dio.post('/api/symptom-check', data: body);
     return Map<String, dynamic>.from(res.data);
+  }
+
+  static Future<List> drugRecords({bool mine = false}) async {
+    final q = await withElder({}, mine);
+    final res = await _dio.get('/api/drugs/records', queryParameters: q);
+    return res.data is List ? res.data : [];
   }
 
   static Future<List> symptomHistory({bool mine = false}) async {
