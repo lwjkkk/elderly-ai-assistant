@@ -1,7 +1,7 @@
 # ORM 表模型：用 Python 类描述数据库里的表
 # Day1 先建两张表：users（账号）和 family_bindings（老人/家属绑定关系）
 
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, Boolean, func
 from db.database import Base
 
 
@@ -18,6 +18,8 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     # 昵称：绑定后双方在"我的"页能看到对方昵称
     nickname = Column(String(50), nullable=False)
+    # 隐私开关：是否把对话摘要同步给家属。1=同步（默认），0=不同步。仅老人本人可改。
+    sync_summary_to_family = Column(Boolean, default=True, nullable=False)
 
 
 class FamilyBinding(Base):
@@ -50,6 +52,8 @@ class Medication(Base):
     frequency = Column(String(50), nullable=False)      # 频次，如 每日1次 / 每日3次
     # 服药时间点列表，如 ["08:00"] 或 ["08:00","12:00","18:00"]
     times = Column(JSON, nullable=False, default=list)
+    # 开始用药日期（YYYY-MM-DD），可空；用于定时推送/按日统计对齐
+    start_date = Column(String(10), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -119,3 +123,37 @@ class SymptomCheck(Base):
     # 风险等级：green=可居家观察，yellow=建议尽快就医，red=立即就医/急诊
     risk = Column(String(10), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class ChatSummary(Base):
+    """对话摘要表：从日常问答中提炼的记录，可按需同步给家属。
+
+    category 四类：drug=查药, med=用药, selfcheck=自查, consult=咨询。
+    risk 仅 selfcheck 类可能有（green/yellow/red）。
+    synced：是否已推送给家属（预留，当前读取口按同步开关直接过滤）。
+    """
+    __tablename__ = "chat_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    category = Column(String(20), nullable=False, index=True)
+    question = Column(String, nullable=False)          # 老人原始问题
+    summary = Column(String, nullable=False)           # 提炼的一句话记录
+    risk = Column(String(10), nullable=True)           # selfcheck 类风险等级
+    module = Column(String(20), nullable=True)         # 来源模块 phone/services/daily_life/health
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    synced = Column(Boolean, default=False, nullable=False)
+
+
+class DrugQuery(Base):
+    """查药记录表：拍照查药 / 按名查药的历史，供家属端查看。"""
+    __tablename__ = "drug_queries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String(10), nullable=False)          # image=拍照, name=按名
+    input_text = Column(String, nullable=True)         # 拍照时的 OCR 原文 / 按名时的药名
+    ocr_text = Column(String, nullable=True)           # OCR 识别文字（拍照类）
+    explanation = Column(String, nullable=True)        # AI 大白话解读
+    disclaimer = Column(String, nullable=True)         # 免责声明
+    created_at = Column(DateTime, server_default=func.now(), index=True)
