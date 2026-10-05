@@ -39,12 +39,75 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SendSmsRequest(BaseModel):
+    """获取验证码请求体（答辩演示：验证码打印到控制台，不真实下发短信）"""
+    phone: str = Field(..., pattern=PHONE_PATTERN, description="11位手机号")
+
+
+class SmsSent(BaseModel):
+    """获取验证码返回体（不含验证码本身，验证码只在后端控制台打印）"""
+    message: str
+    expires_in: int = Field(default=300, description="验证码有效期（秒）")
+
+
+class LoginByCodeRequest(BaseModel):
+    """验证码登录请求体"""
+    phone: str = Field(..., pattern=PHONE_PATTERN, description="11位手机号")
+    code: str = Field(..., min_length=6, max_length=6, description="6位验证码")
+
+
 class Token(BaseModel):
     """登录成功返回的令牌"""
     access_token: str
     token_type: str = "bearer"
     role: str
     nickname: str
+
+
+# ---------- 隐私开关 ----------
+
+class PrivacyOut(BaseModel):
+    """隐私开关返回体：是否把对话摘要同步给家属"""
+    sync_summary_to_family: bool
+
+
+class PrivacyUpdate(BaseModel):
+    """隐私开关更新请求体"""
+    sync_summary_to_family: bool
+
+
+# ---------- 对话摘要 ----------
+
+class ChatSummaryOut(BaseModel):
+    """对话摘要返回体（家属端查看老人对话记录）"""
+    id: int
+    elder_id: int
+    category: str            # drug / med / selfcheck / consult
+    question: str
+    summary: str
+    risk: str | None = None
+    module: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------- 查药记录 ----------
+
+class DrugQueryOut(BaseModel):
+    """查药记录返回体（家属端摘要展示）"""
+    id: int
+    elder_id: int
+    kind: str                # image / name
+    input_text: str | None = None
+    ocr_text: str | None = None
+    explanation: str | None = None
+    disclaimer: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 
 # ---------- 绑定 ----------
@@ -79,6 +142,7 @@ class MedicationCreate(BaseModel):
     dosage: str = Field(..., description="剂量，如 1片")
     frequency: str = Field(..., description="频次，如 每日1次")
     times: list[str] = Field(..., description="服药时间点，如 ['08:00']")
+    start_date: str | None = Field(None, description="开始用药日期 YYYY-MM-DD")
     elder_id: int | None = Field(None, description="家属代录时指定老人id；老人自己录可不填")
 
 
@@ -88,6 +152,7 @@ class MedicationUpdate(BaseModel):
     dosage: str | None = None
     frequency: str | None = None
     times: list[str] | None = None
+    start_date: str | None = None
 
 
 class MedicationOut(BaseModel):
@@ -98,6 +163,7 @@ class MedicationOut(BaseModel):
     dosage: str
     frequency: str
     times: list[str]
+    start_date: str | None = None
 
     class Config:
         from_attributes = True
@@ -161,6 +227,7 @@ class VitalsCreate(BaseModel):
     systolic: int | None = Field(None, description="收缩压（血压时必填）")
     diastolic: int | None = Field(None, description="舒张压（血压时必填）")
     value: float | None = Field(None, description="通用数值：血糖/心率/体重")
+    measured_at: str | None = Field(None, description="记录日期/时间，如 2026-10-05 或 2026-10-05T09:12:00，默认当前时间")
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
 
@@ -176,6 +243,23 @@ class VitalsOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VitalsRecognizeRequest(BaseModel):
+    """体征拍照识别请求体（仿拍照查药：图片 → 数值）"""
+    image_base64: str = Field(..., description="血压计/血糖仪照片 base64")
+    vital_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight，减少歧义")
+
+
+class VitalsRecognizeOut(BaseModel):
+    """体征拍照识别返回体（不落库，前端确认后走 POST /api/vitals）"""
+    type: str | None = None
+    systolic: int | None = None
+    diastolic: int | None = None
+    value: float | None = None
+    unit: str | None = None
+    raw_text: str
+    disclaimer: str = HEALTH_DISCLAIMER
 
 
 class TrendPoint(BaseModel):
