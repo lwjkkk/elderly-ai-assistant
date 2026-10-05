@@ -31,5 +31,6 @@ OCR_USE_GPU = False
 KNOWLEDGE_BASE_DIR = "./knowledge_base"
 
 # 服务器配置
-HOST = "127.0.0.1"
+# 0.0.0.0 监听所有网卡，局域网/前端/手机可通过 http://<本机IP>:8000 访问
+HOST = "0.0.0.0"
 PORT = 8000
