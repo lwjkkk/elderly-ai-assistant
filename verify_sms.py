@@ -9,8 +9,10 @@ import random
 
 from fastapi.testclient import TestClient
 
+from db.database import init_db
 from main import app
 
+init_db()
 client = TestClient(app)
 
 # 用随机手机号避免与已有数据冲突

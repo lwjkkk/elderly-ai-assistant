@@ -109,6 +109,21 @@ if r.status_code == 200:
 else:
     check("体征列表接口可用", False, f"HTTP {r.status_code}")
 
+# ---------- Mock LLM（避免依赖真实 API，所有需要 call_qwen 的接口用固定测试数据） ----------
+import core.qwen_llm
+import core.health_llm
+import api.drugs
+import api.vitals
+def _mock_call_qwen(system_prompt, user_prompt):
+    if "症状" in system_prompt or "SYMPTOM" in system_prompt.upper():
+        return "这是测试症状建议：注意休息，多喝水，如持续不缓解请就医。\nRISK: green"
+    return "这是测试解读内容，仅供健康科普参考，不构成诊断或用药建议。"
+# 每个 import 了 call_qwen 的模块都要单独替换（Python 的 from import 会复制引用）
+core.qwen_llm.call_qwen = _mock_call_qwen
+core.health_llm.call_qwen = _mock_call_qwen
+api.drugs.call_qwen = _mock_call_qwen
+api.vitals.call_qwen = _mock_call_qwen
+
 # ---------- 3. 症状自查接口 ----------
 print("\n[3] 症状自查 POST /api/symptom-check")
 r = c.post("/api/symptom-check", json={"input_text": "头疼两天"}, headers=H(et))
