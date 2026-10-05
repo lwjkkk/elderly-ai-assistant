@@ -1,4 +1,10 @@
+import 'dart:io';
+
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -551,6 +557,30 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   late final TextEditingController _nameC =
       TextEditingController(text: widget.nickname);
   String? _picked;
+  String _gender = '';
+  String _birthYm = '';
+  bool _busyAvatar = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocal();
+  }
+
+  Future<void> _loadLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        final a = prefs.getString('avatar');
+        if (a != null && a.isNotEmpty) _picked = a;
+        _gender = prefs.getString('gender') ?? '';
+        _birthYm = prefs.getString('birth_ym') ?? '';
+        final n = prefs.getString('nickname');
+        if (n != null && n.isNotEmpty) _nameC.text = n;
+      });
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
@@ -559,15 +589,322 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   }
 
   Future<void> _save() async {
-    final name = _nameC.text.trim();
     try {
       final prefs = await SharedPreferences.getInstance();
+      final name = _nameC.text.trim();
       if (name.isNotEmpty) {
         await prefs.setString('nickname', name);
       }
       if (_picked != null) await prefs.setString('avatar', _picked!);
+      await prefs.setString('gender', _gender);
+      await prefs.setString('birth_ym', _birthYm);
     } catch (_) {}
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// 头像：拍照/相册 -> 圆形裁剪（可缩放移动）-> 存应用目录。
+  Future<void> _pickAvatar() async {
+    if (_busyAvatar) return;
+    final src = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (c) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined,
+                color: Color(0xFF345C87)),
+            title: const Text('拍照',
+                style: TextStyle(fontSize: 20)),
+            onTap: () => Navigator.pop(c, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_outlined,
+                color: Color(0xFF345C87)),
+            title: const Text('从相册选择',
+                style: TextStyle(fontSize: 20)),
+            onTap: () => Navigator.pop(c, ImageSource.gallery),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (src == null || !mounted) return;
+    setState(() => _busyAvatar = true);
+    try {
+      final f = await ImagePicker()
+          .pickImage(source: src, maxWidth: 1600);
+      if (f == null) {
+        if (mounted) setState(() => _busyAvatar = false);
+        return;
+      }
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: f.path,
+        aspectRatio:
+            const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: '裁剪头像',
+            toolbarColor: const Color(0xFF345C87),
+            toolbarWidgetColor: Colors.white,
+            cropStyle: CropStyle.circle,
+            lockAspectRatio: true,
+            hideBottomControls: false,
+          ),
+          IOSUiSettings(
+            title: '裁剪头像',
+            cropStyle: CropStyle.circle,
+            aspectRatioLockEnabled: true,
+          ),
+          WebUiSettings(context: context),
+        ],
+      );
+      if (cropped == null) {
+        if (mounted) setState(() => _busyAvatar = false);
+        return;
+      }
+      final dir = await getApplicationDocumentsDirectory();
+      final dest = File('${dir.path}/avatar.jpg');
+      await File(cropped.path).copy(dest.path);
+      if (mounted) setState(() => _picked = dest.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text('头像设置失败：${ApiService.friendly(e)}')));
+      }
+    }
+    if (mounted) setState(() => _busyAvatar = false);
+  }
+
+  /// 表单行：左侧标签 + 右侧内容区（固定间距），整行可点。
+  Widget _row(String label, String value, VoidCallback onTap) {
+    return AfuPressable(
+      onTap: onTap,
+      borderRadius: 16,
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 18),
+        child: Row(children: [
+          SizedBox(
+            width: 110,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212936))),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+                value.isEmpty ? '未设置' : value,
+                textAlign: TextAlign.right,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    fontSize: 21,
+                    color: value.isEmpty
+                        ? const Color(0xFF9AA5B5)
+                        : const Color(0xFF345C87))),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// 昵称编辑弹窗。
+  Future<void> _editNick() async {
+    final c = TextEditingController(text: _nameC.text);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('修改昵称',
+            style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF212936))),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          style:
+              const TextStyle(fontSize: 21, color: Color(0xFF212936)),
+          decoration: InputDecoration(
+            hintText: '输入新昵称',
+            hintStyle: const TextStyle(
+                fontSize: 20, color: Color(0xFF6B7280)),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 22, vertical: 19),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide:
+                  const BorderSide(color: Color(0xFFD8E6F3)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide:
+                  const BorderSide(color: Color(0xFFD8E6F3)),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d, false),
+              child: const Text('取消',
+                  style: TextStyle(
+                      fontSize: 20, color: Color(0xFF6B7280)))),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(d, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                      const Color(0xFF345C87),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius:
+                          BorderRadius.circular(16))),
+              child: const Text('确定',
+                  style: TextStyle(fontSize: 20))),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      setState(() => _nameC.text = c.text.trim());
+    }
+  }
+
+  /// 性别选择弹窗。
+  Future<void> _editGender() async {
+    final v = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('选择性别',
+            style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF212936))),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (final g in ['男', '女'])
+            ListTile(
+              title: Text(g,
+                  style: const TextStyle(fontSize: 21)),
+              trailing: _gender == g
+                  ? const Icon(Icons.check_circle,
+                      color: Color(0xFF345C87))
+                  : null,
+              onTap: () => Navigator.pop(d, g),
+            ),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('取消',
+                  style: TextStyle(
+                      fontSize: 20, color: Color(0xFF6B7280)))),
+        ],
+      ),
+    );
+    if (v != null && mounted) setState(() => _gender = v);
+  }
+
+  /// 出生年月滚轮选择。
+  Future<void> _editBirth() async {
+    final now = DateTime.now();
+    var y = now.year - 60;
+    var mo = 1;
+    if (_birthYm.length >= 7) {
+      y = int.tryParse(_birthYm.substring(0, 4)) ?? y;
+      mo = int.tryParse(_birthYm.substring(5, 7)) ?? mo;
+    }
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (c) => StatefulBuilder(
+        builder: (c, setD) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Row(children: [
+                TextButton(
+                    onPressed: () => Navigator.pop(c, false),
+                    child: const Text('取消',
+                        style: TextStyle(
+                            fontSize: 20,
+                            color: Color(0xFF6B7280)))),
+                const Expanded(
+                  child: Text('选择出生年月',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF212936))),
+                ),
+                TextButton(
+                    onPressed: () => Navigator.pop(c, true),
+                    child: const Text('确定',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF345C87)))),
+              ]),
+            ),
+            SizedBox(
+              height: 220,
+              child: Row(children: [
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 48,
+                    scrollController: FixedExtentScrollController(
+                        initialItem: (y - 1900).clamp(
+                            0, now.year - 1900)),
+                    onSelectedItemChanged: (i) =>
+                        setD(() => y = 1900 + i),
+                    children: [
+                      for (var yy = 1900; yy <= now.year; yy++)
+                        Center(
+                            child: Text('$yy年',
+                                style: const TextStyle(
+                                    fontSize: 22))),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 48,
+                    scrollController:
+                        FixedExtentScrollController(
+                            initialItem: (mo - 1).clamp(0, 11)),
+                    onSelectedItemChanged: (i) =>
+                        setD(() => mo = i + 1),
+                    children: [
+                      for (var mm = 1; mm <= 12; mm++)
+                        Center(
+                            child: Text('$mm月',
+                                style: const TextStyle(
+                                    fontSize: 22))),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
+          ]),
+        ),
+      ),
+    );
+    if (ok == true && mounted) {
+      setState(() => _birthYm =
+          '$y-${mo.toString().padLeft(2, '0')}');
+    }
+  }
+
+  String get _birthText {
+    if (_birthYm.length < 7) return '';
+    return '${_birthYm.substring(0, 4)}年${_birthYm.substring(5, 7)}月';
   }
 
   @override
@@ -575,88 +912,99 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
-        title: const Text('编辑资料', style: TextStyle(color: Color(0xFF212936))),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back,
+              color: Color(0xFF212936)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('编辑资料',
+            style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF212936))),
         backgroundColor: const Color(0xFFF7FAFD),
         scrolledUnderElevation: 0,
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
+          // 头像模块：居中头像 + 上传
           AfuCard(
+            padding:
+                const EdgeInsets.symmetric(vertical: 32),
             child: Column(children: [
               Container(
-                width: 96,
-                height: 96,
-                decoration: const BoxDecoration(
-                    color: Color(0xFFEDF4FB), shape: BoxShape.circle),
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                    color: const Color(0xFFEDF4FB),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                          color: const Color(0xFF345C87)
+                              .withOpacity(0.12),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4)),
+                    ]),
                 child: ClipOval(
-                    child: Image(image: avatarImage(widget.asset),
-                        width: 92, height: 92, fit: BoxFit.cover)),
+                    child: _busyAvatar
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                                color: Color(0xFF345C87)))
+                        : Image(
+                            image: avatarImage(
+                                _picked ?? widget.asset),
+                            width: 106,
+                            height: 106,
+                            fit: BoxFit.cover)),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               AfuPressable(
-                onTap: () {
-                  // 【等待后端接口开发完成】头像上传接口就绪后在此接入
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('头像上传功能即将上线')));
-                },
+                onTap: _busyAvatar ? () {} : _pickAvatar,
                 borderRadius: 14,
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Text('上传头像',
-                      style: TextStyle(fontSize: 18, color: Color(0xFF345C87))),
+                      style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF345C87))),
                 ),
               ),
             ]),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
+          // 资料表单：一行一编辑
           AfuCard(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('昵称',
-                      style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF212936))),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _nameC,
-                    style: const TextStyle(
-                        fontSize: 20, color: Color(0xFF212936)),
-                    decoration: InputDecoration(
-                      hintText: '输入新昵称',
-                      hintStyle: const TextStyle(
-                          fontSize: 19, color: Color(0xFF6B7280)),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 22, vertical: 19),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide:
-                            const BorderSide(color: Color(0xFFD8E6F3)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(22),
-                        borderSide:
-                            const BorderSide(color: Color(0xFFD8E6F3)),
-                      ),
-                    ),
-                  ),
-                ]),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 18, vertical: 8),
+            child: Column(children: [
+              _row('昵称', _nameC.text.trim(), _editNick),
+              const Divider(
+                  height: 1, color: Color(0xFFEDF4FB)),
+              _row('性别', _gender, _editGender),
+              const Divider(
+                  height: 1, color: Color(0xFFEDF4FB)),
+              _row('出生年月', _birthText, _editBirth),
+            ]),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF345C87),
+                backgroundColor:
+                    const Color(0xFF345C87),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 19),
+                shape: RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(22)),
                 textStyle: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
+                    fontSize: 22, fontWeight: FontWeight.w700),
               ),
               child: const Text('保存'),
             ),
@@ -666,6 +1014,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     );
   }
 }
+
 
 /// 家属个人中心头像水波纹：浅蓝半透明圆环，柔和循环向外扩散。
 class _FamRippleAvatar extends StatefulWidget {

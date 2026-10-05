@@ -238,7 +238,7 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(
                     child: _field(
                       label: '短信验证码',
-                      hint: '请在这里输入',
+                      hint: '在这里输入',
                       controller: code,
                       keyboard: TextInputType.number,
                     ),
@@ -273,9 +273,10 @@ class _LoginPageState extends State<LoginPage> {
                                   ? '$cooldown秒后重发'
                                   : '获取验证码'),
                           textAlign: TextAlign.center,
+                          softWrap: false,
                           style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800)),
                       ),
                     ),
                   ]),
@@ -437,7 +438,9 @@ class _LoginPageState extends State<LoginPage> {
               decoration: InputDecoration(
                 hintText: hint,
                 hintStyle: const TextStyle(
-                    fontSize: 20, color: Color(0xFF6B7280)),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF6B7280)),
                 filled: true,
                 fillColor: Colors.white,
                 suffixIcon: suffix == null

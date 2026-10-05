@@ -327,7 +327,7 @@ class _TipBody extends StatelessWidget {
 /// 卡片样式：左上角圆形图标 + 右侧两字标题 + 标题下方灰色小字说明，无底部装饰图。
 /// 查药 / 自查 / 咨询不再做独立卡片入口，统一由 AI 对话完成。
 class _FuncCards extends StatelessWidget {
-  final ValueChanged<int> onTap; // 0=体征 1=报告 2=症状自查
+  final ValueChanged<int> onTap; // 0=体征 1=报告
   const _FuncCards({required this.onTap});
 
   @override
@@ -351,15 +351,6 @@ class _FuncCards extends StatelessWidget {
           tint: const Color(0xFFEDF4FB),
           main: const Color(0xFF345C87),
           onTap: () => onTap(1),
-        ),
-        const SizedBox(height: 16),
-        _funcCard(
-          icon: Icons.health_and_safety_outlined,
-          title: '症状自查',
-          desc: '描述不适，智能评估风险',
-          tint: const Color(0xFFEDF4FB),
-          main: const Color(0xFF345C87),
-          onTap: () => onTap(2),
         ),
       ]),
     );

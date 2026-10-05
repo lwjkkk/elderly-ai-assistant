@@ -160,34 +160,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           // 对话记录同步家属模块
           _privacyCard(),
           const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () async {
-                await ApiService.clearAuth();
-                if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const LoginPage()),
-                      (r) => false);
-                }
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF345C87),
-                side:
-                    const BorderSide(color: Color(0xFF345C87), width: 1.5),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              child: const Text('切换账号'),
-            ),
-          ),
-          const SizedBox(height: 12),
+          
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(

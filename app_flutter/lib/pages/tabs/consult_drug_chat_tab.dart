@@ -383,17 +383,11 @@ class _ChatTabState extends State<ChatTab> {
 
   /// 快捷卡片：0 体征（直接进体征记录页，支持上传/查看）
   ///           1 报告（直接进体检报告解读页，支持上传）
-  ///           2 症状自查（专用接口，展示红黄绿风险）
+  /// 症状描述走输入框/语音，命中关键词时自动调专用自查接口。
   Future<void> onQuick(int i) async {
     if (i == 0) {
       Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const AfuSubPage(title: '体征', child: VitalsTab())));
-      return;
-    }
-    if (i == 2) {
-      Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) =>
-              const AfuSubPage(title: '症状自查', child: SymptomTab())));
       return;
     }
     Navigator.of(context).push(MaterialPageRoute(
