@@ -61,6 +61,7 @@ def create_med(payload: MedicationCreate,
         dosage=payload.dosage,
         frequency=payload.frequency,
         times=payload.times,
+        start_date=payload.start_date,
     )
     db.add(med)
     db.commit()
@@ -97,6 +98,8 @@ def update_med(med_id: int, payload: MedicationUpdate,
         if not payload.times:
             raise HTTPException(status_code=400, detail="至少设置一个服药时间点")
         med.times = payload.times
+    if payload.start_date is not None:
+        med.start_date = payload.start_date
     db.commit()
     db.refresh(med)
     return med

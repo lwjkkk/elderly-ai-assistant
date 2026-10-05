@@ -45,6 +45,11 @@ def init_db():
         "sync_summary_to_family",
         "ALTER TABLE users ADD COLUMN sync_summary_to_family BOOLEAN DEFAULT 1 NOT NULL",
     )
+    _add_column_if_missing(
+        "medications",
+        "start_date",
+        "ALTER TABLE medications ADD COLUMN start_date VARCHAR(10)",
+    )
 
 
 def _add_column_if_missing(table: str, column: str, ddl: str):
