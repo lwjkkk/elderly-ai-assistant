@@ -29,11 +29,8 @@ def create_invite(
     db: Session = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """老人生成邀请码，把码告诉家属。"""
-    if current.role != "elder":
-        raise HTTPException(status_code=403, detail="只有老人账号能生成邀请码")
-
-    # 每个老人同一时间只有一个有效邀请码，新生成时覆盖旧的 pending 记录
+    """生成邀请码：长辈/家属登录即可调用，无前置条件（P0 放开权限）。"""
+    # 每个用户同一时间只有一个有效邀请码，新生成时覆盖旧的 pending 记录
     existing = db.query(FamilyBinding).filter(
         FamilyBinding.elder_id == current.id,
         FamilyBinding.status == "pending",

@@ -73,3 +73,19 @@ def get_current_user(
     if user is None:
         raise credentials_exc
     return user
+
+
+def get_optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """可选鉴权依赖：带有效 token 返回用户，没带/无效返回 None（不报 401）。
+    用于日常问答等“登录了才落库、不登录也能用”的接口。"""
+    if creds is None or creds.scheme.lower() != "bearer" or not creds.credentials:
+        return None
+    try:
+        payload = jwt.decode(token := creds.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except (jwt.PyJWTError, TypeError, ValueError):
+        return None
+    return db.query(User).filter(User.id == user_id).first()
