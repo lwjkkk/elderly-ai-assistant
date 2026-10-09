@@ -48,7 +48,7 @@ def main():
     assert r.status_code == 200
     b = r.json()
     assert b["type"] == "bp" and b["systolic"] == 138 and b["diastolic"] == 88
-    assert b["raw_text"]
+    assert b["ocr_text"]
 
     # mock 血糖识别
     api.vitals.call_qwen = lambda sp, up: "TYPE: bs\nVALUE: 6.1\nUNIT: mmol/L"
