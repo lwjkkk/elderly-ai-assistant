@@ -36,7 +36,7 @@ c = TestClient(app)
 # mock 外部服务
 symptom_mod.symptom_advice = lambda text: (f"针对「{text}」的建议", "red")
 reports_mod.recognize_image = lambda b64: "血压 120/80；血糖 5.6"
-reports_mod.report_advice = lambda ocr: "各项指标大致正常，建议规律作息、定期复查"
+reports_mod.report_advice = lambda ocr, metrics=None: "各项指标大致正常，建议规律作息、定期复查"
 
 results = []
 def check(name, ok, detail=""):
