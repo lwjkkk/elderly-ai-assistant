@@ -22,7 +22,15 @@ router = APIRouter(prefix="/api/reports", tags=["体检报告"])
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "reports")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_IMAGES = {"image/jpeg", "image/png", "image/webp"}
+def _image_type(content: bytes) -> tuple[str, str] | None:
+    """识别实际图片格式，兼容移动端将 multipart 文件标成 octet-stream。"""
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", ".jpg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", ".png"
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    return None
 
 
 @router.post("/upload", response_model=HealthReportOut)
@@ -31,23 +39,17 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
                         db: Session = Depends(get_db),
                         current: User = Depends(get_current_user)):
     """上传体检单，返回 OCR 文字与解读建议。"""
-    if file.content_type not in ALLOWED_IMAGES:
-        raise HTTPException(status_code=400,
-                            detail=f"请上传 jpg/png/webp 图片，当前为 {file.content_type}")
-
     target = resolve_elder_id(db, current, elder_id)
-
-    # 保存图片
-    ext = os.path.splitext(file.filename)[1] or ".jpg"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
     content = await file.read()
-    with open(filepath, "wb") as f:
-        f.write(content)
-    image_url = f"/api/reports/image/{filename}"
+    image_type = _image_type(content)
+    if not image_type:
+        received = file.content_type or "未知"
+        raise HTTPException(status_code=400,
+                            detail=f"请上传有效的 jpg/png/webp 图片，当前文件类型为 {received}")
+    _, ext = image_type
 
     # OCR + AI 建议（图片字节转 base64 复用 OCR 封装）
-    image_b64 = base64.b64encode(content).decode()
+    image_b64 = base64.b64encode(content).decode("ascii")
     try:
         ocr_text = recognize_image(image_b64)
     except ValueError as e:
@@ -58,15 +60,28 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
     metrics = parse_metrics(ocr_text)
     advice = report_advice(ocr_text, metrics)
 
+    # 使用识别出的格式扩展名，不信任客户端传入的文件名/扩展名。
+    filename = f"{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    image_url = f"/api/reports/image/{filename}"
+    with open(filepath, "wb") as f:
+        f.write(content)
+
     rec = HealthReport(
         elder_id=target,
         image_url=image_url,
         ocr_text=ocr_text,
         advice_text=advice,
     )
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
+    try:
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+    except Exception:
+        db.rollback()
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise
     return rec
 
 

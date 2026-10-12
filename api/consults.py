@@ -18,6 +18,19 @@ router = APIRouter(prefix="/api/consults", tags=["问诊录音"])
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "consults")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Android / Flutter 文件选择器常把按字节构造的 MultipartFile 标为
+# application/octet-stream，因此以允许的扩展名确定实际音频类型。
+AUDIO_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".3gp": "audio/3gpp",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+    ".flac": "audio/flac",
+}
+
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     """解析目标老人。"""
@@ -48,20 +61,23 @@ async def upload_consult(
     current: User = Depends(get_current_user),
 ):
     """上传问诊录音，保存到本地并记录。"""
-    # 校验文件类型
-    allowed = {"audio/mpeg", "audio/wav", "audio/mp4", "audio/x-m4a", "audio/aac"}
-    if file.content_type not in allowed:
-        raise HTTPException(status_code=400, detail=f"不支持的音频格式：{file.content_type}")
-
     target = resolve_elder_id(db, current, elder_id)
 
-    # 生成唯一文件名，避免冲突
-    ext = os.path.splitext(file.filename)[1] or ".mp3"
+    # 文件名来自移动端上传，先取基本名并校验扩展名，避免路径穿越。
+    original_name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    ext = os.path.splitext(original_name)[1].lower()
+    media_type = AUDIO_TYPES.get(ext)
+    if not media_type:
+        raise HTTPException(status_code=400, detail="仅支持 mp3/wav/m4a/aac/3gp/ogg/opus/flac 音频")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="录音文件为空，请重新选择")
+
+    # 生成唯一文件名，使用已校验的扩展名。
     filename = f"{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
-
     with open(filepath, "wb") as f:
-        content = await file.read()
         f.write(content)
 
     # 本地路径作为 URL（前端拼接 http://host:port/api/consults/audio/xxx 访问）
@@ -74,9 +90,15 @@ async def upload_consult(
         hospital=hospital,
         doctor=doctor,
     )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
+    try:
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+    except Exception:
+        db.rollback()
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        raise
     return record
 
 
@@ -102,4 +124,5 @@ def get_audio(filename: str):
     filepath = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="录音文件不存在")
-    return FileResponse(filepath, media_type="audio/mpeg")
+    ext = os.path.splitext(filename)[1].lower()
+    return FileResponse(filepath, media_type=AUDIO_TYPES.get(ext, "application/octet-stream"))
