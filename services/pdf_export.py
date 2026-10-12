@@ -5,6 +5,7 @@ import io
 import os
 import tempfile
 from datetime import datetime
+from xml.sax.saxutils import escape
 
 from db.models import Vitals
 
@@ -20,7 +21,7 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
     from reportlab.pdfbase.ttfonts import TTFont
 
     # 注册中文字体（优先用系统字体）
-    _register_chinese_font()
+    font_name = _register_chinese_font()
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
@@ -31,17 +32,17 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
     # 自定义标题样式
     title_style = ParagraphStyle(
         "ChineseTitle", parent=styles["Title"],
-        fontName="ChineseFont", fontSize=16, spaceAfter=10,
+        fontName=font_name, fontSize=16, spaceAfter=10,
     )
     normal_style = ParagraphStyle(
         "ChineseNormal", parent=styles["Normal"],
-        fontName="ChineseFont", fontSize=10,
+        fontName=font_name, fontSize=10,
     )
 
     elements = []
 
     # 标题
-    elements.append(Paragraph(f"{elder_name} 的体征记录", title_style))
+    elements.append(Paragraph(f"{escape(str(elder_name))} 的体征记录", title_style))
     elements.append(Paragraph(f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style))
     elements.append(Spacer(1, 10 * mm))
 
@@ -68,16 +69,18 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
 
         if r.type == "bp" and r.systolic is not None and r.diastolic is not None:
             value_str = f"{r.systolic}/{r.diastolic} mmHg"
-        else:
+        elif r.value is not None:
             unit_map = {"bs": " mmol/L", "hr": " bpm", "weight": " kg"}
-            value_str = f"{r.value}{unit_map.get(r.type, '')}" if r.value else "-"
+            value_str = f"{r.value}{unit_map.get(r.type, '')}"
+        else:
+            value_str = "-"
 
         table_data.append([date_str, type_name, value_str])
 
     col_widths = [55 * mm, 30 * mm, 75 * mm]
     table = Table(table_data, colWidths=col_widths)
     table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), "ChineseFont"),
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
@@ -91,19 +94,21 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
     # 免责声明
     elements.append(Paragraph("免责声明", normal_style))
     elements.append(Spacer(1, 2 * mm))
-    elements.append(Paragraph(disclaimer, ParagraphStyle(
+    elements.append(Paragraph(escape(disclaimer), ParagraphStyle(
         "Disclaimer", parent=normal_style, fontSize=8, textColor=colors.grey,
     )))
 
-    doc.build(elements)
-    # Image 是在 build 时才真正读取文件，因此临时图必须在 build 之后删除
-    if chart_path and os.path.exists(chart_path):
-        os.remove(chart_path)
+    try:
+        doc.build(elements)
+    finally:
+        # Image 在 build 时才读取文件，成功或失败都清理临时图。
+        if chart_path and os.path.exists(chart_path):
+            os.remove(chart_path)
     return buf.getvalue()
 
 
-def _register_chinese_font():
-    """注册中文字体及其字体族，优先用 Windows 系统字体。"""
+def _register_chinese_font() -> str:
+    """注册可用中文字体；没有系统中文字体时退回 ReportLab 内置字体。"""
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
@@ -115,17 +120,32 @@ def _register_chinese_font():
     for path in font_paths:
         if os.path.exists(path):
             try:
-                pdfmetrics.registerFont(TTFont("ChineseFont", path))
+                font_name = "ChineseFont"
+                if font_name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(font_name, path))
                 # 必须注册字体族，否则 Paragraph 解析 bold/italic 时会报
                 # "Can't map determine family/bold/italic"
                 pdfmetrics.registerFontFamily(
                     "ChineseFont",
                     normal="ChineseFont", bold="ChineseFont",
                     italic="ChineseFont", boldItalic="ChineseFont")
-                return
+                return font_name
             except Exception:
                 continue
-    # 找不到中文字体时用默认字体（中文会显示为方块，但不崩溃）
+    # ReportLab 自带的 CID 字体无需额外字体文件，保证 Linux/容器也能输出中文。
+    try:
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        cid_font = UnicodeCIDFont("STSong-Light")
+        font_name = cid_font.fontName
+        if font_name not in pdfmetrics.getRegisteredFontNames():
+            pdfmetrics.registerFont(cid_font)
+        pdfmetrics.registerFontFamily(
+            font_name, normal=font_name, bold=font_name,
+            italic=font_name, boldItalic=font_name)
+        return font_name
+    except Exception:
+        # 最后的兼容退路保证导出仍可用，但不保证 CJK 字形。
+        return "Helvetica"
 
 
 def _draw_bp_chart(records: list[Vitals]) -> str | None:
