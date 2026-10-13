@@ -18,7 +18,18 @@ _RANGE = re.compile(
 )
 
 # 项目代号：大写字母缩写，如 ALT、CK-MB、HDL、GLU、TC、TG
-_CODE = re.compile(r"\b([A-Z]{1,6}(?:-[A-Z]{1,3})?)\b")
+# 至少 2 个字母或含连字符，避免匹配单位中的单个 L / U / G 等
+_CODE = re.compile(r"\b([A-Z]{2,6}(?:-[A-Z]{1,3})?)\b")
+
+# 中文指标名：2~8 个连续中文字符（白细胞、血红蛋白、总胆固醇等）
+_CN_NAME = re.compile(r"[\u4e00-\u9fff]{2,8}")
+
+# 单位中含数字的模式：10^9/L、×10^9/L、10^12/L、10E9/L 等
+# 提取结果前需先移除这些模式，避免把单位里的数字误认为结果值
+_UNIT_WITH_NUM = re.compile(
+    r"(?:[×xX]\s*)?\d+\s*[\^eE]\+?\d+\s*/\s*[A-Za-z%]+"
+    r"|\d+\s*/\s*(?:HPF|dl|dL|UL|ul)"
+)
 
 
 def _to_num(s: str) -> float:
@@ -27,11 +38,18 @@ def _to_num(s: str) -> float:
     return float(s)
 
 
+def _strip_units(text: str) -> str:
+    """移除文本中含数字的单位表达式，防止单位数字被误提取为结果。"""
+    return _UNIT_WITH_NUM.sub(" ", text)
+
+
 def _extract_result(line: str, range_start: int) -> float | None:
-    """从范围之前的文本里取结果数字：去掉行首序号后取最后一个数字。"""
+    """从范围之前的文本里取结果数字：去掉行首序号和单位中的数字后取最后一个数字。"""
     before = line[:range_start]
     # 去掉行首序号（如 "1 ALT ..." 里的 "1"）
     before = re.sub(r"^\s*\d+[\.\、\)]?\s*", "", before)
+    # 移除含数字的单位模式（如 10^9/L、×10^12/L），避免误取单位数字
+    before = _strip_units(before)
     nums = re.findall(_NUM, before)
     if not nums:
         return None
@@ -41,12 +59,16 @@ def _extract_result(line: str, range_start: int) -> float | None:
         return None
 
 
-def _extract_unparsed_result(line: str, code: str) -> float | None:
-    """无参考范围时，从指标代号之后提取最先出现的结果数值。"""
-    match = re.search(rf"\b{re.escape(code)}\b", line)
+def _extract_unparsed_result(line: str, name: str) -> float | None:
+    """无参考范围时，从指标名称/代号之后提取最先出现的结果数值。"""
+    # 先尝试精确匹配名称位置
+    match = re.search(rf"(?:\b{re.escape(name)}\b|{re.escape(name)})", line)
     if not match:
         return None
-    nums = re.findall(_NUM, line[match.end():])
+    after = line[match.end():]
+    # 移除含数字的单位模式
+    after = _strip_units(after)
+    nums = re.findall(_NUM, after)
     if not nums:
         return None
     try:
@@ -56,8 +78,16 @@ def _extract_unparsed_result(line: str, code: str) -> float | None:
 
 
 def _extract_code(line: str) -> str | None:
+    """提取指标代号（英文缩写）或中文名称。"""
+    # 优先匹配英文代号（至少 2 个大写字母）
     m = _CODE.search(line)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    # 其次匹配中文指标名（2~8 个汉字）
+    m = _CN_NAME.search(line)
+    if m:
+        return m.group(0)
+    return None
 
 
 def parse_metrics(ocr_text: str) -> list[dict]:
@@ -90,7 +120,7 @@ def parse_metrics(ocr_text: str) -> list[dict]:
             metrics.append({"code": code, "result": result,
                             "lo": lo, "hi": hi, "status": status})
         else:
-            # 没匹配到范围，但行里有代号+数字 → 标记为未能核对
+            # 没匹配到范围，但行里有名称/代号+数字 → 标记为未能核对
             code = _extract_code(line)
             if code and re.search(r"\d", line):
                 metrics.append({"code": code, "result": _extract_unparsed_result(line, code),
