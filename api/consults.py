@@ -33,11 +33,14 @@ AUDIO_TYPES = {
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
-    """解析目标老人。"""
+    """解析目标数据归属：
+    - 老人：总是操作自己的数据；
+    - 家属：传 elder_id 则必须已绑定该老人；不传则操作自己的本人记录。
+    """
     if current.role == "elder":
         return current.id
     if elder_id is None:
-        raise HTTPException(status_code=400, detail="家属操作需指定 elder_id")
+        return current.id
     binding = (
         db.query(FamilyBinding)
         .filter(FamilyBinding.elder_id == elder_id)

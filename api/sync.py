@@ -18,6 +18,7 @@ from db.schemas import (
 )
 from core.security import get_current_user
 from api.meds import resolve_elder_id
+from core.report_parse import parse_metrics
 
 router = APIRouter(prefix="/api", tags=["同步"])
 
@@ -80,7 +81,7 @@ def sync(since: str | None = None,
         q_con = q_con.filter(ConsultRecord.created_at >= ts)
     consults = q_con.all()
 
-    # 查药记录（始终返回，不受隐私开关约束）
+    # 专用查药记录始终同步；普通对话产生的 kind="chat" 记录受隐私开关约束。
     q_dq = db.query(DrugQuery).filter(DrugQuery.elder_id == target)
     if ts:
         q_dq = q_dq.filter(DrugQuery.created_at >= ts)
@@ -89,6 +90,10 @@ def sync(since: str | None = None,
     # 对话摘要：受老人的隐私开关约束——关闭时返回空数组
     chat_summaries: list[ChatSummary] = []
     target_user = db.query(User).filter(User.id == target).first()
+    is_owner = current.id == target
+    if not is_owner and (not target_user or not target_user.sync_summary_to_family):
+        drug_queries = [record for record in drug_queries if record.kind != "chat"]
+
     if target_user and target_user.sync_summary_to_family:
         q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
         if ts:
@@ -103,7 +108,11 @@ def sync(since: str | None = None,
         "medications": [MedicationOut.model_validate(m).model_dump() for m in meds],
         "medication_logs": [LogOut.model_validate(l).model_dump() for l in logs],
         "vitals": [VitalsOut.model_validate(v).model_dump() for v in vitals],
-        "reports": [HealthReportOut.model_validate(r).model_dump() for r in reports],
+        "reports": [
+            {**HealthReportOut.model_validate(r).model_dump(),
+             "metrics": parse_metrics(r.ocr_text or "")}
+            for r in reports
+        ],
         "symptoms": [SymptomOut.model_validate(s).model_dump() for s in symptoms],
         "consults": [ConsultOut.model_validate(c).model_dump() for c in consults],
         "drug_queries": [DrugQueryOut.model_validate(d).model_dump() for d in drug_queries],

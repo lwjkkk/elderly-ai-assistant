@@ -26,6 +26,13 @@ QWEN_MAX_RETRIES = 2          # 失败重试次数
 # OCR 配置
 OCR_LANG = "ch"
 OCR_USE_GPU = False
+# OCR 模型目录：必须是纯英文绝对路径。默认位于后端项目目录下，避免写入受限的 D 盘根目录。
+# Paddle 推理引擎无法打开中文用户名路径（如 C:/Users/张三/.paddleocr/...）下的模型文件，
+# 统一放到 D 盘后端目录的纯英文子目录，由 ocr.py 显式传给 det/rec/cls 三个模型子目录。
+_DEFAULT_OCR_MODEL_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "ocr_models")
+)
+OCR_MODEL_DIR = os.getenv("OCR_MODEL_DIR", _DEFAULT_OCR_MODEL_DIR)
 
 # RAG 知识库路径
 KNOWLEDGE_BASE_DIR = "./knowledge_base"

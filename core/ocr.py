@@ -4,40 +4,92 @@
 
 import base64
 import logging
+import os
 import re
+import sys
 
-# 必须在 import paddleocr/paddlepaddle 之前先加载 torch：
-# paddle 先加载的 OpenMP(libiomp5md) 等 DLL 会与 torch 的 shm.dll 冲突，
-# 导致 WinError 127；先 import torch 可规避该 DLL 加载顺序问题。
-import torch  # noqa: F401
+from config.settings import OCR_MODEL_DIR, OCR_LANG, OCR_USE_GPU
 
 logger = logging.getLogger(__name__)
 
 _ocr = None
+_dll_directory_handles = []
+
+
+def _configure_windows_dll_search() -> None:
+    """Expose the active conda runtime DLL directories to torch/paddle on Windows."""
+    if os.name != "nt" or _dll_directory_handles:
+        return
+    candidates = (
+        os.path.join(sys.prefix, "Library", "bin"),
+        os.path.join(sys.prefix, "Scripts"),
+        os.path.join(sys.prefix, "Lib", "site-packages", "torch", "lib"),
+    )
+    for directory in candidates:
+        if os.path.isdir(directory):
+            try:
+                # Windows requires keeping the returned handle alive for the DLL search path.
+                _dll_directory_handles.append(os.add_dll_directory(directory))
+            except OSError as e:
+                logger.warning("无法注册 OCR 运行库目录 %s：%s", directory, e)
+
+
+class OcrUnavailableError(RuntimeError):
+    """OCR 服务端不可用：依赖未装、模型文件缺失/无法初始化。
+    这是后端环境问题，应返回 500，不能让用户重拍照片。"""
+
+
+class OcrNoTextError(ValueError):
+    """图片本身没有可识别文字（模糊/无文字/不是目标照片）。
+    这是业务输入问题，返回 400，提示用户重拍。"""
 
 
 def _get_ocr():
-    """懒加载 PaddleOCR 实例（首次调用较慢，会加载模型）。"""
+    """懒加载 PaddleOCR 实例（首次调用较慢，会加载模型）。
+    模型目录统一指向 OCR_MODEL_DIR 下的纯英文子目录，规避中文路径打不开模型文件的问题。"""
     global _ocr
     if _ocr is None:
         try:
+            # PaddleOCR 2.x 的图像增强依赖可能导入 torch。先加载它以降低 OpenMP DLL 冲突，
+            # 但延迟到首次 OCR 请求，避免 torch 环境故障阻断整个后端启动。
+            _configure_windows_dll_search()
+            import torch  # noqa: F401
             from paddleocr import PaddleOCR
-        except ImportError:
-            raise RuntimeError(
-                "未安装 PaddleOCR，请先执行：pip install paddleocr paddlepaddle"
+        except Exception as e:
+            raise OcrUnavailableError(
+                f"OCR 依赖不可用（请检查 PaddleOCR、PaddlePaddle、PyTorch 安装）：{e}"
+            ) from e
+
+        # 纯英文模型目录，Paddle 推理引擎才能正确打开模型文件
+        det_dir = os.path.join(OCR_MODEL_DIR, "det")
+        rec_dir = os.path.join(OCR_MODEL_DIR, "rec")
+        cls_dir = os.path.join(OCR_MODEL_DIR, "cls")
+        try:
+            os.makedirs(OCR_MODEL_DIR, exist_ok=True)
+            _ocr = PaddleOCR(
+                use_angle_cls=True,
+                lang=OCR_LANG,
+                show_log=False,
+                enable_mkldnn=not OCR_USE_GPU,
+                det_model_dir=det_dir,
+                rec_model_dir=rec_dir,
+                cls_model_dir=cls_dir,
             )
-        # use_angle_cls=True 处理倾斜；lang='ch' 中英文混合
-        # enable_mkldnn=True 开启 Intel oneDNN 加速，CPU 推理更快；
-        # 前提是 paddlepaddle 2.6 与 paddleocr 2.10 版本配套（paddle 3.x 下 oneDNN 不兼容）
-        _ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False,
-                          enable_mkldnn=True)
+        except Exception as e:
+            _ocr = None
+            raise OcrUnavailableError(
+                f"OCR 模型初始化失败，请检查 OCR_MODEL_DIR={OCR_MODEL_DIR} 下模型文件是否完整：{e}"
+            ) from e
     return _ocr
 
 
 def _decode_image(image_base64: str):
     """把 base64 图片解码为 OpenCV BGR 图像数组。"""
-    import numpy as np
-    import cv2
+    try:
+        import numpy as np
+        import cv2
+    except Exception as e:
+        raise OcrUnavailableError(f"OCR 图像处理依赖不可用：{e}") from e
 
     # 兼容可能带 data:image/...;base64, 前缀的情况
     if "," in image_base64 and image_base64.strip().startswith("data:"):
@@ -102,15 +154,24 @@ def _merge_name_and_data(lines):
 
 
 def recognize_image(image_base64: str) -> str:
-    """识别图片中的文字，按版面坐标重建为逐行文本（适合表格类化验单/药盒）。"""
+    """识别图片中的文字，按版面坐标重建为逐行文本（适合表格类化验单/药盒）。
+
+    异常约定：
+    - OcrUnavailableError：后端 OCR 环境/模型问题（调用方返回 500）
+    - OcrNoTextError / ValueError：图片本身问题（调用方返回 400）
+    """
     arr = _decode_image(image_base64)
     ocr = _get_ocr()
 
     # PaddleOCR 2.x 用 .ocr()；3.x 部分版本改为 .predict()，这里做兼容
     try:
-        result = ocr.ocr(arr, cls=True)
-    except AttributeError:
-        result = ocr.predict(arr)
+        try:
+            result = ocr.ocr(arr, cls=True)
+        except AttributeError:
+            result = ocr.predict(arr)
+    except Exception as e:
+        # 推理阶段模型文件打不开/磁盘错误等属于服务端问题，不是用户照片问题
+        raise OcrUnavailableError(f"OCR 推理失败：{e}") from e
 
     lines = []
     # 结构：[ [ [box, (text, score)], ... ] ]（predict 版本可能是 dict 列表）
@@ -135,6 +196,22 @@ def recognize_image(image_base64: str) -> str:
 
     lines = _merge_name_and_data(lines)
     text = "\n".join(t for t in lines if t)
-    if not text:
-        logger.warning("OCR 未识别到文字，可能是图片过于模糊")
+    if not text.strip():
+        raise OcrNoTextError("照片中未识别到文字，请重拍一张清晰、光线充足的照片")
     return text
+
+
+def verify_ocr_ready() -> None:
+    """启动自检：初始化预测器并用内存空白图执行一次推理，不读写测试图片文件。"""
+    ocr = _get_ocr()
+    try:
+        import cv2
+        import numpy as np
+
+        probe = np.full((128, 256, 3), 255, dtype=np.uint8)
+        try:
+            ocr.ocr(probe, cls=True)
+        except AttributeError:
+            ocr.predict(probe)
+    except Exception as e:
+        raise OcrUnavailableError(f"OCR 启动自检推理失败：{e}") from e
