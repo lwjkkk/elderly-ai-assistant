@@ -35,11 +35,8 @@ def init_db():
     # 必须先 import models，否则 Base 不知道表的存在
     from db import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
-    # 对已存在的旧库补建新增索引（create_all 不会改已存在的表）
-    for table in Base.metadata.tables.values():
-        for idx in table.indexes:
-            idx.create(bind=engine, checkfirst=True)
     # 对已存在的旧库补建新增列（SQLite 用 ALTER TABLE，幂等：已存在则跳过）
+    # 注意：补列必须在建索引之前，否则索引引用不存在的列会报错
     _add_column_if_missing(
         "users",
         "sync_summary_to_family",
@@ -66,6 +63,31 @@ def init_db():
         "avatar_url",
         "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)",
     )
+    # 增量同步支持：药品更新时间、体征入库时间
+    # SQLite 不支持 ALTER TABLE 加非恒定默认值，用 NULL 建列后再回填
+    _add_column_if_missing(
+        "medications",
+        "updated_at",
+        "ALTER TABLE medications ADD COLUMN updated_at DATETIME",
+    )
+    _add_column_if_missing(
+        "vitals",
+        "created_at",
+        "ALTER TABLE vitals ADD COLUMN created_at DATETIME",
+    )
+    # 回填历史数据：把已有记录的 updated_at/created_at 设为其 created_at/measured_at
+    _backfill_column(
+        "medications", "updated_at",
+        "UPDATE medications SET updated_at = created_at WHERE updated_at IS NULL",
+    )
+    _backfill_column(
+        "vitals", "created_at",
+        "UPDATE vitals SET created_at = measured_at WHERE created_at IS NULL",
+    )
+    # 补建索引（列已存在后安全创建）
+    for table in Base.metadata.tables.values():
+        for idx in table.indexes:
+            idx.create(bind=engine, checkfirst=True)
 
 
 def _add_column_if_missing(table: str, column: str, ddl: str):
@@ -77,3 +99,14 @@ def _add_column_if_missing(table: str, column: str, ddl: str):
     if column not in cols:
         with engine.begin() as conn:
             conn.execute(text(ddl))
+
+
+def _backfill_column(table: str, column: str, sql: str):
+    """对指定列执行回填 SQL（仅在列存在且有 NULL 时才实际更新）。"""
+    insp = inspect(engine)
+    if table not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns(table)}
+    if column in cols:
+        with engine.begin() as conn:
+            conn.execute(text(sql))

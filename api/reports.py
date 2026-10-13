@@ -3,6 +3,7 @@
 import os
 import uuid
 import base64
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -49,18 +50,17 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
     _, ext = image_type
 
     # OCR + AI 建议（图片字节转 base64 复用 OCR 封装）
+    # 放到线程池执行，避免耗时的 OCR/LLM 调用阻塞事件循环
     image_b64 = base64.b64encode(content).decode("ascii")
     try:
-        ocr_text = recognize_image(image_b64)
+        ocr_text = await asyncio.to_thread(recognize_image, image_b64)
     except OcrUnavailableError as e:
-        # 后端 OCR 环境/模型问题：服务端错误，不让用户重拍
         raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
     except ValueError as e:
-        # 图片本身问题（模糊、无文字、解码失败）：业务错误，提示重拍
         raise HTTPException(status_code=400, detail=str(e))
     # 先用代码精确判定每项 正常/偏高/偏低，再让 LLM 据此用大白话表达，避免数值误判
     metrics = parse_metrics(ocr_text)
-    advice = report_advice(ocr_text, metrics)
+    advice = await asyncio.to_thread(report_advice, ocr_text, metrics)
 
     # 使用识别出的格式扩展名，不信任客户端传入的文件名/扩展名。
     filename = f"{uuid.uuid4().hex}{ext}"
@@ -110,8 +110,18 @@ def list_reports(elder_id: int | None = None,
 
 
 @router.get("/image/{filename}")
-def get_image(filename: str):
-    """查看体检单原图（无需鉴权）。"""
+def get_image(filename: str,
+              db: Session = Depends(get_db),
+              current: User = Depends(get_current_user)):
+    """查看体检单原图（需登录且为数据所有者或绑定家属）。"""
+    # 校验文件归属：通过 image_url 反查 HealthReport 记录
+    image_url = f"/api/reports/image/{filename}"
+    report = db.query(HealthReport).filter(HealthReport.image_url == image_url).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    # 权限：老人本人 / 已绑定家属才能查看
+    resolve_elder_id(db, current, report.elder_id)
+
     filepath = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="图片不存在")

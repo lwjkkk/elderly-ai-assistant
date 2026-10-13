@@ -45,10 +45,10 @@ def sync(since: str | None = None,
     target = resolve_elder_id(db, current, elder_id)
     ts = _parse_since(since)
 
-    # 药品：按创建时间
+    # 药品：按更新时间（修改时 updated_at 自动刷新，确保增量同步不漏掉修改）
     q_med = db.query(Medication).filter(Medication.elder_id == target)
     if ts:
-        q_med = q_med.filter(Medication.created_at >= ts)
+        q_med = q_med.filter(Medication.updated_at >= ts)
     meds = q_med.all()
 
     # 服药记录：按更新时间（打卡会刷新 updated_at）
@@ -57,10 +57,10 @@ def sync(since: str | None = None,
         q_log = q_log.filter(MedicationLog.updated_at >= ts)
     logs = q_log.all()
 
-    # 体征：按测量时间
+    # 体征：按入库时间（补录历史测量时 measured_at 在过去但 created_at 是当前，确保不漏同步）
     q_vit = db.query(Vitals).filter(Vitals.elder_id == target)
     if ts:
-        q_vit = q_vit.filter(Vitals.measured_at >= ts)
+        q_vit = q_vit.filter(Vitals.created_at >= ts)
     vitals = q_vit.all()
 
     # 体检报告
