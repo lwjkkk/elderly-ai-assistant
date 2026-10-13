@@ -120,9 +120,19 @@ def list_consults(elder_id: int | None = None,
 
 
 @router.get("/audio/{filename}")
-def get_audio(filename: str):
-    """播放/下载录音文件。"""
+def get_audio(filename: str,
+              db: Session = Depends(get_db),
+              current: User = Depends(get_current_user)):
+    """播放/下载录音文件（需登录且为数据所有者或绑定家属）。"""
     from fastapi.responses import FileResponse
+
+    # 校验文件归属：通过 audio_url 反查 ConsultRecord 记录
+    audio_url = f"/api/consults/audio/{filename}"
+    record = db.query(ConsultRecord).filter(ConsultRecord.audio_url == audio_url).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="录音文件不存在")
+    # 权限：老人本人 / 已绑定家属才能查看
+    resolve_elder_id(db, current, record.elder_id)
 
     filepath = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(filepath):

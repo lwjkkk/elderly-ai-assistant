@@ -68,9 +68,37 @@ def create_vital(payload: VitalsCreate,
     if payload.type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail=f"类型只能是 {VALID_TYPES}")
 
-    # 血压必须同时有收缩压和舒张压
-    if payload.type == "bp" and (payload.systolic is None or payload.diastolic is None):
-        raise HTTPException(status_code=400, detail="血压需同时填写收缩压和舒张压")
+    # 血压必须同时有收缩压和舒张压，并校验合理范围
+    if payload.type == "bp":
+        if payload.systolic is None or payload.diastolic is None:
+            raise HTTPException(status_code=400, detail="血压需同时填写收缩压和舒张压")
+        if not (30 <= payload.systolic <= 300):
+            raise HTTPException(status_code=400, detail=f"收缩压值 {payload.systolic} 不在合理范围 30~300 mmHg")
+        if not (20 <= payload.diastolic <= 250):
+            raise HTTPException(status_code=400, detail=f"舒张压值 {payload.diastolic} 不在合理范围 20~250 mmHg")
+        if payload.systolic <= payload.diastolic:
+            raise HTTPException(status_code=400, detail="收缩压必须大于舒张压")
+
+    # 血糖校验
+    if payload.type == "bs":
+        if payload.value is None:
+            raise HTTPException(status_code=400, detail="血糖记录必须填写数值")
+        if not (1.0 <= payload.value <= 50.0):
+            raise HTTPException(status_code=400, detail=f"血糖值 {payload.value} 不在合理范围 1.0~50.0 mmol/L")
+
+    # 心率校验
+    if payload.type == "hr":
+        if payload.value is None:
+            raise HTTPException(status_code=400, detail="心率记录必须填写数值")
+        if not (30 <= payload.value <= 250):
+            raise HTTPException(status_code=400, detail=f"心率值 {payload.value} 不在合理范围 30~250 次/分")
+
+    # 体重校验
+    if payload.type == "weight":
+        if payload.value is None:
+            raise HTTPException(status_code=400, detail="体重记录必须填写数值")
+        if not (20.0 <= payload.value <= 300.0):
+            raise HTTPException(status_code=400, detail=f"体重值 {payload.value} 不在合理范围 20~300 kg")
 
     elder_id = resolve_elder_id(db, current, payload.elder_id)
 
