@@ -2,7 +2,7 @@
 # 核心逻辑写成纯函数（可直接调用做测试），APScheduler 负责每分钟触发。
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from db.database import SessionLocal
 from db.models import Medication, MedicationLog, FamilyBinding
@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 GRACE_MINUTES = 30
 
 _scheduler = None
+
+
+def _beijing_now(now: datetime | None = None) -> datetime:
+    """统一以北京时间（UTC+8）为准，兼容传入带 tz 的时间对象。"""
+    zone = timezone(timedelta(hours=8))
+    value = now or datetime.now(zone)
+    if value.tzinfo is not None:
+        value = value.astimezone(zone).replace(tzinfo=None)
+    return value
 
 
 def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -> MedicationLog:
@@ -35,7 +44,7 @@ def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -
 
 def run_reminder_cycle(now: datetime | None = None) -> list[dict]:
     """扫描当前分钟应服用的药，推送提醒给老人和绑定家属。"""
-    now = now or datetime.now()
+    now = _beijing_now(now)
     date = now.strftime("%Y-%m-%d")
     hm = now.strftime("%H:%M")
 
@@ -44,6 +53,8 @@ def run_reminder_cycle(now: datetime | None = None) -> list[dict]:
     try:
         meds = db.query(Medication).all()
         for med in meds:
+            if med.start_date and date < med.start_date:
+                continue
             if hm not in med.times:
                 continue
             # 已推送过则跳过，避免同一分钟内重复推送
@@ -76,7 +87,7 @@ def run_reminder_cycle(now: datetime | None = None) -> list[dict]:
 
 def run_missed_cycle(now: datetime | None = None, grace: int = GRACE_MINUTES) -> list[dict]:
     """把已过宽限期仍未打卡的时间点标记为漏服。"""
-    now = now or datetime.now()
+    now = _beijing_now(now)
     date = now.strftime("%Y-%m-%d")
     hm = now.strftime("%H:%M")
 
@@ -85,6 +96,8 @@ def run_missed_cycle(now: datetime | None = None, grace: int = GRACE_MINUTES) ->
     try:
         meds = db.query(Medication).all()
         for med in meds:
+            if med.start_date and date < med.start_date:
+                continue
             for slot in med.times:
                 # HH:MM 字符串可直接比较先后；只处理今天已过的时间点
                 if slot >= hm:

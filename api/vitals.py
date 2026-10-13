@@ -15,7 +15,7 @@ from db.schemas import (
 )
 from core.security import get_current_user
 from core.disclaimer import HEALTH_DISCLAIMER
-from core.ocr import recognize_image
+from core.ocr import recognize_image, OcrUnavailableError
 from core.qwen_llm import call_qwen
 from services.pdf_export import generate_vitals_pdf
 
@@ -40,11 +40,14 @@ def _parse_measured_at(value: str | None):
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
-    """解析目标老人：老人默认自己；家属必须显式指定且已绑定。"""
+    """解析目标数据归属：
+    - 老人：总是操作自己的数据；
+    - 家属：传 elder_id 则必须已绑定该老人；不传则操作自己的本人记录。
+    """
     if current.role == "elder":
         return current.id
     if elder_id is None:
-        raise HTTPException(status_code=400, detail="家属操作需指定 elder_id")
+        return current.id
     binding = (
         db.query(FamilyBinding)
         .filter(FamilyBinding.elder_id == elder_id)
@@ -178,7 +181,15 @@ def export_pdf(vital_type: str | None = None,
         )
 
     elder = db.query(User).filter(User.id == target).first()
-    pdf_bytes = generate_vitals_pdf(records, elder.nickname if elder else "老人", HEALTH_DISCLAIMER)
+    try:
+        pdf_bytes = generate_vitals_pdf(records, elder.nickname if elder else "老人", HEALTH_DISCLAIMER)
+    except ModuleNotFoundError as e:
+        raise HTTPException(status_code=500, detail=f"PDF 导出缺少依赖：{e}，请联系管理员安装 reportlab/matplotlib")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF 生成失败：{e}")
+
+    if not pdf_bytes[:5] == b"%PDF-":
+        raise HTTPException(status_code=500, detail="PDF 生成异常，未返回有效文件")
 
     return StreamingResponse(
         iter([pdf_bytes]),
@@ -212,19 +223,18 @@ def recognize_vital(payload: VitalsRecognizeRequest,
 
     try:
         ocr_text = recognize_image(payload.image_base64)
+    except OcrUnavailableError as e:
+        raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        raise HTTPException(status_code=400, detail="照片无法识别，请重拍一张清晰的")
-
-    if not ocr_text.strip():
-        raise HTTPException(status_code=400, detail="照片中未识别到数字，请拍清楚测量仪屏幕")
 
     llm_out = call_qwen(
         VITALS_RECOGNIZE_PROMPT,
         f"识别到的文字如下：\n{ocr_text}",
     )
-    if "NONE" in llm_out.upper():
+    # 只有整段输出就是 NONE（识别失败）才算失败；
+    # 血压场景下 LLM 会写 VALUE: NONE（该字段不适用），不能被子串误判。
+    if llm_out.strip().upper() == "NONE":
         raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
 
     parsed = _parse_vitals_llm(llm_out, payload.vital_type)
@@ -271,6 +281,9 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
         sys, dia = _gint("SYSTOLIC"), _gint("DIASTOLIC")
         if sys is None or dia is None:
             return None
+        # 基本合理性校验，防止 OCR/LLM 把序号或无关数字当成血压
+        if not (30 <= sys <= 300 and 20 <= dia <= 250 and sys > dia):
+            return None
         result["systolic"], result["diastolic"] = sys, dia
     else:
         val = _gfloat("VALUE")
@@ -278,12 +291,20 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
             return None
         if t == "bs":
             # 血糖统一换算成 mmol/L（mg/dL ÷ 18）
-            if _gunit().lower() in ("mg/dl", "mgdL", "mg/dl"):
+            unit = _gunit().lower().replace(" ", "")
+            if unit in ("mg/dl", "mgdl"):
                 val = val / 18.0
+            # 合理范围 1~50 mmol/L
+            if not (1.0 <= val <= 50.0):
+                return None
             result["value"] = round(val, 2)
         elif t == "weight":
-            # 体重保留一位小数
+            # 体重保留一位小数，合理范围 20~300 kg
+            if not (20.0 <= val <= 300.0):
+                return None
             result["value"] = round(val, 1)
-        else:  # hr
+        else:  # hr 心率 30~250 次/分
+            if not (30.0 <= val <= 250.0):
+                return None
             result["value"] = float(int(round(val)))
     return result

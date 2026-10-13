@@ -1,9 +1,9 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # 解决 Windows 下 torch/numpy OpenMP 运行时重复初始化冲突
-import torch  # noqa: F401  必须在所有 import 最前：Windows 下晚加载会因 conda 旧 VC++ 运行库
-# 导致 torch/lib/shm.dll 加载失败(WinError 127)；进程最早期导入可复用已加载的新版运行库。
+# OCR 依赖在首次识别时由 core.ocr 延迟加载并注册 conda DLL 目录，避免其故障阻断 API 服务启动。
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,13 +25,26 @@ from api.users import router as users_router
 from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
+from core.ocr import OcrUnavailableError, verify_ocr_ready
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动：建表 + 启动定时任务
+    # 启动：建表、启动定时任务，并检查 OCR 依赖/模型/预测器。
     init_db()
     start_scheduler()
+    try:
+        verify_ocr_ready()
+        app.state.ocr_ready = True
+        app.state.ocr_error = None
+        logger.info("OCR 启动自检通过")
+    except OcrUnavailableError as e:
+        # OCR 故障不阻断其他 API；查药、报告、体征识别会返回明确的服务错误。
+        app.state.ocr_ready = False
+        app.state.ocr_error = str(e)
+        logger.exception("OCR 启动自检失败")
     yield
     # 关闭：定时任务随进程结束
 

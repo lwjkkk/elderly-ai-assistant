@@ -8,8 +8,9 @@ import logging
 import re
 
 from db.database import SessionLocal
-from db.models import ChatSummary
+from db.models import ChatSummary, DrugQuery, User
 from core.qwen_llm import call_qwen
+from core.disclaimer import DRUG_DISCLAIMER
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,17 @@ def save_summary_sync(elder_id: int, question: str, answer: str, module: str):
             module=module or None,
             synced=False,
         ))
+        # drug 类问答同时写一条 drug_queries（kind="chat"），
+        # 让家属端查药卡片（/api/drugs/records）也能看到普通对话里的查药记录。
+        if category == "drug":
+            db.add(DrugQuery(
+                elder_id=elder_id,
+                kind="chat",
+                input_text=question.strip(),
+                ocr_text=question.strip(),
+                explanation=(answer or "")[:500],
+                disclaimer=DRUG_DISCLAIMER,
+            ))
         db.commit()
         logger.info(f"对话摘要已落库 elder={elder_id} category={category} summary={summary}")
         return True
