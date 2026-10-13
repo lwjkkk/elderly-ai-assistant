@@ -61,6 +61,8 @@ class Medication(Base):
     # 开始用药日期（YYYY-MM-DD），可空；用于定时推送/按日统计对齐
     start_date = Column(String(10), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    # 更新时间：修改药品信息时自动刷新，用于增量同步检测变更
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class MedicationLog(Base):
@@ -90,7 +92,10 @@ class Vitals(Base):
     diastolic = Column(Integer, nullable=True)
     # 通用数值：血糖(mmol/L)、心率(bpm)、体重(kg)
     value = Column(String(20), nullable=True)
+    # 测量时间：用户填写的实际测量时间
     measured_at = Column(DateTime, server_default=func.now(), index=True)
+    # 入库时间：记录创建时间，用于增量同步（补录历史数据时 measured_at 在过去但 created_at 是当前）
+    created_at = Column(DateTime, server_default=func.now(), index=True)
 
 
 class ConsultRecord(Base):
