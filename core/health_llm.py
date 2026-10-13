@@ -36,7 +36,8 @@ REPORT_SYSTEM_PROMPT = (
     "是否需要复查或就医；正常项一句话带过即可。"
     "常见常识：HDL 高密度脂蛋白是“好胆固醇”，轻度偏高通常对心血管有保护作用、不必担心"
     "（即使程序按数值标为偏高，也要这样解释）；LDL 低密度脂蛋白是“坏胆固醇”，真正偏高才需警惕。"
-    "输出结构：先列“需要关注的异常项”（没有就写“本次没有明显异常”），再一句话带过正常项，"
+    "输出结构：先列“需要关注的异常项”（只有程序确认没有偏高/偏低项时才能说没有已确认异常），"
+    "再一句话带过正常项；存在未能核对项时必须单独列出，绝不能概括成“本次没有明显异常”或“一切正常”。"
     "最后给整体建议。句子要短、术语要解释、不夸大、不遗漏。"
     "严禁下疾病结论或给用药处方，结果以医生解读为准。"
 )
@@ -58,24 +59,55 @@ def symptom_advice(input_text: str) -> tuple[str, str]:
 
 def report_advice(ocr_text: str, metrics: list | None = None) -> str:
     """根据 OCR 文字与程序已核对的指标结论，返回大白话解读。
-    异常项强制放在 prompt 最前，正常项另放，避免模型漏报。"""
+    异常项强制放在 prompt 最前，正常项另放，未解析项明确告知不能当正常。"""
     metrics = metrics or []
-    labels = {"normal": "正常", "high": "偏高", "low": "偏低"}
+    labels = {"normal": "正常", "high": "偏高", "low": "偏低", "unparsed": "未能核对"}
 
     def _line(m):
+        if m["status"] == "unparsed":
+            return f"{m['code']}：结果{m.get('result')}，参考范围未能识别，判定【未能核对】"
         return (f"{m['code']} 结果{m['result']}，参考{m['lo']}~{m['hi']}，"
                 f"判定【{labels[m['status']]}】")
 
-    abnormal = [m for m in metrics if m["status"] != "normal"]
+    abnormal = [m for m in metrics if m["status"] in ("high", "low")]
     normal = [m for m in metrics if m["status"] == "normal"]
+    unparsed = [m for m in metrics if m["status"] == "unparsed"]
 
     user = ""
     if abnormal:
         user += ("以下是程序已确认的异常项，你必须在回答最开头逐项列出并解释，"
                  "严禁写“没有明显异常”：\n"
                  + "\n".join(_line(m) for m in abnormal) + "\n\n")
-    user += ("以下是程序确认的正常项，只需一句话带过：\n"
-             + "\n".join(_line(m) for m in normal) + "\n\n")
+    if normal:
+        user += ("以下是程序确认的正常项，只需一句话带过：\n"
+                 + "\n".join(_line(m) for m in normal) + "\n\n")
+    if unparsed:
+        user += ("以下指标未能自动核对参考范围（OCR 可能没识别清楚），"
+                 "你不能把它们当作正常项一笔带过，必须明确提示老人：这些项需要对照纸质报告或请医生确认，"
+                 "不要自行判断高低：\n"
+                 + "\n".join(_line(m) for m in unparsed) + "\n\n")
+    if not abnormal and not normal:
+        user += ("注意：本次程序没有成功核对任何指标的参考范围，"
+                 "你绝对不能回答“一切正常”或“均在正常范围内”，"
+                 "必须如实说明“本次识别效果有限，未能自动核对各项指标，请对照纸质报告或请医生解读”。\n\n")
     user += "体检单原始识别文字：\n" + ocr_text
 
-    return call_qwen(REPORT_SYSTEM_PROMPT, user)
+    answer = call_qwen(REPORT_SYSTEM_PROMPT, user)
+
+    # 模型若给出与程序核对相冲突的整体正常结论，整段 AI 解读不可信，改为确定性提示。
+    broad_normal_claim = re.search(
+        r"(本次|报告|指标|结果)?\s*(没有明显异常|均在正常范围内|都在正常范围内|"
+        r"一切正常|全部正常|未见异常)",
+        answer,
+    )
+    if broad_normal_claim and (abnormal or unparsed or not metrics):
+        answer = "AI 解读与程序核对结果不一致，已隐藏这段不可靠解读。请以报告原文及医生意见为准。"
+
+    verified = []
+    if abnormal:
+        verified.append("程序核对的异常项：" + "；".join(_line(m) for m in abnormal))
+    if unparsed:
+        verified.append("未能核对项：" + "；".join(_line(m) for m in unparsed))
+    if not metrics:
+        verified.append("本次未能自动核对任何指标，不代表指标正常。")
+    return ("程序核对结果：" + "\n".join(verified) + "\n\n" + answer) if verified else answer

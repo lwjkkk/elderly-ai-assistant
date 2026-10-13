@@ -1,5 +1,4 @@
 # 症状自查接口：输入症状 -> AI 建议 + 风险分级（绿黄红），家属可代提交、查看
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
