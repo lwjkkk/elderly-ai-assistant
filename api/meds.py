@@ -1,7 +1,8 @@
 # 用药接口：药品增删改查、今日用药清单、服药打卡
 # 权限：老人管理自己的药；家属只能操作已绑定老人的药（可代录、查看打卡状态）
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -15,9 +16,31 @@ from core.security import get_current_user
 
 router = APIRouter(prefix="/api/meds", tags=["用药"])
 
+_SHANGHAI = timezone(timedelta(hours=8))
+
+
+def _checkin_time(med: Medication, slot: str, date: str | None) -> str:
+    """以北京时间校验计划日期和时间，客户端不能提前打卡。"""
+    now = datetime.now(_SHANGHAI)
+    day = date or now.strftime("%Y-%m-%d")
+    if slot not in med.times or not re.fullmatch(r"\d{2}:\d{2}", slot):
+        raise HTTPException(status_code=400, detail="该时间点不在用药计划中")
+    try:
+        scheduled = datetime.strptime(f"{day} {slot}", "%Y-%m-%d %H:%M").replace(tzinfo=_SHANGHAI)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期或服药时间格式不正确")
+    if med.start_date and day < med.start_date:
+        raise HTTPException(status_code=400, detail="尚未到开始用药日期")
+    if scheduled > now:
+        raise HTTPException(status_code=400, detail="尚未到服药时间，请到时间后再打卡")
+    return day
+
 
 def assert_can_access(db: Session, current: User, elder_id: int) -> int:
     """校验当前用户是否有权操作该老人的数据，返回 elder_id；无权则 403。"""
+    # 老人本人或家属本人记录都归当前账号所有，不需要绑定关系。
+    if elder_id == current.id:
+        return elder_id
     if current.role == "elder":
         if elder_id != current.id:
             raise HTTPException(status_code=403, detail="只能操作自己的数据")
@@ -37,11 +60,15 @@ def assert_can_access(db: Session, current: User, elder_id: int) -> int:
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
-    """解析目标老人：老人默认自己；家属必须显式指定且已绑定。"""
+    """解析目标数据归属：
+    - 老人：总是操作自己的数据（忽略传入的 elder_id）；
+    - 家属：传 elder_id 则必须已绑定该老人（代录/查看长辈）；不传则操作自己的本人记录。
+    """
     if current.role == "elder":
         return assert_can_access(db, current, current.id)
     if elder_id is None:
-        raise HTTPException(status_code=400, detail="家属操作需指定 elder_id")
+        # 家属本人区：管理自己的体征/报告/录音等记录
+        return current.id
     return assert_can_access(db, current, elder_id)
 
 
@@ -128,11 +155,13 @@ def today_meds(elder_id: int | None = None,
                current: User = Depends(get_current_user)):
     """今日用药清单：每个药品展开时间点及状态（未打卡为 pending）。"""
     target = resolve_elder_id(db, current, elder_id)
-    date = date or datetime.now().strftime("%Y-%m-%d")
+    date = date or datetime.now(_SHANGHAI).strftime("%Y-%m-%d")
 
     meds = db.query(Medication).filter(Medication.elder_id == target).all()
     result = []
     for med in meds:
+        if med.start_date and date < med.start_date:
+            continue
         slots = []
         for slot in med.times:
             log = (
@@ -158,7 +187,7 @@ def check_in(payload: CheckInRequest,
         raise HTTPException(status_code=404, detail="药品不存在")
     assert_can_access(db, current, med.elder_id)
 
-    date = payload.date or datetime.now().strftime("%Y-%m-%d")
+    date = _checkin_time(med, payload.slot, payload.date)
     log = (
         db.query(MedicationLog)
         .filter(MedicationLog.medication_id == med.id)

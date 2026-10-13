@@ -12,7 +12,7 @@ from db.database import get_db
 from db.models import User, HealthReport
 from db.schemas import HealthReportOut
 from core.security import get_current_user
-from core.ocr import recognize_image
+from core.ocr import recognize_image, OcrUnavailableError, OcrNoTextError
 from core.health_llm import report_advice
 from core.report_parse import parse_metrics
 from api.meds import resolve_elder_id
@@ -52,10 +52,12 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
     image_b64 = base64.b64encode(content).decode("ascii")
     try:
         ocr_text = recognize_image(image_b64)
+    except OcrUnavailableError as e:
+        # 后端 OCR 环境/模型问题：服务端错误，不让用户重拍
+        raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
     except ValueError as e:
+        # 图片本身问题（模糊、无文字、解码失败）：业务错误，提示重拍
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        raise HTTPException(status_code=400, detail="图片识别失败，请重新拍摄清晰的体检单照片再试")
     # 先用代码精确判定每项 正常/偏高/偏低，再让 LLM 据此用大白话表达，避免数值误判
     metrics = parse_metrics(ocr_text)
     advice = report_advice(ocr_text, metrics)
@@ -82,7 +84,9 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
         if os.path.exists(filepath):
             os.remove(filepath)
         raise
-    return rec
+    out = HealthReportOut.model_validate(rec).model_dump()
+    out["metrics"] = metrics
+    return out
 
 
 @router.get("", response_model=list[HealthReportOut])
@@ -91,12 +95,18 @@ def list_reports(elder_id: int | None = None,
                  current: User = Depends(get_current_user)):
     """查询体检报告历史。"""
     target = resolve_elder_id(db, current, elder_id)
-    return (
+    records = (
         db.query(HealthReport)
         .filter(HealthReport.elder_id == target)
         .order_by(HealthReport.created_at.desc())
         .all()
     )
+    result = []
+    for rec in records:
+        out = HealthReportOut.model_validate(rec).model_dump()
+        out["metrics"] = parse_metrics(rec.ocr_text or "")
+        result.append(out)
+    return result
 
 
 @router.get("/image/{filename}")

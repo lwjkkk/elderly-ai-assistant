@@ -50,6 +50,7 @@ data/processed_private/
 # 模型权重和缓存
 models/*
 !models/.gitkeep
+ocr_models/
 *.bin
 *.safetensors
 *.onnx

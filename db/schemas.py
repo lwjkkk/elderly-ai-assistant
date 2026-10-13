@@ -336,6 +336,8 @@ class HealthReportOut(BaseModel):
     image_url: str | None = None
     ocr_text: str | None = None
     advice_text: str | None = None
+    # 程序逐项核对结果：[{code, result, lo, hi, status}]，status ∈ normal/high/low/unparsed
+    metrics: list[dict] = Field(default_factory=list)
     created_at: datetime | None = None
     disclaimer: str = HEALTH_DISCLAIMER
 
