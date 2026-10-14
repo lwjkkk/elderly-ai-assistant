@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
@@ -6,10 +7,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
+import '../../services/answer_speech.dart';
+import '../../services/drug_question.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
 import 'hub_pages.dart';
 import 'vitals_tab.dart';
+import 'health_record_style.dart';
+import 'report_details.dart';
 import 'package:geolocator/geolocator.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
@@ -72,7 +77,9 @@ class _ConsultsTabState extends State<ConsultsTab> {
         return;
       }
       await _player.stop();
-      await _player.play(UrlSource(url));
+      final bytes = await ApiService.consultAudioBytes(url);
+      if (!mounted) return;
+      await _player.play(BytesSource(bytes, mimeType: ApiService.audioMimeType(url)));
       if (mounted) setState(() => _playing = url);
     } catch (e) {
       if (mounted) {
@@ -145,14 +152,15 @@ class _DrugQueryTabState extends State<DrugQueryTab> {
   }
 
   Future<void> byPhoto() async {
-    final f = await ImagePicker().pickImage(source: ImageSource.camera);
-    if (f == null) return;
+    if (busy) return;
     setState(() { busy = true; result = '识别中…'; });
     try {
-      final r = await ApiService.queryDrugByImage(await f.readAsBytes(), f.name);
+      final f = await ImagePicker().pickImage(source: ImageSource.camera);
+      if (f == null) return;
+      final r = await ApiService.queryDrugByImage(await f.readAsBytes(), fileName: f.name);
       result = '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
     } catch (e) { result = '识别失败：${ApiService.friendly(e)}'; }
-    if (mounted) setState(() => busy = false);
+    finally { if (mounted) setState(() => busy = false); }
   }
 
   @override
@@ -253,94 +261,77 @@ class ReportTab extends StatefulWidget {
 
 class _ReportTabState extends State<ReportTab> {
   List items = [];
-  bool _showImage = false;
+  bool loading = true;
   bool busy = false;
-String _adviceOnly(String s) {
-    var x = s.replaceAll(RegExp(r'https?://\S+'), '');
-    final keep = <String>[];
-    for (final line in x.split('\n')) {
-      final l = line.trim();
-      if (l.isEmpty) continue;
-      final cjk = RegExp(r'[\u4e00-\u9fff]').allMatches(l).length;
-      if (cjk == 0) continue;
-      final asc = RegExp(r'[A-Za-z]').allMatches(l).length;
-      if (asc > cjk) continue;
-      keep.add(l);
-    }
-    return keep.join('\n');
-  }
+  String? error;
+
   @override
   void initState() { super.initState(); refresh(); }
+
   Future<void> refresh() async {
-    try { items = await ApiService.reportList(mine: widget.mine); } catch (_) { items = []; }
-try { _showImage = await ApiService.getRole() != 'elder'; } catch (_) {}
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() { loading = true; error = null; });
+    try {
+      final result = await ApiService.reportList(mine: widget.mine);
+      if (mounted) setState(() => items = result);
+    } catch (e) {
+      if (mounted) setState(() => error = ApiService.friendly(e));
+    } finally { if (mounted) setState(() => loading = false); }
   }
 
-  Future<void> upload() async {
-    final f = await ImagePicker().pickImage(source: ImageSource.camera);
-    if (f == null) return;
+  Future<void> upload(ImageSource source) async {
+    if (busy) return;
     setState(() => busy = true);
     try {
-      await ApiService.uploadReport(await f.readAsBytes(), f.name, mine: widget.mine);
-      refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(kIsWeb ? '当前浏览器不支持语音识别，请手动输入（建议用手机App）' : '上传成功')));
-      }
+      final file = await ImagePicker().pickImage(source: source, maxWidth: 2000);
+      if (file == null) return;
+      await ApiService.uploadReport(await file.readAsBytes(), file.name, mine: widget.mine);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('报告已上传并完成解读')));
+      await refresh();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
-      }
-    }
-    if (mounted) setState(() => busy = false);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
+    } finally { if (mounted) setState(() => busy = false); }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return RefreshIndicator(
-      color: const Color(0xFF345C87),
-      onRefresh: refresh,
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        Row(children: [
-          const Text('体检报告', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-          const Spacer(),
-          ElevatedButton.icon(onPressed: busy ? null : upload, icon: const Icon(Icons.upload), label: Text(busy ? '上传中' : '拍照上传')),
-        ]),
-        const SizedBox(height: 8),
-        if (items.isEmpty) const Text('暂无报告', style: TextStyle(fontSize: 20)),
-        ...items.map((e) {
-          final m = Map<String, dynamic>.from(e as Map);
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text((m['created_at'] ?? '').toString(), style: const TextStyle(fontSize: 16, color: Color(0xFF8A94A6))),
-                const SizedBox(height: 6),
-                Builder(builder: (c) {
-                  final adv = _adviceOnly((m['advice_text'] ?? '').toString());
-                  return Text(adv.isEmpty ? '暂暂有效建建诀' : adv, style: const TextStyle(fontSize: 19, height: 1.6, color: Color(0xFF222222)));
-                }),
-                if (_showImage && (m['image_url'] ?? '').toString().isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(
-                      ApiService.reportImageUrl((m['image_url'] ?? '').toString()),
-                      height: 190,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ],
-              ]),
-            ),
-          );
-        }),
-        const Padding(padding: EdgeInsets.only(top: 8), child: Text(ApiService.disclaimer, style: TextStyle(fontSize: 14, color: Colors.grey))),
+  Widget build(BuildContext context) => RefreshIndicator(
+    color: HealthRecordStyle.primary,
+    onRefresh: refresh,
+    child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
+      Row(children: [
+        Expanded(child: HealthRecordStyle.button(busy ? '处理中…' : '拍照上传', Icons.camera_alt_outlined, busy ? null : () => upload(ImageSource.camera))),
+        const SizedBox(width: 12),
+        Expanded(child: HealthRecordStyle.button('相册上传', Icons.photo_library_outlined, busy ? null : () => upload(ImageSource.gallery))),
       ]),
-    );
-  }
+      const SizedBox(height: 16),
+      if (busy) const Padding(padding: EdgeInsets.only(bottom: 16), child: Column(children: [
+        LinearProgressIndicator(color: HealthRecordStyle.primary, backgroundColor: HealthRecordStyle.soft),
+        SizedBox(height: 8),
+        Text('正在识别并解读报告，请稍候', style: TextStyle(color: HealthRecordStyle.secondary)),
+      ])),
+      HealthRecordStyle.panel(loading ? const SizedBox(height: 190, child: Center(child: CircularProgressIndicator(color: HealthRecordStyle.primary)))
+        : error != null ? Column(children: [Text('加载失败：$error'), HealthRecordStyle.button('重试', Icons.refresh, refresh)])
+        : items.isEmpty ? HealthRecordStyle.empty(Icons.description_outlined, '暂无报告信息')
+        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (final item in items) ...[
+            Text('${item['created_at'] ?? ''}'.replaceAll('T', ' '), style: const TextStyle(fontSize: 16, color: HealthRecordStyle.secondary)),
+            const SizedBox(height: 8),
+            ReportMetrics(report: Map<String, dynamic>.from(item as Map)),
+            const SizedBox(height: 12),
+            Text((item['advice_text'] ?? '').toString().trim().isEmpty ? '暂无解读建议' : item['advice_text'].toString(),
+              style: const TextStyle(fontSize: 19, height: 1.6, color: HealthRecordStyle.ink)),
+            const SizedBox(height: 12),
+            if ((item['image_url'] ?? '').toString().isNotEmpty)
+              TextButton.icon(
+                onPressed: () => showReportOriginal(context, item['image_url'].toString()),
+                icon: const Icon(Icons.image_outlined), label: const Text('查看原图')),
+            const Text(ApiService.disclaimer, style: TextStyle(fontSize: 15, color: HealthRecordStyle.secondary)),
+            const Divider(height: 32, color: HealthRecordStyle.border),
+          ],
+        ])),
+    ]),
+  );
 }
 
 /// Day5 问事助手：柔和风 UI（AfuElderChatPage），逻辑复用原有 send/语音/天气。
@@ -358,11 +349,43 @@ class _ChatTabState extends State<ChatTab> {
   bool busy = false;
   bool listening = false;
   bool fontBig = false;
+  late final AnswerSpeech _speech;
+  bool _voiceStarting = false;
+  int _voiceGeneration = 0;
+  String? _historyKey;
   @override
   void initState() {
     super.initState();
+    _speech = AnswerSpeech(onError: (text) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    })..addListener(_speechChanged);
     _loadScale();
+    _loadHistory();
     chatScale.addListener(_applyScale);
+  }
+  Future<void> _loadHistory() async {
+    final id = await ApiService.getUserId();
+    final role = await ApiService.getRole() ?? 'unknown';
+    _historyKey = 'ai_chat_${role}_${id ?? 'legacy'}';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_historyKey!);
+      final decoded = raw == null ? <dynamic>[] : jsonDecode(raw) as List;
+      msgs
+        ..clear()
+        ..addAll(decoded.map((e) => Map<String, String>.from(e as Map)));
+      if (mounted) setState(() {});
+    } catch (_) {
+      msgs.clear();
+    }
+  }
+
+  Future<void> _saveHistory() async {
+    final key = _historyKey;
+    if (key == null) return;
+    final stable = msgs.where((m) => m['role'] != 'thinking').toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, jsonEncode(stable));
   }
   Future<void> _loadScale() async {
     try {
@@ -374,24 +397,36 @@ class _ChatTabState extends State<ChatTab> {
     if (mounted) setState(() => fontBig = chatScale.value > 1.05);
   }
 
+  void _speechChanged() { if (mounted) setState(() {}); }
+
   @override
   void dispose() {
+    ++_voiceGeneration;
+    unawaited(_activeStt?.cancel().catchError((_) {}) ?? Future<void>.value());
+    _speech.removeListener(_speechChanged);
+    _speech.dispose();
     chatScale.removeListener(_applyScale);
     inputC.dispose();
     super.dispose();
   }
 
   /// 快捷卡片：0 体征（直接进体征记录页，支持上传/查看）
-  ///           1 报告（直接进体检报告解读页，支持上传）
+  ///           1 报告（直接进体检报告解读页，支持上传） 2 咨询录音
   /// 症状描述走输入框/语音，命中关键词时自动调专用自查接口。
   Future<void> onQuick(int i) async {
+    final role = await ApiService.getRole();
+    if (!mounted) return;
+    if (role == 'family') {
+      HubNav.go(0, i == 0 ? 'mine_vitals' : i == 1 ? 'mine_reports' : 'mine_consults');
+      return;
+    }
     if (i == 0) {
       Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const AfuSubPage(title: '体征', child: VitalsTab())));
+          builder: (_) => const HealthRecordPage(child: VitalsTab())));
       return;
     }
     Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => const AfuSubPage(title: '报告', child: ReportTab())));
+        builder: (_) => HealthRecordPage(child: i == 1 ? const ReportTab() : const ConsultsTab())));
   }
 
   /// 症状关键词：命中则走专用自查接口并展示风险等级，而非普通问答。
@@ -412,75 +447,51 @@ class _ChatTabState extends State<ChatTab> {
 
   Future<void> send(String text) async {
     final t = text.trim();
-    if (t.isEmpty || busy) return;
-    if (_looksLikeSymptom(t)) {
-      await _sendSymptom(t);
-      return;
-    }
-    await _sendChat(t);
-  }
-
-  /// 症状自查：调专用接口，气泡内展示红黄绿风险 + 建议。
-  Future<void> _sendSymptom(String t) async {
+    if (t.isEmpty || busy || !mounted) return;
+    setState(() => busy = true);
+    await stopHoldToTalk();
+    await _speech.stop();
+    if (!mounted) return;
     setState(() {
       msgs.add({'role': 'me', 'text': t});
       msgs.add({'role': 'thinking', 'text': ''});
       busy = true;
     });
+    String answer;
     try {
-      final r = await ApiService.symptomCheck(t);
-      final risk = (r['risk'] ?? 'green').toString();
-      final advice = (r['advice_text'] ?? '').toString();
-      final tag = risk == 'red'
-          ? '【症状自查·高风险】'
-          : risk == 'yellow'
-              ? '【症状自查·中风险】'
-              : '【症状自查·低风险】';
-      final tail = risk == 'red'
-          ? '\n请立即拨打120'
-          : risk == 'yellow'
-              ? '\n建议尽快就医'
-              : '';
-      msgs.removeWhere((m) => m['role'] == 'thinking');
-      msgs.add({
-        'role': 'ai',
-        'text': '$tag\n${advice.isEmpty ? '已记录你的症状，请注意观察' : advice}$tail'
-      });
-    } catch (_) {
-      msgs.removeWhere((m) => m['role'] == 'thinking');
-      await _sendChat(t);
-      return;
-    }
-    if (mounted) setState(() => busy = false);
-  }
-
-  Future<void> _sendChat(String text) async {
-    final t = text.trim();
-    if (t.isEmpty || busy) return;
-    setState(() {
-      msgs.add({'role': 'me', 'text': t});
-      msgs.add({'role': 'thinking', 'text': ''});
-      busy = true;
-    });
-    try {
-      final r = await ApiService.chat(t);
-      final raw = (r['answer'] ?? '').toString();
-      var stepsSuffix = '';
-      final hasStepGuide = re_step.hasMatch(raw);
-      final sl = (!hasStepGuide && r['steps'] is List) ? r['steps'] as List : const [];
-      if (sl is List && sl.isNotEmpty) {
-        final missing = sl.map((e) => e.toString()).where((s) => s.isNotEmpty && !raw.contains(s)).toList();
-        if (missing.isNotEmpty) {
-          stepsSuffix = '\n\n步骤：\n${missing.map((e) => '• $e').join('\n')}';
+      final drug = drugQueryName(t);
+      // 后端统一生成 kind=chat 的查药记录，并执行摘要同步隐私规则。
+      if (drug == null && _looksLikeSymptom(t)) {
+        try {
+          final r = await ApiService.symptomCheck(t);
+          final risk = (r['risk'] ?? 'green').toString();
+          final tag = risk == 'red' ? '高风险' : risk == 'yellow' ? '中风险' : '低风险';
+          final tail = risk == 'red' ? '\n请立即拨打120' : risk == 'yellow' ? '\n建议尽快就医' : '';
+          answer = '【症状自查·$tag】\n${r['advice_text'] ?? ''}$tail\n${r['disclaimer'] ?? ApiService.disclaimer}';
+        } catch (_) {
+          // 同一条提问回退到普通问答，不重复插入消息，也不被 busy 挡住。
+          answer = _formatChat(await ApiService.chat(t));
         }
+      } else {
+        answer = _formatChat(await ApiService.chat(t));
       }
-      msgs.removeWhere((m) => m['role'] == 'thinking');
-      msgs.add({'role': 'ai', 'text': '$raw$stepsSuffix'});
     } catch (e) {
-      msgs.removeWhere((m) => m['role'] == 'thinking');
-      msgs.add({'role': 'ai', 'text': '出错了：${ApiService.friendly(e)}'});
+      answer = '出错了：${ApiService.friendly(e)}';
     }
-    if (mounted) setState(() => busy = false);
+    msgs.removeWhere((m) => m['role'] == 'thinking');
+    msgs.add({'role': 'ai', 'text': answer});
+    await _saveHistory();
+    if (!mounted) return;
+    setState(() => busy = false);
+    unawaited(_speech.play(msgs.length - 1, answer));
+  }
+
+  String _formatChat(Map<String, dynamic> result) {
+    final raw = (result['answer'] ?? '').toString();
+    if (re_step.hasMatch(raw) || result['steps'] is! List) return raw;
+    final missing = (result['steps'] as List).map((s) => s.toString())
+        .where((s) => s.isNotEmpty && !raw.contains(s)).toList();
+    return missing.isEmpty ? raw : '$raw\n\n步骤：\n${missing.map((s) => '• $s').join('\n')}';
   }
 
   SpeechToText? _activeStt;
@@ -488,64 +499,64 @@ class _ChatTabState extends State<ChatTab> {
   bool _autoSend = false;
 
   Future<void> startHoldToTalk({bool autoSend = false}) async {
-    if (listening) return;
+    if (listening || _voiceStarting || busy) return;
+    final generation = ++_voiceGeneration;
+    setState(() => _voiceStarting = true);
+    await _speech.stop();
     try {
-      final stt = SpeechToText();
-      var initErr = '';
-      final ok = await stt
-          .initialize(
-            onError: (e) => initErr = e.errorMsg,
-          )
-          .timeout(const Duration(seconds: 8),
-              onTimeout: () => false);
-      if (!ok) {
-        throw Exception(
-            initErr.isEmpty ? 'init failed' : initErr);
-      }
-      String? locale;
-      try {
-        final locales = await stt.locales();
-        for (final l in locales) {
-          if (l.localeId.startsWith('zh')) { locale = l.localeId; break; }
+      final stt = _activeStt ??= SpeechToText();
+      // speech_to_text 是单例，initialize 成功后不会重绑回调；每次进入页面都重新绑定。
+      stt.errorListener = (e) {
+        if (mounted) {
+          setState(() => listening = false);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+            e.errorMsg.contains('permission') ? '请允许麦克风权限后重试' : '语音识别中断，请重试或手动输入')));
         }
-        locale ??= locales.isNotEmpty ? locales.first.localeId : null;
-      } catch (_) {}
-      _activeStt = stt;
+      };
+      stt.statusListener = (status) {
+        if (mounted && (status == SpeechToText.doneStatus || status == SpeechToText.notListeningStatus)) {
+          setState(() => listening = false);
+        }
+      };
+      final ok = await stt.initialize(onError: stt.errorListener, onStatus: stt.statusListener)
+          .timeout(const Duration(seconds: 8), onTimeout: () => false);
+      if (!mounted || generation != _voiceGeneration) return;
+      if (!ok) throw StateError('语音识别不可用');
+      String? locale;
+      final locales = await stt.locales();
+      for (final l in locales) {
+        if (l.localeId.startsWith('zh')) { locale = l.localeId; break; }
+      }
+      if (!mounted || generation != _voiceGeneration) return;
       _autoSend = autoSend;
-      if (mounted) setState(() => listening = true);
+      setState(() => listening = true);
       await stt.listen(
-        localeId: locale ?? 'zh-CN',
+        localeId: locale,
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 30),
-        partialResults: true,
+        pauseFor: const Duration(seconds: 5),
+        listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true, listenMode: ListenMode.dictation),
         onResult: (res) {
+          if (!mounted || generation != _voiceGeneration) return;
           final words = res.recognizedWords.trim();
           if (words.isEmpty) return;
-          if (_autoSend) {
-            if (res.finalResult) {
-              _autoSend = false;
-              stopHoldToTalk();
-              send(words);
-            }
-            return;
+          inputC.value = TextEditingValue(text: words, selection: TextSelection.collapsed(offset: words.length));
+          if (_autoSend && res.finalResult) {
+            _autoSend = false;
+            unawaited(send(words));
           }
-          // 手动模式：实时把识别文字填进输入框，松手即停、文字保留可编辑
-          if (mounted) inputC.text = words;
         },
       );
     } catch (_) {
       if (mounted) {
         setState(() => listening = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音不可用，请检查麦克风权限')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音不可用，请检查麦克风权限和系统语音识别服务')));
       }
-    }
+    } finally { if (mounted) setState(() => _voiceStarting = false); }
   }
 
   Future<void> stopHoldToTalk() async {
-    try {
-      await _activeStt?.stop();
-    } catch (_) {}
-    _activeStt = null;
+    if (_voiceStarting) ++_voiceGeneration;
+    try { await _activeStt?.stop(); } catch (_) {}
     if (mounted && listening) setState(() => listening = false);
   }
 
@@ -562,13 +573,20 @@ class _ChatTabState extends State<ChatTab> {
       messages: items,
       busy: busy,
       inputController: inputC,
+      speakingMessage: _speech.messageIndex,
+      speechPaused: _speech.paused,
+      onToggleSpeech: (i) {
+        if (i >= 0 && i < msgs.length && msgs[i]['role'] == 'ai') {
+          unawaited(stopHoldToTalk().then((_) => _speech.toggle(i, msgs[i]['text'] ?? '')));
+        }
+      },
       onQuickEntry: onQuick,
       onTipMore: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
       textScale: 1.0,
       onSend: send,
       onVoiceStart: startHoldToTalk,
       onVoiceEnd: stopHoldToTalk,
-      voiceActive: listening,
+      voiceActive: listening || _voiceStarting,
       onToggleTextScale: () async {
         const steps = [1.0, 1.15, 1.3];
         var i = steps.indexWhere((s) => (s - chatScale.value).abs() < 0.01);

@@ -6,8 +6,9 @@ import 'afu_theme.dart';
 class AfuPressable extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final double borderRadius;
-  const AfuPressable({super.key, required this.child, this.onTap, this.borderRadius = AfuRadius.card});
+  const AfuPressable({super.key, required this.child, this.onTap, this.onLongPress, this.borderRadius = AfuRadius.card});
 
   @override
   State<AfuPressable> createState() => _AfuPressableState();
@@ -22,6 +23,7 @@ class _AfuPressableState extends State<AfuPressable> {
       onTapDown: widget.onTap == null ? null : (_) => setState(() => _down = true),
       onTapUp: widget.onTap == null ? null : (_) => setState(() => _down = false),
       onTapCancel: () => setState(() => _down = false),
+      onLongPress: widget.onLongPress,
       child: AnimatedScale(
         scale: _down ? AfuMotion.pressScale : 1.0,
         duration: const Duration(milliseconds: 120),

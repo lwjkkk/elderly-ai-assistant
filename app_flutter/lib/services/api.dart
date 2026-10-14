@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
+import 'medication_time.dart';
+import 'vital_validation.dart';
 
 /// B 前端接口层：严格按 C v2.0《API接口文档》实现，以 backend 分支为准。
 class ApiService {
@@ -15,8 +18,7 @@ class ApiService {
 
   static Dio get dio => _dio;
   static String get baseUrl => AppConfig.baseUrl;
-  static const disclaimer =
-      '本内容仅供健康科普参考，不构成医疗诊断或用药建议。具体诊疗请遵医嘱，如有急症请立即拨打120。';
+  static const disclaimer = '本内容仅供健康科普参考，不构成医疗诊断或用药建议。具体诊疗请遵医嘱，如有急症请立即拨打120。';
 
   static Future<String?> getToken() async {
     final p = await SharedPreferences.getInstance();
@@ -65,33 +67,37 @@ class ApiService {
 
   static Future<void> clearAuth() async {
     final p = await SharedPreferences.getInstance();
-    await p.clear();
+    await p.remove('token');
+    await p.remove('role');
+    await p.remove('user_id');
+    await p.remove('nickname');
+    await p.remove('elder_id');
     _dio.options.headers.remove('Authorization');
   }
 
-  /// 家属必填 elder_id 的统一拼参。
-  /// 家属必填 elder_id 的统一拼参。
-  /// 本地没存过（老版本绑定过、重装过）就现场从绑定列表里补一次。
+  /// 本人模式不传 elder_id；长辈模式必须明确绑定对象，避免误读家属本人数据。
   static Future<Map<String, dynamic>> withElder(
       [Map<String, dynamic>? extra, bool mine = false]) async {
     final m = Map<String, dynamic>.from(extra ?? {});
     final role = await getRole();
+    if (role == 'family' && mine) m.remove('elder_id');
     if (role == 'family' && !mine) {
       var eid = await getElderId();
       if (eid == null) {
-        try {
-          final binds = await bindList();
-          for (final b in binds) {
-            final bm = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-            if (bm['status'] == 'active' && bm['elder_id'] is int) {
-              eid = bm['elder_id'] as int;
-              await setElderId(eid);
-              break;
-            }
+        final binds = await bindList();
+        for (final b in binds) {
+          final bm = b is Map
+              ? Map<String, dynamic>.from(b as Map)
+              : <String, dynamic>{};
+          if (bm['status'] == 'active' && bm['elder_id'] is int) {
+            eid = bm['elder_id'] as int;
+            await setElderId(eid);
+            break;
           }
-        } catch (_) {}
+        }
       }
-      if (eid != null) m['elder_id'] = eid;
+      if (eid == null) throw StateError('请先绑定长辈，再查看长辈记录');
+      m['elder_id'] = eid;
     }
     return m;
   }
@@ -118,8 +124,9 @@ class ApiService {
       'password': password,
     });
     final d = Map<String, dynamic>.from(res.data);
-    await saveAuth((d['access_token'] ?? '').toString(),
-        (d['role'] ?? 'elder').toString(),
+    await saveAuth(
+        (d['access_token'] ?? '').toString(), (d['role'] ?? 'elder').toString(),
+        userId: (d['user_id'] as num?)?.toInt(),
         nickname: (d['nickname'] ?? '').toString());
     return d;
   }
@@ -140,10 +147,10 @@ class ApiService {
 
   static Future<Map<String, dynamic>> loginSms(
       {required String phone, required String code}) async {
-    final res = await _dio.post('/api/auth/login_by_code',
-        data: {'phone': phone, 'code': code});
+    final res = await _dio
+        .post('/api/auth/login_by_code', data: {'phone': phone, 'code': code});
     final d = Map<String, dynamic>.from(res.data as Map);
-        final token = (d['token'] ?? d['access_token'] ?? '').toString();
+    final token = (d['token'] ?? d['access_token'] ?? '').toString();
     await saveAuth(token, (d['role'] ?? 'elder').toString(),
         userId: d['user_id'] is int ? d['user_id'] as int : null,
         nickname: (d['nickname'] ?? '').toString());
@@ -170,6 +177,17 @@ class ApiService {
     return d is List ? d : [];
   }
 
+  static Future<List> familyMessages(int bindingId) async {
+    final res = await _dio.get('/api/messages/$bindingId');
+    return res.data is List ? res.data as List : [];
+  }
+
+  static Future<Map<String, dynamic>> sendFamilyMessage(
+      int bindingId, String kind, Map<String, dynamic> content) async {
+    final res = await _dio.post('/api/messages/$bindingId',
+        data: {'kind': kind, 'content': content});
+    return Map<String, dynamic>.from(res.data as Map);
+  }
 
   /// 把报错翻译成长辈能看懂的话，各页面直接用。
   static int? statusOf(Object e) {
@@ -177,10 +195,22 @@ class ApiService {
     return null;
   }
 
+  static dynamic _errorData(DioException e) {
+    final data = e.response?.data;
+    if (data is List<int>) {
+      try {
+        return jsonDecode(utf8.decode(data));
+      } catch (_) {
+        return null;
+      }
+    }
+    return data;
+  }
+
   /// 后端 detail 原文（用于 400 这类业务提示，直接展示不加"失败"前缀）。
   static String? errorDetail(Object e) {
     if (e is DioException) {
-      final data = e.response?.data;
+      final data = _errorData(e);
       if (data is Map && data['detail'] != null) {
         return data['detail'].toString();
       }
@@ -192,7 +222,7 @@ class ApiService {
   static String friendly(Object e) {
     if (e is DioException) {
       final code = e.response?.statusCode;
-      dynamic data = e.response?.data;
+      dynamic data = _errorData(e);
       final detail = data is Map && data['detail'] != null
           ? data['detail'].toString()
           : '';
@@ -205,6 +235,12 @@ class ApiService {
         return '连不上服务器，请确认后端已启动且地址正确';
       }
       switch (code) {
+        case 500:
+          if (detail.contains('识别服务') || detail.contains('OCR')) {
+            return '图片识别服务暂不可用，请稍后重试';
+          }
+          if (detail.contains('PDF')) return 'PDF 导出服务暂不可用，请稍后重试';
+          break;
         case 400:
           return detail.isNotEmpty ? detail : '请求不对，请检查输入内容';
         case 401:
@@ -219,6 +255,7 @@ class ApiService {
       if (detail.isNotEmpty && detail.length < 60) return detail;
       return '服务器开小差了，请稍后重试';
     }
+    if (e is StateError) return e.message;
     return '出了点问题，请稍后重试';
   }
 
@@ -235,8 +272,7 @@ class ApiService {
       'dosage': dosage,
       'frequency': frequency,
       'times': times,
-      if (startDate != null && startDate.isNotEmpty)
-        'start_date': startDate,
+      if (startDate != null && startDate.isNotEmpty) 'start_date': startDate,
     }, mine);
     final res = await _dio.post('/api/meds', data: body);
     return Map<String, dynamic>.from(res.data);
@@ -265,6 +301,9 @@ class ApiService {
 
   static Future<Map<String, dynamic>> checkin(int medId, String slot,
       {String? date}) async {
+    if (!medicationSlotDue(slot, date: date)) {
+      throw StateError('尚未到服药时间，请到时间后再打卡');
+    }
     final res = await _dio.post('/api/meds/checkin', data: {
       'medication_id': medId,
       'slot': slot,
@@ -274,15 +313,21 @@ class ApiService {
   }
 
   // ---------- 5.4 查药（JSON base64，不是 multipart） ----------
-  static Future<Map<String, dynamic>> queryDrugByName(String name) async {
-    final res = await _dio.post('/api/drugs/query-name', data: {'name': name});
+  static Future<Map<String, dynamic>> queryDrugByName(String name,
+      {bool mine = false}) async {
+    final res = await _dio.post('/api/drugs/query-name',
+        data: {'name': name},
+        queryParameters: await withElder({}, mine),
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
-  static Future<Map<String, dynamic>> queryDrugByImage(
-      List<int> bytes, [String? fileName]) async {
+  static Future<Map<String, dynamic>> queryDrugByImage(List<int> bytes,
+      {String? fileName, bool mine = false}) async {
     final res = await _dio.post('/api/drugs/query',
-        data: {'image_base64': base64Encode(bytes)});
+        data: {'image_base64': base64Encode(bytes)},
+        queryParameters: await withElder({}, mine),
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
@@ -294,6 +339,9 @@ class ApiService {
       double? value,
       String? measuredAt,
       bool mine = false}) async {
+    final error = validateVitalValues(type,
+        systolic: systolic, diastolic: diastolic, value: value);
+    if (error != null) throw StateError(error);
     final body = await withElder({
       'type': type,
       if (systolic != null) 'systolic': systolic,
@@ -314,7 +362,9 @@ class ApiService {
       'image_base64': base64Encode(bytes),
       if (vitalType != null) 'vital_type': vitalType,
     }, mine);
-    final res = await _dio.post('/api/vitals/recognize', data: body);
+    final res = await _dio.post('/api/vitals/recognize',
+        data: body,
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
@@ -359,13 +409,23 @@ class ApiService {
     return res.data is List ? res.data : [];
   }
 
-  static Future<Map<String, dynamic>> uploadConsult(List<int> bytes, String fileName,
+  static Future<Map<String, dynamic>> uploadConsult(
+      List<int> bytes, String fileName,
       {int? duration,
       String? hospital,
       String? doctor,
       bool mine = false}) async {
     final form = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      'file': MultipartFile.fromBytes(bytes,
+          filename: fileName,
+          contentType:
+              DioMediaType.parse(fileName.toLowerCase().endsWith('.wav')
+                  ? 'audio/wav'
+                  : fileName.toLowerCase().endsWith('.mp3')
+                      ? 'audio/mpeg'
+                      : fileName.toLowerCase().endsWith('.aac')
+                          ? 'audio/aac'
+                          : 'audio/mp4')),
       if (duration != null) 'duration': duration,
       if (hospital != null) 'hospital': hospital,
       if (doctor != null) 'doctor': doctor,
@@ -377,8 +437,8 @@ class ApiService {
 
   /// audio_url 是相对路径，前端拼 baseUrl。
   static Future<List<int>> avatarBytes(String url) async {
-    final res = await _dio.get(url,
-        options: Options(responseType: ResponseType.bytes));
+    final res =
+        await _dio.get(url, options: Options(responseType: ResponseType.bytes));
     final d = res.data;
     if (d is List<int>) return d;
     return List<int>.from(d as List);
@@ -419,7 +479,9 @@ class ApiService {
   // ---------- 5.7 症状自查 ----------
   static Future<Map<String, dynamic>> symptomCheck(String text) async {
     final body = await withElder({'input_text': text});
-    final res = await _dio.post('/api/symptom-check', data: body);
+    final res = await _dio.post('/api/symptom-check',
+        data: body,
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
@@ -442,18 +504,86 @@ class ApiService {
     return res.data is List ? res.data : [];
   }
 
-  static Future<Map<String, dynamic>> uploadReport(List<int> bytes, String fileName, {bool mine = false}) async {
+  static Future<Map<String, dynamic>> uploadReport(
+      List<int> bytes, String fileName,
+      {bool mine = false}) async {
+    final extension = fileName.toLowerCase().split('.').last;
+    final mime = extension == 'png'
+        ? 'image/png'
+        : extension == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
     final form = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      'file': MultipartFile.fromBytes(bytes,
+          filename: fileName, contentType: DioMediaType.parse(mime)),
       ...(await withElder({}, mine)),
     });
-    final res = await _dio.post('/api/reports/upload', data: form);
+    final res = await _dio.post('/api/reports/upload',
+        data: form,
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
   static String reportImageUrl(String imageUrl) {
     if (imageUrl.startsWith('http')) return imageUrl;
     return '${AppConfig.baseUrl}$imageUrl';
+  }
+
+  static Future<Uint8List> _protectedFileBytes(
+      String url, String prefix) async {
+    final base = Uri.parse(AppConfig.baseUrl);
+    final uri = base.resolve(url);
+    if (uri.origin != base.origin || !uri.path.startsWith(prefix)) {
+      throw StateError('文件地址无效，请重新加载记录');
+    }
+    final token = await getToken();
+    if (token == null) throw StateError('请先登录后再查看文件');
+    final res = await _dio.get(uri.toString(),
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: {'Authorization': 'Bearer $token'},
+          receiveTimeout: const Duration(minutes: 2),
+        ));
+    final data = res.data;
+    if (data is! List<int> || data.isEmpty) throw StateError('文件内容为空，请重新加载');
+    return Uint8List.fromList(data);
+  }
+
+  static Future<Uint8List> reportImageBytes(String url) =>
+      _protectedFileBytes(url, '/api/reports/image/');
+
+  static Future<Uint8List> consultAudioBytes(String url) =>
+      _protectedFileBytes(url, '/api/consults/audio/');
+
+  static String audioMimeType(String url) {
+    switch (Uri.parse(url).path.split('.').last.toLowerCase()) {
+      case 'wav':
+        return 'audio/wav';
+      case 'mp3':
+        return 'audio/mpeg';
+      case 'aac':
+        return 'audio/aac';
+      case 'ogg':
+      case 'opus':
+        return 'audio/ogg';
+      case 'flac':
+        return 'audio/flac';
+      case '3gp':
+        return 'audio/3gpp';
+      default:
+        return 'audio/mp4';
+    }
+  }
+
+  static Future<bool> getPrivacy() async {
+    final res = await _dio.get('/api/privacy');
+    return res.data['sync_summary_to_family'] == true;
+  }
+
+  static Future<bool> updatePrivacy(bool value) async {
+    final res =
+        await _dio.put('/api/privacy', data: {'sync_summary_to_family': value});
+    return res.data['sync_summary_to_family'] == true;
   }
 
   /// 体征 PDF 导出：后端 GET /api/vitals/export，返回 PDF 二进制。
@@ -465,7 +595,9 @@ class ApiService {
     }, mine);
     final res = await _dio.get('/api/vitals/export',
         queryParameters: q,
-        options: Options(responseType: ResponseType.bytes));
+        options: Options(
+            responseType: ResponseType.bytes,
+            receiveTimeout: const Duration(minutes: 2)));
     final data = res.data;
     if (data is List<int>) return data;
     return [];
@@ -484,7 +616,9 @@ class ApiService {
 
   // ---------- 5.10 问答：请求 {question}，响应 {answer,module,steps} ----------
   static Future<Map<String, dynamic>> chat(String question) async {
-    final res = await _dio.post('/api/chat', data: {'question': question});
+    final res = await _dio.post('/api/chat',
+        data: {'question': question},
+        options: Options(receiveTimeout: const Duration(minutes: 10)));
     if (res.data is Map) return Map<String, dynamic>.from(res.data);
     return {'answer': res.data.toString()};
   }

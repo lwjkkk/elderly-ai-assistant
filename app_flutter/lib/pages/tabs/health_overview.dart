@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
@@ -9,11 +11,15 @@ import '../../services/api.dart';
 import 'consult_drug_chat_tab.dart';
 import 'med_form.dart';
 import 'hub_pages.dart';
+import 'report_details.dart';
+import '../../services/vital_validation.dart';
+import '../../services/medication_time.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cross_file/cross_file.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../services/file_download.dart';
 /// 全局色彩规范（本人视图与绑定长辈视图共用，身份区分靠顶部切换文字）。
 const _kPrimary = Color(0xFF4080FF);
@@ -428,6 +434,7 @@ Future<void> _askElder(BuildContext context,
     final binds = await ApiService.bindList();
     String? name;
     String? key;
+    int? bindingId;
     var idx = 0;
     for (final b in binds) {
       final m =
@@ -439,16 +446,18 @@ Future<void> _askElder(BuildContext context,
                 '长辈')
             .toString();
         key = 'family_chat_${name}_$idx';
+        bindingId = (m['id'] as num?)?.toInt();
         break;
       }
       idx++;
     }
-    if (name == null || key == null) throw Exception('no bind');
+    if (name == null || key == null || bindingId == null) throw Exception('no bind');
     if (context.mounted) {
       await Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => FamConversationPage(
               name: name!,
               storeKey: key!,
+              bindingId: bindingId!,
               prefill: prompt,
               autoText: record)));
     }
@@ -531,6 +540,15 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
   @override
   void initState() {
     super.initState();
+    // AI 问事快捷入口复用本人区页面，并固定读取家属自己的数据。
+    if (widget.role == 'family') {
+      final section = HubNav.pendingSection;
+      if (section == 'mine_vitals' || section == 'mine_reports' || section == 'mine_consults') {
+        showElder = false;
+        mod = section == 'mine_vitals' ? 2 : section == 'mine_reports' ? 3 : 4;
+        HubNav.pendingSection = null;
+      }
+    }
     _loadBinds();
   }
 
@@ -556,12 +574,16 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
               .toString(),
         });
       }
+      final savedId = await ApiService.getElderId();
+      final selected = list.isEmpty ? null : list.firstWhere(
+          (b) => b['elder_id'] == savedId, orElse: () => list.first);
+      if (selected != null) await ApiService.setElderId(selected['elder_id'] as int);
       if (!mounted) return;
       setState(() {
         _binds = list;
-        if (list.isNotEmpty) {
-          _elderId = list.first['elder_id'] as int;
-          _elderName = list.first['name'].toString();
+        if (selected != null) {
+          _elderId = selected['elder_id'] as int;
+          _elderName = selected['name'].toString();
         }
       });
     } catch (_) {}
@@ -619,11 +641,10 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: tmp == 0
-                      ? null
-                      : () => Navigator.pop(c, true),
+                  onPressed: () => Navigator.pop(c, true),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF345C87),
+                    disabledBackgroundColor: const Color(0xFF345C87),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius:
@@ -666,7 +687,7 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
     // 数据来源：长辈端 mine=true（自己的记录，含后端从 AI 对话自动总结的数据）；
     // 家属端看长辈 mine=false（ApiService 自动带 elder_id 拉取）；
     // 家属端看本人 mine=true（手动上传模式）。
-    // 注意：家属本人模式后端暂无独立存储，列表接口可能返回空或报错，属后端能力限制。
+    // 后端本人模式不带 elder_id，绑定长辈模式明确指定目标账号。
     final mine = widget.role != 'family' || !showElder;
     // 本人视图：仅家属端切到本人时进入；绑定长辈视图与长辈端逻辑原样不变
     final mineView = widget.role == 'family' && !showElder;
@@ -688,7 +709,7 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
       }
       if (HubNav.accent.value != c) HubNav.accent.value = c;
     });
-    return Expanded(
+    return SizedBox.expand(
       child: Column(children: [
         // 本人 4 内页：移除身份切换，左上单行文字返回
         if (mineView && mod != 0)
@@ -1529,7 +1550,7 @@ Future<void> _pickInstruction() async {
           .pickImage(source: ImageSource.camera, maxWidth: 1600);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      final r = await ApiService.queryDrugByImage(bytes.toList());
+      final r = await ApiService.queryDrugByImage(bytes.toList(), mine: !widget.forElder);
       final ocr = (r['ocr_text'] ?? '').toString().split('\n').first.trim();
       if (!mounted) return;
       await _openAdd(presetName: ocr.isEmpty ? null : ocr);
@@ -1756,7 +1777,7 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
             : 'bp';
     final v1C = TextEditingController(text: presetV1 ?? '');
     final v2C = TextEditingController(text: presetV2 ?? '');
-    var date = DateTime(2026, 10, 5);
+    var date = medicationNow();
     String fmtD(DateTime d) =>
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -2035,7 +2056,19 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
                   child: SizedBox(
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.pop(c, true),
+                      onPressed: () async {
+                        final validation = validateVitalValues(type,
+                          systolic: int.tryParse(v1C.text.trim()),
+                          diastolic: int.tryParse(v2C.text.trim()),
+                          value: double.tryParse(v1C.text.trim()));
+                        if (validation != null) {
+                          await showDialog<void>(context: c, builder: (errorContext) => AlertDialog(
+                            title: const Text('请核对数值'), content: Text(validation),
+                            actions: [TextButton(onPressed: () => Navigator.pop(errorContext), child: const Text('返回修改'))]));
+                          return;
+                        }
+                        if (c.mounted) Navigator.pop(c, true);
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _mVit,
                         foregroundColor: Colors.white,
@@ -2103,8 +2136,42 @@ bool _recognizing = false;
   Future<void> _pickPhoto() async {
     if (_recognizing) return;
     try {
+      final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (c) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('选择上传方式',
+                  style: TextStyle(fontSize: 22,
+                      fontWeight: FontWeight.w700, color: _kText)),
+              const SizedBox(height: 16),
+              SizedBox(width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: _tintBtn(_kText, _mVitBg),
+                  onPressed: () => Navigator.pop(c, ImageSource.camera),
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: const Text('拍照'))),
+              const SizedBox(height: 12),
+              SizedBox(width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: _tintBtn(_kText, _mVitBg),
+                  onPressed: () => Navigator.pop(c, ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('从相册选择'))),
+              const SizedBox(height: 8),
+              TextButton(onPressed: () => Navigator.pop(c),
+                child: const Text('取消', style: TextStyle(color: _kSub))),
+            ]),
+          ),
+        ),
+      );
+      if (source == null || !mounted) return;
       final f = await ImagePicker()
-          .pickImage(source: ImageSource.camera, maxWidth: 1600);
+          .pickImage(source: source, maxWidth: 1600);
       if (f == null) return;
       final bytes = await f.readAsBytes();
       if (!mounted) return;
@@ -2172,10 +2239,10 @@ Future<void> _export() async {
       final now = DateTime.now();
       final name =
           '体征记录_${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}.pdf';
-      await saveAndOpenPdf(bytes, name);
+      final warning = await saveAndOpenPdf(bytes, name);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('PDF 已导出：$name')));
+            SnackBar(content: Text(warning ?? 'PDF 已导出：$name')));
       }
     } catch (e) {
       if (mounted) {
@@ -2217,7 +2284,7 @@ Future<void> _export() async {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton.icon(
-                        onPressed: _pickPhoto,
+                        onPressed: _recognizing ? null : _pickPhoto,
                         style: _tintBtn(_kText, _mVitBg),
                         icon: const Icon(Icons.camera_alt_outlined),
                         label: const Text('拍照上传', softWrap: false)),
@@ -2249,7 +2316,7 @@ Future<void> _export() async {
                       onPressed: _exporting ? null : _export,
                       style: _tintBtn(_kText, _mVitBg),
                       icon: const Icon(Icons.picture_as_pdf_outlined),
-                      label: Text(_exporting ? '导入中…' : '导出pdf',
+                      label: Text(_exporting ? '导出中…' : '导出pdf',
                           softWrap: false)),
                 ),
                 if (widget.forElder && _rows.isNotEmpty) ...[
@@ -2302,6 +2369,7 @@ class _MineReportsPageState extends State<_MineReportsPage> {
   List _items = [];
   bool _loading = true;
   bool _uploading = false;
+  String? _reportError;
 
 
   @override
@@ -2311,10 +2379,12 @@ class _MineReportsPageState extends State<_MineReportsPage> {
   }
 
   Future<void> _refresh() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _reportError = null; });
     try {
       _items = await ApiService.reportList(mine: !widget.forElder);
-    } catch (_) {
-      _items = [];
+    } catch (e) {
+      _reportError = ApiService.friendly(e);
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -2340,13 +2410,12 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF333333))),
-            content: SingleChildScrollView(
-                child: Text(
-                    advice.isEmpty ? '已上传，解读生成中' : advice,
-                    style: const TextStyle(
-                        fontSize: 19,
-                        color: Color(0xFF333333),
-                        height: 1.5))),
+            content: SingleChildScrollView(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                ReportMetrics(report: r),
+                const SizedBox(height: 12),
+                Text(advice.isEmpty ? '暂无解读建议' : advice, style: const TextStyle(fontSize: 19, height: 1.5)),
+              ])),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(c),
@@ -2369,7 +2438,7 @@ class _MineReportsPageState extends State<_MineReportsPage> {
       context: context,
       builder: (c) => AlertDialog(
         title: Text(
-            (m['created_at'] ?? '').toString().substring(0, 10),
+            _cdate(m).isEmpty ? '体检报告' : _cdate(m),
             style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w700,
@@ -2378,7 +2447,9 @@ class _MineReportsPageState extends State<_MineReportsPage> {
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('指标摘要',
+                ReportMetrics(report: m),
+                const SizedBox(height: 12),
+                const Text('识别文字',
                     style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
@@ -2399,6 +2470,9 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                         fontSize: 18,
                         color: Color(0xFF333333),
                         height: 1.5)),
+                if ((m['image_url'] ?? '').toString().isNotEmpty)
+                  TextButton.icon(onPressed: () => showReportOriginal(context, m['image_url'].toString()),
+                    icon: const Icon(Icons.image_outlined), label: const Text('查看原图')),
               ]),
         ),
         actions: [
@@ -2422,7 +2496,12 @@ class _MineReportsPageState extends State<_MineReportsPage> {
               child: CircularProgressIndicator(color: const Color(0xFF345C87)))
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              physics: const AlwaysScrollableScrollPhysics(),
               children: [
+                if (_reportError != null) ...[
+                  Text('报告读取失败：$_reportError', style: const TextStyle(color: _kDanger)),
+                  TextButton(onPressed: _refresh, child: const Text('重试')),
+                ],
                 Row(children: [
                   Expanded(
                     child: ElevatedButton.icon(
@@ -2470,9 +2549,8 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                         _tCell(
                             _short((Map<String, dynamic>.from(e as Map)['ocr_text'] ?? '').toString(), 40)),
                         _tCell(
-                            _abnormalShort((Map<String, dynamic>.from(e as Map)['ocr_text'] ?? '').toString(),
-                                (Map<String, dynamic>.from(e as Map)['advice_text'] ?? '').toString()),
-                            color: _kDanger),
+                            reportMetricSummary(Map<String, dynamic>.from(e as Map)),
+                            color: reportMetricColor(Map<String, dynamic>.from(e as Map))),
                         _tCell(
                             _short((Map<String, dynamic>.from(e as Map)['advice_text'] ?? '').toString(), 40)),
                       ],
@@ -2524,18 +2602,6 @@ class _MineReportsPageState extends State<_MineReportsPage> {
 String _short(String s, int n) =>
     s.length > n ? '${s.substring(0, n)}…' : s;
 
-/// 异常提示提取（与长辈报告页同规则）：命中关键词标红，否则空。
-String _abnormalShort(String ocr, String adv) {
-  for (final line in '$ocr\n$adv'.split('\n')) {
-    final s = line.trim();
-    if (s.isEmpty) continue;
-    for (final k in ['异常', '偏高', '偏低', '升高', '降低', '阳性', '超标', '注意']) {
-      if (s.contains(k)) return _short(s, 30);
-    }
-  }
-  return '—';
-}
-
 // 自查日期简写 + 就医提示（risk 语义映射）。
 String _cdate(Map<String, dynamic> m) {
   final d = (m['created_at'] ?? '').toString();
@@ -2553,8 +2619,8 @@ String _ctitle(Map<String, dynamic> m) {
   final hosp = (m['hospital'] ?? '').toString();
   final doc = (m['doctor'] ?? '').toString();
   final d = (m['created_at'] ?? '').toString();
-  if (hosp.isNotEmpty) return hosp;
   if (doc.isNotEmpty) return doc;
+  if (hosp.isNotEmpty) return hosp;
   return '问诊录音${d.length >= 10 ? d.substring(0, 10) : ''}';
 }
 
@@ -2616,6 +2682,8 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
   }
 
   String _titleOf(Map<String, dynamic> m) {
+    final serverTitle = (m['doctor'] ?? '').toString().trim();
+    if (serverTitle.isNotEmpty) return serverTitle;
     final id = (m['id'] as num?)?.toInt();
     if (id != null && (_titles[id] ?? '').isNotEmpty) return _titles[id]!;
     final d = (m['created_at'] ?? '').toString();
@@ -2633,16 +2701,24 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
       if (mounted) setState(() { _recording = false; _busy = false; });
       return;
     }
+    setState(() => _busy = true);
     try {
       if (!await _rec.hasPermission()) throw Exception('no mic');
-      await _rec.start(const RecordConfig(),
-          path: 'consult_${DateTime.now().millisecondsSinceEpoch}.m4a');
+      if (!mounted) return;
+      final extension = kIsWeb ? 'wav' : 'm4a';
+      final name = 'consult_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      final path = kIsWeb ? name : '${(await getTemporaryDirectory()).path}/$name';
+      if (!mounted) return;
+      await _rec.start(RecordConfig(encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc),
+          path: path);
       if (mounted) setState(() => _recording = true);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('录音启动失败，请检查麦克风权限')));
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -2650,9 +2726,24 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
     final bytes = await XFile(path).readAsBytes();
     final hospC = TextEditingController();
     final titleC = TextEditingController();
+    var locationHint = '开启定位后自动提供参考地点';
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        final pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 6));
+        locationHint = '当前位置 ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
+      }
+    } catch (_) {}
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
+        backgroundColor: _eConBg,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+        contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         title: const Text('保存录音',
             style: TextStyle(
                 fontSize: 22,
@@ -2663,13 +2754,26 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
             TextField(
                 controller: hospC,
                 style: const TextStyle(fontSize: 20, color: Color(0xFF333333)),
-                decoration:
-                    const InputDecoration(labelText: '医院地址（选填）')),
+                decoration: InputDecoration(
+                    labelText: '地址',
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, color: _eCon),
+                    hintText: locationHint,
+                    hintStyle: const TextStyle(color: Color(0xFFAAA5AA), fontSize: 16),
+                    filled: true, fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)))),
+            const SizedBox(height: 20),
             TextField(
                 controller: titleC,
                 style: const TextStyle(fontSize: 20, color: Color(0xFF333333)),
-                decoration: const InputDecoration(
-                    labelText: '标题备注（选填，不填自动生成）')),
+                decoration: InputDecoration(
+                    labelText: '标题',
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, color: _eCon),
+                    hintText: '请输入标题',
+                    hintStyle: const TextStyle(color: Color(0xFFAAA5AA), fontSize: 16),
+                    filled: true, fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(18)))),
           ]),
         ),
         actions: [
@@ -2678,7 +2782,9 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
               child: const Text('取消', style: TextStyle(fontSize: 19, color: _kText))),
           ElevatedButton(
               onPressed: () => Navigator.pop(c, true),
-              style: _primaryBtn().copyWith(foregroundColor: const WidgetStatePropertyAll<Color>(_kText)),
+              style: ElevatedButton.styleFrom(backgroundColor: _eCon, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               child: const Text('上传', style: TextStyle(fontSize: 19, color: _kText))),
         ],
       ),
@@ -2687,8 +2793,9 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
     try {
       final r = await ApiService.uploadConsult(
         bytes.toList(),
-        'consult_${DateTime.now().millisecondsSinceEpoch}.m4a',
+        'consult_${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'wav' : 'm4a'}',
         hospital: hospC.text.trim().isEmpty ? null : hospC.text.trim(),
+        doctor: titleC.text.trim().isEmpty ? null : titleC.text.trim(),
         mine: true,
       );
       final id = (r['id'] as num?)?.toInt();
@@ -2719,7 +2826,9 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
         return;
       }
       await _player.stop();
-      await _player.play(UrlSource(url));
+      final bytes = await ApiService.consultAudioBytes(url);
+      if (!mounted) return;
+      await _player.play(BytesSource(bytes, mimeType: ApiService.audioMimeType(url)));
       if (mounted) setState(() => _playing = url);
     } catch (e) {
       if (mounted) {
@@ -2775,7 +2884,7 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
                 ),
                 const SizedBox(height: 16),
                 _MineTable(
-                  headers: const ['标题', '录制时间', 'AI摘要', '就诊地址'],
+                  headers: const ['标题', '时间', 'AI摘要', '地址'],
                   flex: const [3, 2, 2, 2],
                   rows: [
                     for (final e in _items)
@@ -2814,9 +2923,7 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
 /// ============ 绑定长辈视图 6 只读页：仅查看 + 消息交互 ============
 /// 无上传/录入/拍照/新增类按钮；空状态统一图片+文案；底部一键询问老人。
 
-/// 绑定长辈-查药：仅展示记录列表（后端暂无查药记录接口，常显空状态）。
-/// 【等待后端接口开发完成】查药结果后端不落库（DrugResult 只返回不存表），
-/// 记录列表/药品信息/症状/禁忌/总结时间待 drug_queries 接口。
+/// 绑定长辈-查药：读取专用查药接口已保存的记录，失败时显示错误与重试。
 class _ElderDrugPage extends StatefulWidget {
   const _ElderDrugPage({super.key});
   @override
@@ -2826,6 +2933,7 @@ class _ElderDrugPage extends StatefulWidget {
 class _ElderDrugPageState extends State<_ElderDrugPage> {
   List _items = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -2834,10 +2942,12 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
   }
 
   Future<void> _refresh() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _error = null; });
     try {
       _items = await ApiService.drugRecords();
-    } catch (_) {
-      _items = [];
+    } catch (e) {
+      _error = ApiService.friendly(e);
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -2907,7 +3017,12 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
         color: _eDrug,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
+            if (_error != null) ...[
+              Text('查药记录读取失败：$_error', style: const TextStyle(color: _kDanger, fontSize: 18)),
+              TextButton(onPressed: _refresh, child: const Text('重试')),
+            ],
             if (list.isNotEmpty)
               SizedBox(
                 width: double.infinity,
@@ -2970,7 +3085,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
               ],
               emptyIcon: Icons.medical_services_outlined,
               emptyAccent: _eDrug,
-              emptyText: '暂时没有查药信息',
+              emptyText: _error == null ? '暂时没有查药信息' : '记录未能加载，请重试',
             ),
             if (list.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -3250,7 +3365,9 @@ class _ElderConsultsPageState extends State<_ElderConsultsPage> {
         return;
       }
       await _player.stop();
-      await _player.play(UrlSource(url));
+      final bytes = await ApiService.consultAudioBytes(url);
+      if (!mounted) return;
+      await _player.play(BytesSource(bytes, mimeType: ApiService.audioMimeType(url)));
       if (mounted) setState(() => _playing = url);
     } catch (e) {
       if (mounted) {

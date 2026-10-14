@@ -249,6 +249,8 @@ String? customPath;
         // 自定义头像：加号圆圈，尺寸描边与预设一致
         AfuPressable(
           onTap: _pickCustomAvatar,
+          onLongPress:
+              customPath == null ? null : _showRemoveCustomAvatar,
           borderRadius: 48,
           child: Container(
             padding: const EdgeInsets.all(3),
@@ -343,6 +345,38 @@ String? customPath;
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('头像保存失败：${ApiService.friendly(e)}')));
       }
+    }
+  }
+
+  Future<void> _showRemoveCustomAvatar() async {
+    final remove = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除自定义头像'),
+        content: const Text('要移除当前上传的头像吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (remove != true || !mounted) return;
+    final path = customPath;
+    setState(() {
+      customPath = null;
+      if (avatarIdx == kAvatarAssets.length) avatarIdx = 0;
+    });
+    if (path != null) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
     }
   }
 

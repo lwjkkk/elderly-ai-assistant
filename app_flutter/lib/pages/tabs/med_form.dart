@@ -24,6 +24,12 @@ Future<Map<String, dynamic>?> showMedFormDialog(
   var freq = freqOptions.contains(presetFreq) ? presetFreq! : '每日两次';
   var start = DateTime.now();
   final times = <String>['08:00'];
+  List<String> suggestedTimes(String selected) {
+    if (selected.contains('三次')) return ['08:00', '13:00', '19:00'];
+    if (selected.contains('两次')) return ['08:00', '20:00'];
+    if (selected.contains('一次')) return ['08:00'];
+    return times.isEmpty ? ['08:00'] : List<String>.from(times);
+  }
   String fmtD(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   String fmtT(DateTime d) =>
@@ -40,15 +46,15 @@ Future<Map<String, dynamic>?> showMedFormDialog(
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
             borderSide:
-                const BorderSide(color: Color(0xFFCBE3D2))),
+                const BorderSide(color: Color(0xFFD8E6F3))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
             borderSide:
-                const BorderSide(color: Color(0xFFCBE3D2))),
+                const BorderSide(color: Color(0xFFD8E6F3))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
             borderSide: const BorderSide(
-                color: Color(0xFF6FAE86), width: 2)),
+                color: Color(0xFF345C87), width: 2)),
       );
 
   Widget formRow(String label, String? sub, Widget field) {
@@ -94,7 +100,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFCBE3D2)),
+          border: Border.all(color: const Color(0xFFD8E6F3)),
         ),
         child: Row(children: [
           Expanded(
@@ -103,7 +109,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                     fontSize: 20, color: Color(0xFF212936))),
           ),
           const Icon(Icons.arrow_drop_down,
-              size: 28, color: Color(0xFF6FAE86)),
+              size: 28, color: Color(0xFF345C87)),
         ]),
       ),
     );
@@ -146,7 +152,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                     style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF6FAE86))),
+                        color: Color(0xFF345C87))),
               ),
             ]),
           ),
@@ -175,7 +181,14 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                       style: const TextStyle(fontSize: 21))),
           ],
         ),
-        () => setD(() => freq = freqOptions[cur]));
+        () => setD(() {
+              freq = freqOptions[cur];
+              if (freq != '手动输入') {
+                times
+                  ..clear()
+                  ..addAll(suggestedTimes(freq));
+              }
+            }));
   }
 
   Future<void> pickDate(StateSetter setD) async {
@@ -220,7 +233,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                       style: TextStyle(
                           fontSize: 19,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF6FAE86))),
+                          color: Color(0xFF345C87))),
                 ),
               ]),
             ),
@@ -324,7 +337,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(28)),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+          padding: const EdgeInsets.fromLTRB(22, 38, 22, 20),
           child:
               Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('录入药品',
@@ -338,7 +351,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
               Text(autoNote,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 18, color: Color(0xFF6FAE86))),
+                      fontSize: 18, color: Color(0xFF345C87))),
             ],
             const SizedBox(height: 20),
             formRow(
@@ -346,7 +359,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                 null,
                 TextField(
                   controller: nameC,
-                  cursorColor: const Color(0xFF6FAE86),
+                  cursorColor: const Color(0xFF345C87),
                   style: const TextStyle(
                       fontSize: 20, color: Color(0xFF212936)),
                   decoration: boxDec('在此输入'),
@@ -356,7 +369,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                 '示例：20毫克 或 一片一次',
                 TextField(
                   controller: doseC,
-                  cursorColor: const Color(0xFF6FAE86),
+                  cursorColor: const Color(0xFF345C87),
                   style: const TextStyle(
                       fontSize: 20, color: Color(0xFF212936)),
                   decoration: boxDec('在此输入'),
@@ -368,18 +381,18 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                     ? TextField(
                         controller: freqManualC,
                         cursorColor:
-                            const Color(0xFF6FAE86),
+                            const Color(0xFF345C87),
                         style: const TextStyle(
                             fontSize: 20,
                             color: Color(0xFF212936)),
                         decoration: boxDec('在此输入'),
                       )
                     : pickBox(freq, () => pickFreq(setD))),
-            formRow('开始用药日期', null,
+            formRow('开始使用\n药品日期', null,
                 pickBox(fmtD(start), () => pickDate(setD))),
             formRow(
                 '用药时间点',
-                '可添加多个时间点',
+                '可添加多个时间',
                 Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -394,7 +407,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                                   top: 8, bottom: 8),
                               decoration: BoxDecoration(
                                 color:
-                                    const Color(0xFFDDF0E5),
+                                    const Color(0xFFEDF4FB),
                                 borderRadius:
                                     BorderRadius.circular(14),
                               ),
@@ -408,7 +421,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                                             fontWeight:
                                                 FontWeight.w700,
                                             color: Color(
-                                                0xFF6FAE86))),
+                                                0xFF345C87))),
                                     GestureDetector(
                                       onTap: () => setD(
                                           () => times.remove(s)),
@@ -419,7 +432,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                                             Icons.close,
                                             size: 18,
                                             color: Color(
-                                                0xFF6FAE86)),
+                                                0xFF345C87)),
                                       ),
                                     ),
                                   ]),
@@ -435,7 +448,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                                     BorderRadius.circular(14),
                                 border: Border.all(
                                     color: const Color(
-                                        0xFF6FAE86)),
+                                        0xFF345C87)),
                               ),
                               child: const Text('+添加时间',
                                   style: TextStyle(
@@ -443,7 +456,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                                       fontWeight:
                                           FontWeight.w700,
                                       color: Color(
-                                          0xFF6FAE86))),
+                                          0xFF345C87))),
                             ),
                           ),
                         ],
@@ -472,7 +485,7 @@ Future<Map<String, dynamic>?> showMedFormDialog(
                     onPressed: () => Navigator.pop(c, true),
                     style: ElevatedButton.styleFrom(
                       backgroundColor:
-                          const Color(0xFF6FAE86),
+                          const Color(0xFF345C87),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius:

@@ -19,11 +19,13 @@ class _ElderHomeState extends State<ElderHome> {
   void initState() {
     super.initState();
     HubNav.tab.addListener(_onHubTab);
+    HubNav.request.addListener(_onHubTab);
   }
 
   @override
   void dispose() {
     HubNav.tab.removeListener(_onHubTab);
+    HubNav.request.removeListener(_onHubTab);
     super.dispose();
   }
 
