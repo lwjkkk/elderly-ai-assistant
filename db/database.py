@@ -63,6 +63,12 @@ def init_db():
         "avatar_url",
         "ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)",
     )
+    # 隐私保护按开启时间生效：记录开启时刻，家属只能看到之前的记录
+    _add_column_if_missing(
+        "users",
+        "privacy_enabled_at",
+        "ALTER TABLE users ADD COLUMN privacy_enabled_at DATETIME",
+    )
     # 增量同步支持：药品更新时间、体征入库时间
     # SQLite 不支持 ALTER TABLE 加非恒定默认值，用 NULL 建列后再回填
     _add_column_if_missing(

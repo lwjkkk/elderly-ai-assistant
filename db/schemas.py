@@ -82,6 +82,7 @@ class Token(BaseModel):
     token_type: str = "bearer"
     role: str
     nickname: str
+    user_id: int
 
 
 # ---------- 隐私开关 ----------
