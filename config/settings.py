@@ -5,17 +5,16 @@ from dotenv import load_dotenv
 # 自动加载项目根目录的 .env 文件（必须在读取环境变量前调用）
 load_dotenv()
 
-# 通义千问 / 本地开源模型配置
-# 说明：当前使用本地 Ollama 部署的开源模型（qwen2:7b），免费、可离线、数据不出本地。
-# 若改用阿里云 API，只需把 LLM_BASE_URL 改回 https://dashscope.aliyuncs.com/compatible-mode/v1，
-# 并设置 DASHSCOPE_API_KEY。
+# 通义千问 / 阿里云百炼云 API 配置
+# 当前使用阿里云百炼 OpenAI 兼容接口（qwen3.7-plus），数据走云端推理。
+# API Key 从 .env 的 DASHSCOPE_API_KEY 读取，不硬编码到代码。
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 
-# 模型服务地址：本地 Ollama 的 OpenAI 兼容接口
-LLM_BASE_URL = "http://localhost:11434/v1"
+# 模型服务地址：阿里云百炼 OpenAI 兼容接口
+LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-# 文本模型（Ollama 中已拉取的模型名）
-QWEN_MODEL_NAME = "qwen2:7b"
+# 文本模型（百炼控制台免费额度中的 qwen3.7-plus）
+QWEN_MODEL_NAME = "qwen3.7-plus"
 
 # 模型调用参数
 QWEN_MAX_TOKENS = 1024        # 最大生成 token 数
