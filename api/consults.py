@@ -2,14 +2,17 @@
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
 from sqlalchemy.orm import Session
 
 from db.database import get_db
 from db.models import User, FamilyBinding, ConsultRecord
 from db.schemas import ConsultOut
 from core.security import get_current_user
+from core.security import SECRET_KEY, ALGORITHM
 from config.settings import HOST, PORT
 
 router = APIRouter(prefix="/api/consults", tags=["问诊录音"])
@@ -30,6 +33,26 @@ AUDIO_TYPES = {
     ".opus": "audio/ogg",
     ".flac": "audio/flac",
 }
+
+_AUDIO_URL_TOKEN_TTL = timedelta(minutes=15)
+
+
+def _audio_url_for_user(record: ConsultRecord, current: User) -> str:
+    """Return a short-lived, file-scoped URL usable by native audio players without headers."""
+    import jwt
+
+    filename = record.audio_url.rsplit("/", 1)[-1]
+    token = jwt.encode(
+        {
+            "sub": str(current.id),
+            "scope": "consult_audio",
+            "filename": filename,
+            "exp": datetime.now(timezone.utc) + _AUDIO_URL_TOKEN_TTL,
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    return f"{record.audio_url}?{urlencode({'token': token})}"
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
@@ -102,7 +125,9 @@ async def upload_consult(
         if os.path.exists(filepath):
             os.remove(filepath)
         raise
-    return record
+    out = ConsultOut.model_validate(record).model_dump()
+    out["audio_url"] = _audio_url_for_user(record, current)
+    return out
 
 
 @router.get("", response_model=list[ConsultOut])
@@ -139,18 +164,24 @@ def list_consults(elder_id: int | None = None,
         )
         targets += [b.elder_id for b in bindings]
 
-    return (
+    records = (
         db.query(ConsultRecord)
         .filter(ConsultRecord.elder_id.in_(targets))
         .order_by(ConsultRecord.created_at.desc())
         .all()
     )
+    result = []
+    for record in records:
+        out = ConsultOut.model_validate(record).model_dump()
+        out["audio_url"] = _audio_url_for_user(record, current)
+        result.append(out)
+    return result
 
 
 @router.get("/audio/{filename}")
 def get_audio(filename: str,
               token: str | None = None,
-              authorization: str | None = None,
+              authorization: str | None = Header(None, alias="Authorization"),
               db: Session = Depends(get_db)):
     """播放/下载录音文件。
 
@@ -181,6 +212,10 @@ def get_audio(filename: str,
         user_id = int(payload.get("sub"))
     except (jwt.PyJWTError, TypeError, ValueError):
         raise HTTPException(status_code=401, detail="登录已过期")
+
+    # API 返回给音频播放器的短期令牌仅允许访问它绑定的文件。
+    if payload.get("scope") == "consult_audio" and payload.get("filename") != filename:
+        raise HTTPException(status_code=403, detail="该播放链接无权访问此录音")
 
     current = db.query(User).filter(User.id == user_id).first()
     if not current:
