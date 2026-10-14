@@ -262,10 +262,14 @@ def recognize_vital(payload: VitalsRecognizeRequest,
     )
     # 只有整段输出就是 NONE（识别失败）才算失败；
     # 血压场景下 LLM 会写 VALUE: NONE（该字段不适用），不能被子串误判。
-    if llm_out.strip().upper() == "NONE":
-        raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
+    parsed = None
+    if llm_out.strip().upper() != "NONE":
+        parsed = _parse_vitals_llm(llm_out, payload.vital_type)
 
-    parsed = _parse_vitals_llm(llm_out, payload.vital_type)
+    # 兜底：LLM 返回 NONE 或格式异常时，直接从 OCR 文本正则解析
+    if parsed is None:
+        parsed = _fallback_parse_ocr(ocr_text, payload.vital_type)
+
     if parsed is None:
         raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
 
@@ -336,3 +340,60 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
                 return None
             result["value"] = float(int(round(val)))
     return result
+
+
+def _fallback_parse_ocr(ocr_text: str, hint_type: str | None) -> dict | None:
+    """LLM 解析失败时的兜底：直接从 OCR 文本正则提取数值。"""
+    text = ocr_text.upper()
+    t = (hint_type or "").lower() or "bp"
+
+    if t == "bp":
+        # 先找 SYS 139 DIA 85 PUL 72 这种标注格式
+        m_sys = re.search(r"SYS[:：]?\s*(\d+)", text)
+        m_dia = re.search(r"DIA[STOLIC]*[:：]?\s*(\d+)", text)
+        if m_sys and m_dia:
+            sys, dia = int(m_sys.group(1)), int(m_dia.group(1))
+            if 30 <= sys <= 300 and 20 <= dia <= 250 and sys > dia:
+                return {"type": "bp", "systolic": sys, "diastolic": dia,
+                        "value": None, "unit": "mmHg", "confidence": 0.7}
+        # 再找两个连续的大数（如 139/85 或 139 85）
+        nums = re.findall(r"\b(\d{2,3})\b", ocr_text)
+        nums = [int(n) for n in nums if 30 <= int(n) <= 300]
+        if len(nums) >= 2:
+            sys, dia = nums[0], nums[1]
+            if sys > dia and 20 <= dia <= 250:
+                return {"type": "bp", "systolic": sys, "diastolic": dia,
+                        "value": None, "unit": "mmHg", "confidence": 0.6}
+        return None
+
+    # 血糖：找 1.0~50.0 的小数
+    if t == "bs":
+        nums = re.findall(r"\d+\.?\d*", ocr_text)
+        for n in nums:
+            v = float(n)
+            if 1.0 <= v <= 50.0:
+                return {"type": "bs", "systolic": None, "diastolic": None,
+                        "value": round(v, 1), "unit": "mmol/L", "confidence": 0.6}
+        return None
+
+    # 心率：找 30~250 的整数
+    if t == "hr":
+        nums = re.findall(r"\b(\d{2,3})\b", ocr_text)
+        for n in nums:
+            v = int(n)
+            if 30 <= v <= 250:
+                return {"type": "hr", "systolic": None, "diastolic": None,
+                        "value": float(v), "unit": "次/分", "confidence": 0.6}
+        return None
+
+    # 体重：找 20.0~300.0 的小数
+    if t == "weight":
+        nums = re.findall(r"\d+\.?\d*", ocr_text)
+        for n in nums:
+            v = float(n)
+            if 20.0 <= v <= 300.0:
+                return {"type": "weight", "systolic": None, "diastolic": None,
+                        "value": round(v, 1), "unit": "kg", "confidence": 0.6}
+        return None
+
+    return None

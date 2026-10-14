@@ -26,6 +26,8 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True, default=None)
     # 隐私开关：是否把对话摘要同步给家属。1=同步（默认），0=不同步。仅老人本人可改。
     sync_summary_to_family = Column(Boolean, default=True, nullable=False)
+    # 隐私开启时间：开启时记录当前时间，关闭时清空。家属只能看到此时间之前产生的摘要/查药记录。
+    privacy_enabled_at = Column(DateTime, nullable=True, default=None)
 
 
 class FamilyBinding(Base):
@@ -167,4 +169,17 @@ class DrugQuery(Base):
     ocr_text = Column(String, nullable=True)           # OCR 识别文字（拍照类）
     explanation = Column(String, nullable=True)        # AI 大白话解读
     disclaimer = Column(String, nullable=True)         # 免责声明
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class FamilyMessage(Base):
+    """家人消息表：老人/家属双端互发文字或健康消息，持久化存库。"""
+    __tablename__ = "family_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    binding_id = Column(Integer, ForeignKey("family_bindings.id"), nullable=False, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # 消息类型：text=文字, health=健康摘要/用药提醒等结构化内容
+    kind = Column(String(10), nullable=False)
+    content = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)

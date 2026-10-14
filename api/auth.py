@@ -74,7 +74,7 @@ def login_by_code(payload: LoginByCodeRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="该手机号未注册，请先注册")
 
     token = create_access_token(user)
-    return Token(access_token=token, role=user.role, nickname=user.nickname)
+    return Token(access_token=token, role=user.role, nickname=user.nickname, user_id=user.id)
 
 
 def _safe_equal(a: str, b: str) -> bool:
@@ -114,11 +114,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="手机号或密码错误")
 
     token = create_access_token(user)
-    return Token(access_token=token, role=user.role, nickname=user.nickname)
+    return Token(access_token=token, role=user.role, nickname=user.nickname, user_id=user.id)
 
 
 @router.post("/refresh", response_model=Token)
 def refresh_token(current: User = Depends(get_current_user)):
     """刷新 JWT，延长有效期。"""
     token = create_access_token(current)
-    return Token(access_token=token, role=current.role, nickname=current.nickname)
+    return Token(access_token=token, role=current.role, nickname=current.nickname, user_id=current.id)
