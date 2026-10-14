@@ -21,8 +21,11 @@ class _MeTabState extends State<MeTab> {
   String avatarAsset = kAvatarAssets[0];
 String nickname = '长辈';
   bool notifyOn = true;
-  // 【对话记录同步家属】开关状态（后端接口待开发，先本地记住）
+  // 以服务端隐私状态为准，成功保存后才更新本地缓存。
   bool syncToFamily = true;
+  bool _privacyLoading = true;
+  bool _privacySaving = false;
+  String? _privacyError;
   double fontScale = 1.0;
   // 亲属绑定管理（邀请码输入 + 生成 + 已绑定列表）
   List binds = [];
@@ -49,9 +52,10 @@ String nickname = '长辈';
       avatarAsset = prefs.getString('avatar') ?? kAvatarAssets[0];
 notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
-      syncToFamily = prefs.getBool('sync_to_family') ?? true;
+
     } catch (_) {}
     if (mounted) setState(() {});
+    await _loadPrivacy();
   }
 
   Future<void> _loadBinds() async {
@@ -190,13 +194,39 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     );
   }
 
-  /// 隐私开关：【对话记录同步家属】
-  /// 开启后，AI 对话中自动提取的健康摘要会同步给已绑定家属。
-  /// 注：对话摘要提取与自动同步均由后端完成。
-  /// 【等待后端接口开发完成】目前后端尚无隐私开关接口，
-  /// 此处先做本地状态与 UI 占位，接口就绪后改为调用即可。
-  /// 语义已与后端确认：关闭 = 摘要照常生成、长者自己仍可见，仅“家属拉不到”（方案②）。
-  /// 因此历史已生成的摘要不删除，家属端 /api/sync 的 chat_summaries 返回空即可。
+  Future<void> _loadPrivacy() async {
+    if (!mounted) return;
+    setState(() { _privacyLoading = true; _privacyError = null; });
+    try {
+      final value = await ApiService.getPrivacy();
+      if (mounted) setState(() => syncToFamily = value);
+    } catch (e) {
+      if (mounted) setState(() => _privacyError = ApiService.friendly(e));
+    } finally {
+      if (mounted) setState(() => _privacyLoading = false);
+    }
+  }
+
+  Future<void> _savePrivacy(bool value) async {
+    if (_privacySaving || _privacyLoading || _privacyError != null) return;
+    setState(() => _privacySaving = true);
+    try {
+      final saved = await ApiService.updatePrivacy(value);
+      if (!mounted) return;
+      setState(() => syncToFamily = saved);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('sync_to_family', saved);
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('设置未保存：${ApiService.friendly(e)}')));
+    } finally {
+      if (mounted) setState(() => _privacySaving = false);
+    }
+  }
+
+  /// 隐私保护只影响开启后的 AI 对话摘要，开启前的信息继续保留给家属。
   Widget _privacyCard() {
     return AfuCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -214,31 +244,34 @@ notifyOn = prefs.getBool('notify_on') ?? true;
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('对话记录同步家属',
+                  Text('隐私保护',
                       style: AfuElderText.body
                           .copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  const Text('开启后，AI 对话中整理的健康摘要会同步给已绑定家属；关闭后仅自己可见，记录仍会保留',
+                  const Text('开启后，不再从新的 AI 对话中提取敏感信息给家属；开启前已经同步的信息会继续保留，体征、报告等主动上传记录不受影响',
                       style: TextStyle(
                           fontSize: 16, color: Color(0xFF6B7280), height: 1.4)),
                 ]),
           ),
           Switch(
-            value: syncToFamily,
+            key: const ValueKey('family-summary-sharing'),
+            value: !syncToFamily,
             activeTrackColor: const Color(0xFF345C87),
             activeThumbColor: Colors.white,
             inactiveTrackColor: const Color(0xFFEDF4FB),
             inactiveThumbColor: const Color(0xFF6B7280),
-            onChanged: (v) async {
-              setState(() => syncToFamily = v);
-              try {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('sync_to_family', v);
-              } catch (_) {}
-              // 【等待后端接口开发完成】后端开关接口就绪后，在此调用上报
-            },
+            onChanged: _privacyLoading || _privacySaving || _privacyError != null
+                ? null : (enabled) => _savePrivacy(!enabled),
           ),
         ]),
+        if (_privacyLoading || _privacySaving) const Padding(
+          padding: EdgeInsets.only(top: 12),
+          child: LinearProgressIndicator(color: Color(0xFF345C87))),
+        if (_privacyError != null) ...[
+          const SizedBox(height: 8),
+          Text('共享设置读取失败：$_privacyError', style: const TextStyle(color: Color(0xFFB3261E))),
+          TextButton(onPressed: _loadPrivacy, child: const Text('重试')),
+        ],
       ]),
     );
   }

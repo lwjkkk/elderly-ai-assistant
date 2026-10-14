@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
+import '../../services/medication_time.dart';
 import 'med_form.dart';
 import '../../theme.dart';
 
@@ -19,11 +21,30 @@ class _MedsTabState extends State<MedsTab> {
   List items = [];
   bool loading = true;
   String err = '';
+  Timer? _clock;
+  final Set<String> _checking = {};
+  String _loadedDate = medicationNow().toIso8601String().split('T').first;
 
   @override
   void initState() {
     super.initState();
     refresh();
+    _clock = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      final date = medicationNow().toIso8601String().split('T').first;
+      if (_loadedDate != date) {
+        _loadedDate = date;
+        unawaited(refresh());
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
   }
 
   Future<void> refresh() async {
@@ -49,6 +70,9 @@ class _MedsTabState extends State<MedsTab> {
   }
 
   Future<void> doCheckin(int medId, String slot) async {
+    final key = '$medId-$slot';
+    if (!medicationSlotDue(slot) || _checking.contains(key)) return;
+    setState(() => _checking.add(key));
     try {
       await ApiService.checkin(medId, slot);
       if (mounted) {
@@ -61,6 +85,8 @@ class _MedsTabState extends State<MedsTab> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('打卡失败：${ApiService.friendly(e)}')));
       }
+    } finally {
+      if (mounted) setState(() => _checking.remove(key));
     }
   }
 
@@ -76,7 +102,7 @@ class _MedsTabState extends State<MedsTab> {
           .pickImage(source: ImageSource.camera, maxWidth: 1600);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      final r = await ApiService.queryDrugByImage(bytes.toList());
+      final r = await ApiService.queryDrugByImage(bytes.toList(), mine: widget.mine);
       final ocr = (r['ocr_text'] ?? '').toString();
       var name = '';
       var dose = '';
@@ -174,6 +200,8 @@ Widget _topBtn(String text, VoidCallback onTap) {
         final slot = (sm['slot'] ?? '').toString();
         final status = (sm['status'] ?? 'pending').toString();
         final done = status == 'taken';
+        final due = medicationSlotDue(slot);
+        final checking = _checking.contains('${medId.toInt()}-$slot');
         cards.add(Card(
           child: ListTile(
             title: Text(name, style: const TextStyle(fontSize: 22)),
@@ -186,8 +214,8 @@ Widget _topBtn(String text, VoidCallback onTap) {
                       backgroundColor: const Color(0xFF345C87),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: done ? null : () => doCheckin(medId.toInt(), slot),
-                    child: Text(done ? '已打卡' : '打卡', style: const TextStyle(fontSize: 20)),
+                    onPressed: done || !due || checking ? null : () => doCheckin(medId.toInt(), slot),
+                    child: Text(done ? '已打卡' : checking ? '提交中' : due ? '打卡' : '时间未到', style: const TextStyle(fontSize: 20)),
                   ),
           ),
         ));
@@ -216,40 +244,32 @@ Widget _topBtn(String text, VoidCallback onTap) {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
               child: Column(children: [
-                // 空状态：胶囊图形在标题左侧、对勾图形在标题右侧，不再交叉
+                const Text('今天还没有用药安排',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF212936))),
+                const SizedBox(height: 10),
                 Row(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        width: 92,
-                        height: 72,
+                        width: 72,
+                        height: 60,
                         child:
                             CustomPaint(painter: _CapsulePainter()),
                       ),
-                      const SizedBox(width: 20),
-                      const Flexible(
-                        child: Text('今天还没有用药安排',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF212936))),
-                      ),
-                      const SizedBox(width: 20),
+                      const SizedBox(width: 12),
                       SizedBox(
-                        width: 60,
-                        height: 60,
+                        width: 52,
+                        height: 52,
                         child: CustomPaint(painter: _CheckPainter()),
                       ),
                     ]),
-                const SizedBox(height: 16),
-                const Text('点击右上角把每天要吃的药记录下来',
-                    style: TextStyle(
-                        fontSize: 20,
-                        color: Color(0xFF6B7280),
-                        height: 1.6),
-                    textAlign: TextAlign.center),
-                const Text('养成记录习惯，帮助您按时用药',
+                const SizedBox(height: 10),
+                const Text('点击右上角\n把每天要吃的药记录下来',
                     style: TextStyle(
                         fontSize: 20,
                         color: Color(0xFF6B7280),

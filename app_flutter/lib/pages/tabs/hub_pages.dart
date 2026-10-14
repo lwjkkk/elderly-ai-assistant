@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
@@ -6,6 +7,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:async';
 
 import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
@@ -26,6 +28,7 @@ final notifyEnabled = ValueNotifier<bool>(true);
 
 class HubNav {
   static final tab = ValueNotifier<int>(0);
+  static final request = ValueNotifier<int>(0);
 
   /// 底部 Tab 高亮：进入本人功能内页时，健康总览 Tab 切为功能同系色，离开恢复。
   static final accent = ValueNotifier<Color?>(null);
@@ -34,6 +37,7 @@ class HubNav {
   static void go(int index, [String? section]) {
     pendingSection = section;
     tab.value = index;
+    request.value++;
   }
 }
 
@@ -745,12 +749,14 @@ class _FamConvItem {
   final String preview; // 最后一条消息预览
   final String avatar; // 后端返回的自定义头像（URL/路径），空则用默认占位
   final bool active; // 是否已确认绑定
+  final int bindingId;
   const _FamConvItem({
     required this.name,
     required this.key,
     this.preview = '',
     this.avatar = '',
     this.active = true,
+    required this.bindingId,
   });
 }
 
@@ -759,12 +765,9 @@ class _FamilyTabState extends State<FamilyTab> {
   List<_FamConvItem> _convs = [];
   String _role = 'elder';
 
-  /// 打开绑定页：长辈生成邀请码、家属输入邀请码完成绑定。
-  /// （个人中心已按要求不再承载亲属绑定/邀请码模块，绑定入口统一放在「家人互动」）
+  /// 直接切换到个人中心的亲属绑定管理。
   void _openBind() {
-    Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) =>
-            AfuSubPage(title: '添加家人', child: BindPage(role: _role))));
+    HubNav.go(3);
   }
 
   @override
@@ -792,7 +795,8 @@ class _FamilyTabState extends State<FamilyTab> {
             .toString();
         final key = 'family_chat_${name}_$idx';
         final avatar = (m['avatar'] ?? m['avatar_url'] ?? m['other_avatar'] ?? '').toString();
-        final item = _FamConvItem(name: name, key: key, active: active, avatar: avatar);
+        final bindingId = (m['id'] as num?)?.toInt() ?? 0;
+        final item = _FamConvItem(name: name, key: key, active: active, avatar: avatar, bindingId: bindingId);
         items.add(item);
         idx++;
       }
@@ -816,6 +820,7 @@ class _FamilyTabState extends State<FamilyTab> {
                   key: items[i].key,
                   preview: preview,
                   active: items[i].active,
+                  bindingId: items[i].bindingId,
                   avatar: items[i].avatar);
             }
           }
@@ -886,7 +891,7 @@ class _FamilyTabState extends State<FamilyTab> {
       child: AfuPressable(
         onTap: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => FamConversationPage(
-                name: c.name, storeKey: c.key))),
+                name: c.name, storeKey: c.key, bindingId: c.bindingId))),
         borderRadius: 22,
         child: AfuCard(
           child: Row(children: [
@@ -955,7 +960,7 @@ class _FamilyTabState extends State<FamilyTab> {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: _openBind,
-                child: const Text('去绑定家人'),
+                child: const Text('去绑定家属'),
               ),
             ),
           ]),
@@ -1083,6 +1088,7 @@ class _FamMsg {
 class FamConversationPage extends StatefulWidget {
   final String name;
   final String storeKey;
+  final int bindingId;
 
   /// 健康总览一键询问：prefill 预填输入框，autoText 进页自动发送一条业务记录。
   final String? prefill;
@@ -1091,6 +1097,7 @@ class FamConversationPage extends StatefulWidget {
       {super.key,
       required this.name,
       required this.storeKey,
+      required this.bindingId,
       this.prefill,
       this.autoText});
   @override
@@ -1102,8 +1109,12 @@ class _FamConversationState extends State<FamConversationPage> {
   final _input = TextEditingController();
   final _list = ScrollController();
   bool _holding = false;
+  bool _voiceStarting = false;
+  bool _voiceRequested = false;
   final _rec = AudioRecorder();
   DateTime? _recStart;
+  Timer? _syncTimer;
+  bool _initialLoaded = false;
 
   @override
   void initState() {
@@ -1112,10 +1123,14 @@ class _FamConversationState extends State<FamConversationPage> {
       _input.text = widget.prefill!;
     }
     _loadHistory();
+    _syncTimer = Timer.periodic(
+        const Duration(seconds: 3), (_) => _loadHistory());
   }
 
   @override
   void dispose() {
+    _voiceRequested = false;
+    _syncTimer?.cancel();
     _input.dispose();
     _list.dispose();
     try {
@@ -1126,6 +1141,22 @@ class _FamConversationState extends State<FamConversationPage> {
 
   Future<void> _loadHistory() async {
     try {
+      final userId = await ApiService.getUserId();
+      final server = await ApiService.familyMessages(widget.bindingId);
+      _msgs = [
+        for (final raw in server)
+          (() {
+            final row = Map<String, dynamic>.from(raw as Map);
+            final content = Map<String, dynamic>.from(row['content'] as Map? ?? {});
+            content['isMe'] = (row['sender_id'] as num?)?.toInt() == userId;
+            content['kind'] = row['kind'] ?? content['kind'] ?? 'text';
+            return _FamMsg.fromJson(content);
+          })(),
+      ];
+      if (mounted) setState(() {});
+    } catch (_) {
+      // 兼容升级前的本地历史；服务恢复后新消息会落到后端。
+      try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(widget.storeKey);
       if (raw == null || raw.isEmpty) return;
@@ -1135,11 +1166,13 @@ class _FamConversationState extends State<FamConversationPage> {
           _FamMsg.fromJson(Map<String, dynamic>.from(e as Map))
       ];
       if (mounted) setState(() {});
-    } catch (_) {}
-    // 一键询问带入的业务记录：历史加载完后再追加发送，避免被覆盖
-    if ((widget.autoText ?? '').isNotEmpty && mounted) {
-      _push(_FamMsg(isMe: true, text: widget.autoText!));
+      } catch (_) {}
     }
+    // 一键询问带入的业务记录：历史加载完后再追加发送，避免被覆盖
+    if (!_initialLoaded && (widget.autoText ?? '').isNotEmpty && mounted) {
+      unawaited(_push(_FamMsg(isMe: true, text: widget.autoText!)));
+    }
+    _initialLoaded = true;
   }
 
   Future<void> _saveHistory() async {
@@ -1150,11 +1183,19 @@ class _FamConversationState extends State<FamConversationPage> {
     } catch (_) {}
   }
 
-  void _push(_FamMsg m) {
+  Future<void> _push(_FamMsg m) async {
     setState(() => _msgs.add(m));
     _saveHistory();
+    if (m.isMe && (m.kind == 'text' || m.kind == 'health')) {
+      try {
+        await ApiService.sendFamilyMessage(widget.bindingId, m.kind, m.toJson());
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('消息发送失败：${ApiService.friendly(e)}')));
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_list.hasClients) return;
+      if (!mounted || !_list.hasClients) return;
       _list.animateTo(_list.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic);
@@ -1165,16 +1206,21 @@ class _FamConversationState extends State<FamConversationPage> {
     final t = _input.text.trim();
     if (t.isEmpty) return;
     _input.clear();
-    _push(_FamMsg(isMe: true, text: t));
+    unawaited(_push(_FamMsg(isMe: true, text: t)));
   }
 
   Future<void> _voiceStart() async {
+    if (_voiceStarting || _holding) return;
+    _voiceStarting = true;
+    _voiceRequested = true;
     try {
       if (!await _rec.hasPermission()) throw Exception('no mic');
-      final dir = await getTemporaryDirectory();
-      final path =
-          '${dir.path}/fam_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      await _rec.start(const RecordConfig(), path: path);
+      if (!mounted || !_voiceRequested) return;
+      final name = 'fam_${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'wav' : 'm4a'}';
+      final path = kIsWeb ? name : '${(await getTemporaryDirectory()).path}/$name';
+      if (!mounted || !_voiceRequested) return;
+      await _rec.start(RecordConfig(encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc), path: path);
+      if (!mounted || !_voiceRequested) { await _rec.stop(); return; }
       _recStart = DateTime.now();
       if (mounted) setState(() => _holding = true);
     } catch (_) {
@@ -1183,17 +1229,18 @@ class _FamConversationState extends State<FamConversationPage> {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('录音不可用，请用文字')));
       }
-    }
+    } finally { _voiceStarting = false; }
   }
 
   Future<void> _voiceEnd() async {
+    _voiceRequested = false;
     if (!_holding) return;
     try {
       final path = await _rec.stop();
       final secs = _recStart == null
           ? 0
           : DateTime.now().difference(_recStart!).inSeconds;
-      if (path != null && secs >= 1) {
+      if (mounted && path != null && secs >= 1) {
         _push(
             _FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
       }
@@ -1636,6 +1683,7 @@ class _FamInputBar extends StatelessWidget {
       ),
       child: Row(children: [
         GestureDetector(
+          onTap: () => holding ? onVoiceEnd() : onVoiceStart(),
           onLongPressStart: (_) => onVoiceStart(),
           onLongPressEnd: (_) => onVoiceEnd(),
           child: Container(
@@ -1745,7 +1793,7 @@ class _AudioBubbleState extends State<_AudioBubble> {
         if (mounted) setState(() => _playing = false);
         return;
       }
-      await _player.play(DeviceFileSource(widget.msg.text));
+      await _player.play(kIsWeb ? UrlSource(widget.msg.text) : DeviceFileSource(widget.msg.text));
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _playing = false);

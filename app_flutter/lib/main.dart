@@ -9,8 +9,17 @@ import 'pages/tabs/hub_pages.dart' show chatScale;
 
 void main() { runApp(const ElderApp()); }
 
-class ElderApp extends StatelessWidget {
+class ElderApp extends StatefulWidget {
   const ElderApp({super.key});
+
+  @override
+  State<ElderApp> createState() => _ElderAppState();
+}
+
+class _ElderAppState extends State<ElderApp> {
+  // 字号变化会重建主题；复用登录查询，避免反复移除正在使用的页面。
+  late final Future<String?> _token = ApiService.getToken();
+  late final Future<String?> _role = ApiService.getRole();
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -27,14 +36,14 @@ class ElderApp extends StatelessWidget {
         );
       },
       home: FutureBuilder<String?>(
-        future: ApiService.getToken(),
+        future: _token,
         builder: (c, s) {
           if (s.connectionState == ConnectionState.waiting) {
             return Scaffold(body: Center(child: CircularProgressIndicator(color: const Color(0xFF345C87))));
           }
           if (s.data == null) return const LoginPage();
           return FutureBuilder<String?>(
-            future: ApiService.getRole(),
+            future: _role,
             builder: (c2, r) {
               if (r.connectionState == ConnectionState.waiting) {
                 return Scaffold(body: Center(child: CircularProgressIndicator(color: const Color(0xFF345C87))));

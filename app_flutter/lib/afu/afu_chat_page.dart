@@ -38,6 +38,9 @@ class AfuElderChatPage extends StatefulWidget {
   final TextEditingController? inputController;
   final ValueChanged<int>? onQuickEntry;
   final VoidCallback? onTipMore;
+  final ValueChanged<int>? onToggleSpeech;
+  final int? speakingMessage;
+  final bool speechPaused;
 
   const AfuElderChatPage({
     super.key,
@@ -50,6 +53,9 @@ class AfuElderChatPage extends StatefulWidget {
     this.inputController,
     this.onQuickEntry,
     this.onTipMore,
+    this.onToggleSpeech,
+    this.speakingMessage,
+    this.speechPaused = false,
     this.busy = false,
     this.textScale = 1.0,
     this.header,
@@ -100,7 +106,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_list.hasClients) return;
+      if (!mounted || !_list.hasClients) return;
       _list.animateTo(_list.position.maxScrollExtent, duration: AfuMotion.bubbleIn, curve: Curves.easeOutCubic);
     });
   }
@@ -145,7 +151,12 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
                         itemBuilder: (c, i) {
                           final m = widget.messages[i];
                           if (m.thinking) return const _ThinkingRow();
-                          return m.isMe ? _UserRow(text: m.text) : _AiRow(text: m.text);
+                          return m.isMe ? _UserRow(text: m.text) : _AiRow(
+                            text: m.text,
+                            speaking: widget.speakingMessage == i && !widget.speechPaused,
+                            onToggleSpeech: widget.onToggleSpeech == null ? null
+                                : () => widget.onToggleSpeech!(i),
+                          );
                         },
                       ),
               ),
@@ -224,7 +235,10 @@ class _TipCardState extends State<_TipCard> {
 
   static Future<String?> _load() async {
     try {
-      tipIsWeather.value = false;
+      // FutureBuilder 首次构建会启动此查询，通知父组件需等当前帧结束。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        tipIsWeather.value = false;
+      });
       final meds = await ApiService.medsToday();
       for (final m in meds) {
         final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
@@ -323,11 +337,11 @@ class _TipBody extends StatelessWidget {
     );
   }
 }
-/// 快捷功能区：仅保留【体征】【报告】两张卡片。
+/// 快捷功能区：【体征】【报告】【咨询】三张卡片。
 /// 卡片样式：左上角圆形图标 + 右侧两字标题 + 标题下方灰色小字说明，无底部装饰图。
 /// 查药 / 自查 / 咨询不再做独立卡片入口，统一由 AI 对话完成。
 class _FuncCards extends StatelessWidget {
-  final ValueChanged<int> onTap; // 0=体征 1=报告
+  final ValueChanged<int> onTap; // 0=体征 1=报告 2=咨询
   const _FuncCards({required this.onTap});
 
   @override
@@ -351,6 +365,15 @@ class _FuncCards extends StatelessWidget {
           tint: const Color(0xFFEDF4FB),
           main: const Color(0xFF345C87),
           onTap: () => onTap(1),
+        ),
+        const SizedBox(height: 16),
+        _funcCard(
+          icon: Icons.mic_none_outlined,
+          title: '咨询',
+          desc: '保存问诊录音，家属同步查看',
+          tint: const Color(0xFFFDECEC),
+          main: const Color(0xFFC65A61),
+          onTap: () => onTap(2),
         ),
       ]),
     );
@@ -470,7 +493,9 @@ class _WelcomeCard extends StatelessWidget {
 }
 class _AiRow extends StatefulWidget {
   final String text;
-  const _AiRow({required this.text});
+  final VoidCallback? onToggleSpeech;
+  final bool speaking;
+  const _AiRow({required this.text, this.onToggleSpeech, this.speaking = false});
   @override
   State<_AiRow> createState() => _AiRowState();
 }
@@ -498,7 +523,7 @@ class _AiRowState extends State<_AiRow> {
           const SizedBox(width: 10),
           Flexible(
             child: Container(
-              margin: const EdgeInsets.only(right: 48),
+              margin: const EdgeInsets.only(right: 4),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
                 color: _kBubbleAi,
@@ -524,6 +549,17 @@ class _AiRowState extends State<_AiRow> {
               ]),
             ),
           ),
+          if (widget.onToggleSpeech != null)
+            IconButton(
+              tooltip: widget.speaking ? '暂停语音' : '播放语音',
+              onPressed: widget.onToggleSpeech,
+              style: IconButton.styleFrom(
+                backgroundColor: const Color(0xFFE5E7EB),
+                foregroundColor: const Color(0xFF6B7280),
+                minimumSize: const Size(48, 48),
+              ),
+              icon: Icon(widget.speaking ? Icons.pause : Icons.volume_up_outlined),
+            ),
         ]),
       ),
     );
@@ -621,13 +657,13 @@ class _InputBarState extends State<_InputBar> {
   @override
   void didUpdateWidget(covariant _InputBar old) {
     super.didUpdateWidget(old);
-    if (old.voiceActive != widget.voiceActive &&
-        _holding != widget.voiceActive) {
-      setState(() => _holding = widget.voiceActive);
+    if (_holding != widget.voiceActive) {
+      _holding = widget.voiceActive;
     }
   }
 
   void _toggleVoice() {
+    if (widget.busy) return;
     if (_holding) {
       setState(() => _holding = false);
       widget.onVoiceEnd();
@@ -652,6 +688,7 @@ class _InputBarState extends State<_InputBar> {
           // Web 端桌面点击无法长按：单击切换开始/停止；移动端仍可按住说话
           onTap: _toggleVoice,
           onLongPressStart: (_) {
+            if (widget.busy) return;
             if (!_holding) {
               setState(() => _holding = true);
               widget.onVoiceStart();

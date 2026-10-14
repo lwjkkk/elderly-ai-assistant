@@ -34,11 +34,13 @@ class _FamilyHomeState extends State<FamilyHome> {
     super.initState();
     // 响应跨 Tab 跳转（如总览页「分享记录」→ 家人互动）
     HubNav.tab.addListener(_onHubTab);
+    HubNav.request.addListener(_onHubTab);
   }
 
   @override
   void dispose() {
     HubNav.tab.removeListener(_onHubTab);
+    HubNav.request.removeListener(_onHubTab);
     super.dispose();
   }
 
