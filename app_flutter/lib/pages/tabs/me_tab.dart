@@ -19,7 +19,7 @@ class MeTab extends StatefulWidget {
 
 class _MeTabState extends State<MeTab> {
   String avatarAsset = kAvatarAssets[0];
-String nickname = '长辈';
+  String nickname = '长辈';
   bool notifyOn = true;
   // 以服务端隐私状态为准，成功保存后才更新本地缓存。
   bool syncToFamily = true;
@@ -50,9 +50,16 @@ String nickname = '长辈';
     try {
       final prefs = await SharedPreferences.getInstance();
       avatarAsset = prefs.getString('avatar') ?? kAvatarAssets[0];
-notifyOn = prefs.getBool('notify_on') ?? true;
+      notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
-
+    } catch (_) {}
+    try {
+      final profile = await ApiService.getProfile();
+      final remote = (profile['avatar_url'] ?? '').toString();
+      if (remote.isNotEmpty) {
+        avatarAsset =
+            '${ApiService.avatarFullUrl(remote)}?v=${DateTime.now().millisecondsSinceEpoch}';
+      }
     } catch (_) {}
     if (mounted) setState(() {});
     await _loadPrivacy();
@@ -73,14 +80,17 @@ notifyOn = prefs.getBool('notify_on') ?? true;
       setState(() => bindMsg = '先输入邀请码');
       return;
     }
-    setState(() { binding = true; bindMsg = ''; });
+    setState(() {
+      binding = true;
+      bindMsg = '';
+    });
     try {
       await ApiService.acceptInvite(c);
       codeC.clear();
       await _loadBinds();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('绑定成功')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('绑定成功')));
       }
     } catch (e) {
       if (mounted) setState(() => bindMsg = ApiService.friendly(e));
@@ -107,7 +117,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('修改昵称', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        title: const Text('修改昵称',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         content: TextField(
           controller: c,
           style: const TextStyle(fontSize: 20),
@@ -116,10 +127,12 @@ notifyOn = prefs.getBool('notify_on') ?? true;
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('取消', style: TextStyle(fontSize: 19, color: Color(0xFF6B7280)))),
+              child: const Text('取消',
+                  style: TextStyle(fontSize: 19, color: Color(0xFF6B7280)))),
           TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('保存', style: TextStyle(fontSize: 19, color: Color(0xFF345C87)))),
+              child: const Text('保存',
+                  style: TextStyle(fontSize: 19, color: Color(0xFF345C87)))),
         ],
       ),
     );
@@ -136,8 +149,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale >= 1.3 ? '大' : (fontScale > 1.05 ? '中' : '小');
 
   Future<void> _openFontPage() async {
-    await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const _FontPage()));
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const _FontPage()));
     try {
       final prefs = await SharedPreferences.getInstance();
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
@@ -145,7 +158,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     if (mounted) setState(() {});
   }
 
-      @override
+  @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
       onRefresh: _loadPrefs,
@@ -164,7 +177,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           // 对话记录同步家属模块
           _privacyCard(),
           const SizedBox(height: 24),
-          
+
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -183,8 +196,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w700),
+                textStyle:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               child: const Text('退出登录'),
             ),
@@ -196,7 +209,10 @@ notifyOn = prefs.getBool('notify_on') ?? true;
 
   Future<void> _loadPrivacy() async {
     if (!mounted) return;
-    setState(() { _privacyLoading = true; _privacyError = null; });
+    setState(() {
+      _privacyLoading = true;
+      _privacyError = null;
+    });
     try {
       final value = await ApiService.getPrivacy();
       if (mounted) setState(() => syncToFamily = value);
@@ -219,8 +235,9 @@ notifyOn = prefs.getBool('notify_on') ?? true;
         await prefs.setBool('sync_to_family', saved);
       } catch (_) {}
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('设置未保存：${ApiService.friendly(e)}')));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('设置未保存：${ApiService.friendly(e)}')));
     } finally {
       if (mounted) setState(() => _privacySaving = false);
     }
@@ -241,17 +258,17 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('隐私保护',
-                      style: AfuElderText.body
-                          .copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  const Text('开启后，不再从新的 AI 对话中提取敏感信息给家属；开启前已经同步的信息会继续保留，体征、报告等主动上传记录不受影响',
-                      style: TextStyle(
-                          fontSize: 16, color: Color(0xFF6B7280), height: 1.4)),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('隐私保护',
+                  style:
+                      AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text(
+                  '开启后，不再从新的 AI 对话中提取敏感信息给家属；开启前已经同步的信息会继续保留，体征、报告等主动上传记录不受影响',
+                  style: TextStyle(
+                      fontSize: 16, color: Color(0xFF6B7280), height: 1.4)),
+            ]),
           ),
           Switch(
             key: const ValueKey('family-summary-sharing'),
@@ -260,16 +277,20 @@ notifyOn = prefs.getBool('notify_on') ?? true;
             activeThumbColor: Colors.white,
             inactiveTrackColor: const Color(0xFFEDF4FB),
             inactiveThumbColor: const Color(0xFF6B7280),
-            onChanged: _privacyLoading || _privacySaving || _privacyError != null
-                ? null : (enabled) => _savePrivacy(!enabled),
+            onChanged:
+                _privacyLoading || _privacySaving || _privacyError != null
+                    ? null
+                    : (enabled) => _savePrivacy(!enabled),
           ),
         ]),
-        if (_privacyLoading || _privacySaving) const Padding(
-          padding: EdgeInsets.only(top: 12),
-          child: LinearProgressIndicator(color: Color(0xFF345C87))),
+        if (_privacyLoading || _privacySaving)
+          const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(color: Color(0xFF345C87))),
         if (_privacyError != null) ...[
           const SizedBox(height: 8),
-          Text('共享设置读取失败：$_privacyError', style: const TextStyle(color: Color(0xFFB3261E))),
+          Text('共享设置读取失败：$_privacyError',
+              style: const TextStyle(color: Color(0xFFB3261E))),
           TextButton(onPressed: _loadPrivacy, child: const Text('重试')),
         ],
       ]),
@@ -281,23 +302,20 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     return AfuCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('亲属绑定管理',
-            style:
-                AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+            style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text('输入邀请码可绑定家属，也可生成邀请码发给家属',
-            style: AfuElderText.secondary),
+        const Text('输入邀请码可绑定家属，也可生成邀请码发给家属', style: AfuElderText.secondary),
         const SizedBox(height: 12),
         TextField(
           controller: codeC,
           style: const TextStyle(fontSize: 21, color: Color(0xFF212936)),
           decoration: InputDecoration(
             hintText: '请输入6位邀请码',
-            hintStyle:
-                const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
+            hintStyle: const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 22, vertical: 19),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
               borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
@@ -308,8 +326,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide:
-                  const BorderSide(color: Color(0xFF345C87), width: 2),
+              borderSide: const BorderSide(color: Color(0xFF345C87), width: 2),
             ),
           ),
         ),
@@ -321,8 +338,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
               backgroundColor: const Color(0xFF345C87),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w700),
+              textStyle:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             onPressed: binding ? null : _doBind,
             child: Text(binding ? '绑定中…' : '确认绑定'),
@@ -336,8 +353,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
               backgroundColor: const Color(0xFFEDF4FB),
               foregroundColor: const Color(0xFF345C87),
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w700),
+              textStyle:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             onPressed: generating ? null : _genInvite,
             child: Text(generating ? '生成中…' : '生成邀请码'),
@@ -347,8 +364,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 18, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: BoxDecoration(
               color: const Color(0xFFEDF4FB),
               borderRadius: BorderRadius.circular(18),
@@ -363,16 +379,13 @@ notifyOn = prefs.getBool('notify_on') ?? true;
               ),
               AfuPressable(
                 onTap: () {
-                  Clipboard.setData(
-                      ClipboardData(text: inviteCode!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('邀请码已复制')));
+                  Clipboard.setData(ClipboardData(text: inviteCode!));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
                 },
                 borderRadius: 12,
                 child: const Padding(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Text('复制',
                       style: TextStyle(
                           fontSize: 18,
@@ -386,8 +399,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
         if (bindMsg.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(bindMsg,
-              style: const TextStyle(
-                  fontSize: 18, color: Color(0xFFB3261E))),
+              style: const TextStyle(fontSize: 18, color: Color(0xFFB3261E))),
         ],
         const SizedBox(height: 12),
         if (binds.isEmpty)
@@ -401,8 +413,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
   Widget _bindRow(dynamic b) {
     final m =
         b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-    final name =
-        (m['other_nickname'] ?? m['nickname'] ?? '对方').toString();
+    final name = (m['other_nickname'] ?? m['nickname'] ?? '对方').toString();
     final status = (m['status'] ?? '').toString();
     final active = status == 'active';
     return Container(
@@ -418,22 +429,17 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           height: 52,
           decoration: const BoxDecoration(
               color: Color(0xFFEDF4FB), shape: BoxShape.circle),
-          child: const Icon(Icons.person,
-              size: 30, color: Color(0xFF345C87)),
+          child: const Icon(Icons.person, size: 30, color: Color(0xFF345C87)),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Text(name,
-              style:
-                  AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+              style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
         ),
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: active
-                ? const Color(0xFFFFFFFF)
-                : const Color(0xFFEDF4FB),
+            color: active ? const Color(0xFFFFFFFF) : const Color(0xFFEDF4FB),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Text(active ? '已绑定' : status,
@@ -462,8 +468,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           onTap: _editName,
           borderRadius: 16,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFEDF4FB),
               borderRadius: BorderRadius.circular(16),
@@ -478,8 +483,6 @@ notifyOn = prefs.getBool('notify_on') ?? true;
       ]),
     );
   }
-
-
 
   /// 消息通知卡：开关关闭态浅蓝白，开启态中蓝。
   Widget _notifyCard() {
@@ -505,8 +508,8 @@ notifyOn = prefs.getBool('notify_on') ?? true;
                   await prefs.setBool('notify_on', on);
                 } catch (_) {}
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(on ? '消息通知已打开' : '消息通知已关闭')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(on ? '消息通知已打开' : '消息通知已关闭')));
                 }
               },
             ),
@@ -523,14 +526,12 @@ notifyOn = prefs.getBool('notify_on') ?? true;
       onTap: null,
       borderRadius: 0,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
         decoration: BoxDecoration(
           border: last
               ? null
               : const Border(
-                  bottom:
-                      BorderSide(color: Color(0xFFEDF4FB), width: 1)),
+                  bottom: BorderSide(color: Color(0xFFEDF4FB), width: 1)),
         ),
         child: Row(children: [
           Container(
@@ -543,8 +544,7 @@ notifyOn = prefs.getBool('notify_on') ?? true;
           const SizedBox(width: 12),
           Expanded(
             child: Text(title,
-                style:
-                    AfuElderText.body.copyWith(fontWeight: FontWeight.w600)),
+                style: AfuElderText.body.copyWith(fontWeight: FontWeight.w600)),
           ),
           trailing,
         ]),
@@ -613,7 +613,6 @@ notifyOn = prefs.getBool('notify_on') ?? true;
     } catch (_) {}
     if (mounted) setState(() {});
   }
-
 }
 
 /// 字体调节子页：小/中/大三档，全 App 实时生效。
@@ -671,7 +670,9 @@ class _FontPageState extends State<_FontPage> {
           ),
           const SizedBox(height: 16),
           const Text('切换后整个App的文字立即变化，所见即所得',
-              style: TextStyle(fontSize: 18, color: Color(0xFF6B7280), height: 1.6), textAlign: TextAlign.center),
+              style: TextStyle(
+                  fontSize: 18, color: Color(0xFF6B7280), height: 1.6),
+              textAlign: TextAlign.center),
         ],
       ),
     );
@@ -682,8 +683,7 @@ class _FontPageState extends State<_FontPage> {
       onTap: () => _pick(o.scale),
       borderRadius: 0,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         decoration: BoxDecoration(
           border: last
               ? null
@@ -707,8 +707,7 @@ class _FontPageState extends State<_FontPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text('${o.name}' + '号字',
-                style: AfuElderText.body
-                    .copyWith(fontWeight: FontWeight.w700)),
+                style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
           ),
           ValueListenableBuilder<double>(
             valueListenable: chatScale,
@@ -717,9 +716,7 @@ class _FontPageState extends State<_FontPage> {
               return Icon(
                   sel ? Icons.check_circle : Icons.radio_button_unchecked,
                   size: 30,
-                  color: sel
-                      ? Color(0xFF345C87)
-                      : const Color(0xFF6B7280));
+                  color: sel ? Color(0xFF345C87) : const Color(0xFF6B7280));
             },
           ),
         ]),
@@ -764,8 +761,11 @@ class _ElderRippleAvatarState extends State<_ElderRippleAvatar>
               decoration: const BoxDecoration(
                   color: Color(0xFFEDF4FB), shape: BoxShape.circle),
               child: ClipOval(
-                  child: Image(image: avatarImage(widget.asset),
-                      width: 64, height: 64, fit: BoxFit.cover)),
+                  child: Image(
+                      image: avatarImage(widget.asset),
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover)),
             ),
           ),
         ),
@@ -786,8 +786,7 @@ class _ElderRipplePainter extends CustomPainter {
           c,
           30 + p * 14,
           Paint()
-            ..color =
-                const Color(0xFF345C87).withOpacity(0.35 * (1 - p))
+            ..color = const Color(0xFF345C87).withOpacity(0.35 * (1 - p))
             ..style = PaintingStyle.stroke
             ..strokeWidth = 4);
     }

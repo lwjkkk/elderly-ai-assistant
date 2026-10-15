@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
 import '../../services/file_download.dart';
+import '../../afu/delete_confirm.dart';
 import 'health_record_style.dart';
 
 class VitalsTab extends StatefulWidget {
@@ -44,6 +45,17 @@ class _VitalsTabState extends State<VitalsTab> {
   void message(String text) {
     if (mounted)
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _deleteVital(Map<String, dynamic> item) async {
+    final id = (item['id'] as num?)?.toInt();
+    if (id == null || !await showDeleteConfirm(context, '这条体征记录')) return;
+    try {
+      await ApiService.deleteVital(id);
+      await load();
+    } catch (e) {
+      message('删除失败：${ApiService.friendly(e)}');
+    }
   }
 
   Future<void> showAddDialog({Map<String, dynamic>? preset}) async {
@@ -283,6 +295,9 @@ class _VitalsTabState extends State<VitalsTab> {
                                   ? '${m['systolic']}/${m['diastolic']} mmHg'
                                   : '${m['value']} ${type == 'bs' ? 'mmol/L' : type == 'hr' ? '次/分' : 'kg'}';
                               return ListTile(
+                                  onLongPress: widget.readOnly
+                                      ? null
+                                      : () => _deleteVital(m),
                                   contentPadding: EdgeInsets.zero,
                                   leading: const Icon(Icons.show_chart,
                                       color: HealthRecordStyle.primary),

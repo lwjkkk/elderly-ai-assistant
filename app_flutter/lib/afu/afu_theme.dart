@@ -28,14 +28,17 @@ const kAvatarAssets = <String>[
 
 /// 头像解析：预设走 Asset，注册页自定义上传的本地照片走 File。
 ImageProvider avatarImage(String path) {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return NetworkImage(path);
+  }
   if (kAvatarAssets.contains(path)) return AssetImage(path);
   try {
     if (File(path).existsSync()) return FileImage(File(path));
   } catch (_) {}
   return const AssetImage('assets/avatars/avatar1.png');
 }
-class AfuRadius {
 
+class AfuRadius {
   static const card = 20.0;
   static const bubble = 20.0;
   static const field = 24.0;
@@ -57,17 +60,29 @@ class AfuMotion {
 
 /// 长辈端字阶：最小 18sp，全部白底黑字高对比。
 class AfuElderText {
-  static const appTitle = TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AfuColors.ink, height: 1.3);
-  static const body = TextStyle(fontSize: 19, color: AfuColors.ink, height: 1.5);
-  static const secondary = TextStyle(fontSize: 18, color: AfuColors.secondary, height: 1.4);
+  static const appTitle = TextStyle(
+      fontSize: 24,
+      fontWeight: FontWeight.w700,
+      color: AfuColors.ink,
+      height: 1.3);
+  static const body =
+      TextStyle(fontSize: 19, color: AfuColors.ink, height: 1.5);
+  static const secondary =
+      TextStyle(fontSize: 18, color: AfuColors.secondary, height: 1.4);
   static const button = TextStyle(fontSize: 20, fontWeight: FontWeight.w700);
 }
 
 /// 家属端字阶：同风格，字号缩小、密度更高。
 class AfuFamilyText {
-  static const appTitle = TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AfuColors.ink, height: 1.3);
-  static const body = TextStyle(fontSize: 16, color: AfuColors.ink, height: 1.45);
-  static const secondary = TextStyle(fontSize: 14, color: AfuColors.secondary, height: 1.4);
+  static const appTitle = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w700,
+      color: AfuColors.ink,
+      height: 1.3);
+  static const body =
+      TextStyle(fontSize: 16, color: AfuColors.ink, height: 1.45);
+  static const secondary =
+      TextStyle(fontSize: 14, color: AfuColors.secondary, height: 1.4);
   static const button = TextStyle(fontSize: 17, fontWeight: FontWeight.w600);
 }
 
@@ -102,7 +117,8 @@ ThemeData buildAfuTheme({required bool elder}) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: AfuColors.card,
-      hintStyle: TextStyle(color: AfuColors.secondary, fontSize: elder ? 19 : 16),
+      hintStyle:
+          TextStyle(color: AfuColors.secondary, fontSize: elder ? 19 : 16),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AfuRadius.field),
@@ -123,7 +139,8 @@ ThemeData buildAfuTheme({required bool elder}) {
         foregroundColor: Colors.white,
         minimumSize: Size(64, elder ? 60 : 52),
         textStyle: elder ? AfuElderText.button : AfuFamilyText.button,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AfuRadius.button)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AfuRadius.button)),
       ),
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(

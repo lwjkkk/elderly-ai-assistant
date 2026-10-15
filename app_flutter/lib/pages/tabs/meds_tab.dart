@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
 import '../../services/medication_time.dart';
+import '../../afu/delete_confirm.dart';
 import 'med_form.dart';
 import '../../theme.dart';
 
@@ -48,7 +49,10 @@ class _MedsTabState extends State<MedsTab> {
   }
 
   Future<void> refresh() async {
-    setState(() { loading = true; err = ''; });
+    setState(() {
+      loading = true;
+      err = '';
+    });
     try {
       items = await ApiService.medsToday(mine: widget.mine);
     } catch (e) {
@@ -82,11 +86,23 @@ class _MedsTabState extends State<MedsTab> {
       refresh();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('打卡失败：${ApiService.friendly(e)}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('打卡失败：${ApiService.friendly(e)}')));
       }
     } finally {
       if (mounted) setState(() => _checking.remove(key));
+    }
+  }
+
+  Future<void> _deleteMed(int id, String name) async {
+    if (!await showDeleteConfirm(context, '“$name”')) return;
+    try {
+      await ApiService.deleteMed(id);
+      await refresh();
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
     }
   }
 
@@ -102,7 +118,8 @@ class _MedsTabState extends State<MedsTab> {
           .pickImage(source: ImageSource.camera, maxWidth: 1600);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      final r = await ApiService.queryDrugByImage(bytes.toList(), mine: widget.mine);
+      final r =
+          await ApiService.queryDrugByImage(bytes.toList(), mine: widget.mine);
       final ocr = (r['ocr_text'] ?? '').toString();
       var name = '';
       var dose = '';
@@ -113,11 +130,10 @@ class _MedsTabState extends State<MedsTab> {
             if (l.trim().isNotEmpty) l.trim(),
         ];
         if (lines.isNotEmpty) name = lines.first;
-        final dm = RegExp(r'\d+\.?\d*\s*(mg|g|ml|片|粒|颗|袋|支)')
-            .firstMatch(ocr);
+        final dm = RegExp(r'\d+\.?\d*\s*(mg|g|ml|片|粒|颗|袋|支)').firstMatch(ocr);
         if (dm != null) dose = dm.group(0) ?? '';
-        final fm = RegExp(r'(每日\d*次|每天\d*次|一日\d*次|一天\d*次|每\d+小时一次)')
-            .firstMatch(ocr);
+        final fm =
+            RegExp(r'(每日\d*次|每天\d*次|一日\d*次|一天\d*次|每\d+小时一次)').firstMatch(ocr);
         if (fm != null) freq = fm.group(0) ?? '';
       }
       if (!mounted) return;
@@ -164,8 +180,7 @@ class _MedsTabState extends State<MedsTab> {
     }
   }
 
-
-Widget _topBtn(String text, VoidCallback onTap) {
+  Widget _topBtn(String text, VoidCallback onTap) {
     return SizedBox(
       height: 56,
       child: ElevatedButton(
@@ -175,35 +190,43 @@ Widget _topBtn(String text, VoidCallback onTap) {
           foregroundColor: Colors.white,
           elevation: 2,
           shadowColor: const Color(0xFF345C87).withOpacity(0.25),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         ),
         child: Text(text,
-            style: const TextStyle(
-                fontSize: 20, fontWeight: FontWeight.w700)),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return Center(child: CircularProgressIndicator(color: const Color(0xFF345C87)));
+    if (loading)
+      return Center(
+          child: CircularProgressIndicator(color: const Color(0xFF345C87)));
     final cards = <Widget>[];
     for (final m in items) {
-      final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
+      final map =
+          m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
       final medId = (map['medication_id'] ?? map['id'] ?? 0) as num? ?? 0;
       final name = (map['name'] ?? '药品').toString();
       final dosage = (map['dosage'] ?? '').toString();
       final slots = (map['slots'] is List) ? List.from(map['slots']) : [];
       for (final s in slots) {
-        final sm = s is Map ? Map<String, dynamic>.from(s as Map) : <String, dynamic>{};
+        final sm = s is Map
+            ? Map<String, dynamic>.from(s as Map)
+            : <String, dynamic>{};
         final slot = (sm['slot'] ?? '').toString();
         final status = (sm['status'] ?? 'pending').toString();
         final done = status == 'taken';
         final due = medicationSlotDue(slot);
         final checking = _checking.contains('${medId.toInt()}-$slot');
-        cards.add(Card(
-          child: ListTile(
+        cards.add(GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress:
+              widget.readOnly ? null : () => _deleteMed(medId.toInt(), name),
+          child: Card(
+              child: ListTile(
             title: Text(name, style: const TextStyle(fontSize: 22)),
             subtitle: Text('$slot吃$dosage',
                 style: TextStyle(fontSize: 18, color: Color(0xFF212936))),
@@ -214,10 +237,20 @@ Widget _topBtn(String text, VoidCallback onTap) {
                       backgroundColor: const Color(0xFF345C87),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: done || !due || checking ? null : () => doCheckin(medId.toInt(), slot),
-                    child: Text(done ? '已打卡' : checking ? '提交中' : due ? '打卡' : '时间未到', style: const TextStyle(fontSize: 20)),
+                    onPressed: done || !due || checking
+                        ? null
+                        : () => doCheckin(medId.toInt(), slot),
+                    child: Text(
+                        done
+                            ? '已打卡'
+                            : checking
+                                ? '提交中'
+                                : due
+                                    ? '打卡'
+                                    : '时间未到',
+                        style: const TextStyle(fontSize: 20)),
                   ),
-          ),
+          )),
         ));
       }
     }
@@ -228,7 +261,11 @@ Widget _topBtn(String text, VoidCallback onTap) {
         padding: const EdgeInsets.all(16),
         children: [
           Row(children: [
-            const Text('今日用药', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF212936))),
+            const Text('今日用药',
+                style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF212936))),
           ]),
           if (!widget.readOnly) ...[
             const SizedBox(height: 16),
@@ -258,8 +295,7 @@ Widget _topBtn(String text, VoidCallback onTap) {
                       SizedBox(
                         width: 72,
                         height: 60,
-                        child:
-                            CustomPaint(painter: _CapsulePainter()),
+                        child: CustomPaint(painter: _CapsulePainter()),
                       ),
                       const SizedBox(width: 12),
                       SizedBox(
@@ -271,9 +307,7 @@ Widget _topBtn(String text, VoidCallback onTap) {
                 const SizedBox(height: 10),
                 const Text('点击右上角\n把每天要吃的药记录下来',
                     style: TextStyle(
-                        fontSize: 20,
-                        color: Color(0xFF6B7280),
-                        height: 1.6),
+                        fontSize: 20, color: Color(0xFF6B7280), height: 1.6),
                     textAlign: TextAlign.center),
               ]),
             ),
@@ -305,10 +339,8 @@ class _CapsulePainter extends CustomPainter {
         const Radius.circular(22));
     canvas.drawRRect(body, fill);
     canvas.drawRRect(body, stroke);
-    canvas.drawLine(
-        Offset(s.width * 0.50, s.height * 0.22),
-        Offset(s.width * 0.50, s.height * 0.78),
-        stroke);
+    canvas.drawLine(Offset(s.width * 0.50, s.height * 0.22),
+        Offset(s.width * 0.50, s.height * 0.78), stroke);
   }
 
   @override
@@ -365,22 +397,16 @@ class _MedScienceCard extends StatelessWidget {
         for (final tip in tips)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('·  ',
-                      style: TextStyle(
-                          fontSize: 18,
-                          color: Color(0xFF2F6FD6),
-                          height: 1.5)),
-                  Expanded(
-                    child: Text(tip,
-                        style: const TextStyle(
-                            fontSize: 18,
-                            color: Color(0xFF212936),
-                            height: 1.5)),
-                  ),
-                ]),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('·  ',
+                  style: TextStyle(
+                      fontSize: 18, color: Color(0xFF2F6FD6), height: 1.5)),
+              Expanded(
+                child: Text(tip,
+                    style: const TextStyle(
+                        fontSize: 18, color: Color(0xFF212936), height: 1.5)),
+              ),
+            ]),
           ),
       ]),
     );

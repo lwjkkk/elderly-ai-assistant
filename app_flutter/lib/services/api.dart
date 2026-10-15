@@ -292,6 +292,18 @@ class ApiService {
     await _dio.delete('/api/meds/$id');
   }
 
+  static Future<void> deleteVital(int id) async {
+    await _dio.delete('/api/vitals/$id');
+  }
+
+  static Future<void> deleteReport(int id) async {
+    await _dio.delete('/api/reports/$id');
+  }
+
+  static Future<void> deleteConsult(int id) async {
+    await _dio.delete('/api/consults/$id');
+  }
+
   /// v2.0：GET /api/meds/today?elder_id&date，每项含 slots[{slot,status}]。
   static Future<List> medsToday({String? date, bool mine = false}) async {
     final q = await withElder({if (date != null) 'date': date}, mine);
@@ -406,7 +418,21 @@ class ApiService {
   static Future<List> consultList({bool mine = false}) async {
     final q = await withElder({}, mine);
     final res = await _dio.get('/api/consults', queryParameters: q);
-    return res.data is List ? res.data : [];
+    final list = res.data is List ? List.from(res.data as List) : <dynamic>[];
+    // 新后端在家属不传 elder_id 时会返回“本人 + 全部绑定长辈”；
+    // 本人页只保留当前账号的数据，避免双端咨询记录混在一起。
+    if (mine && await getRole() == 'family') {
+      final userId = await getUserId();
+      if (userId != null) {
+        return list.where((e) {
+          final m = e is Map
+              ? Map<String, dynamic>.from(e)
+              : const <String, dynamic>{};
+          return (m['elder_id'] as num?)?.toInt() == userId;
+        }).toList();
+      }
+    }
+    return list;
   }
 
   static Future<Map<String, dynamic>> uploadConsult(
