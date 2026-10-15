@@ -53,7 +53,8 @@ def _get_ocr():
             # PaddleOCR 2.x 的图像增强依赖可能导入 torch。先加载它以降低 OpenMP DLL 冲突，
             # 但延迟到首次 OCR 请求，避免 torch 环境故障阻断整个后端启动。
             _configure_windows_dll_search()
-            import torch  # noqa: F401
+            if os.name == "nt":
+                import torch  # noqa: F401  # Windows 下提前加载避免 OpenMP DLL 冲突
             from paddleocr import PaddleOCR
         except Exception as e:
             raise OcrUnavailableError(
