@@ -262,10 +262,14 @@ def recognize_vital(payload: VitalsRecognizeRequest,
     )
     # 只有整段输出就是 NONE（识别失败）才算失败；
     # 血压场景下 LLM 会写 VALUE: NONE（该字段不适用），不能被子串误判。
-    if llm_out.strip().upper() == "NONE":
-        raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
+    parsed = None
+    if llm_out.strip().upper() != "NONE":
+        parsed = _parse_vitals_llm(llm_out, payload.vital_type)
 
-    parsed = _parse_vitals_llm(llm_out, payload.vital_type)
+    # 兜底：LLM 返回 NONE 或格式异常时，直接从 OCR 文本正则解析
+    if parsed is None:
+        parsed = _fallback_parse_ocr(ocr_text, payload.vital_type)
+
     if parsed is None:
         raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
 
@@ -336,3 +340,110 @@ def _parse_vitals_llm(text: str, hint_type: str | None) -> dict | None:
                 return None
             result["value"] = float(int(round(val)))
     return result
+
+
+def _fallback_parse_ocr(ocr_text: str, hint_type: str | None) -> dict | None:
+    """LLM 解析失败时的保守兜底：优先依赖指标标签/单位，不猜测日期等无关数字。"""
+    text = ocr_text.upper()
+    t = (hint_type or "").lower() or "bp"
+
+    def _number(value: str) -> float:
+        return float(value.replace(",", "."))
+
+    number_pattern = r"([+-]?\d+(?:[.,]\d+)?)"
+
+    if t == "bp":
+        # 先找明确标签，兼容设备英文缩写和中文“高压/低压、收缩压/舒张压”。
+        m_sys = re.search(rf"(?:SYS(?:TOLIC)?|收缩压|高压)\s*[:：]?\s*(\d{{2,3}})", text)
+        m_dia = re.search(rf"(?:DIA(?:STOLIC)?|舒张压|低压)\s*[:：]?\s*(\d{{2,3}})", text)
+        if m_sys and m_dia:
+            sys, dia = int(m_sys.group(1)), int(m_dia.group(1))
+            if 30 <= sys <= 300 and 20 <= dia <= 250 and sys > dia:
+                return {"type": "bp", "systolic": sys, "diastolic": dia,
+                        "value": None, "unit": "mmHg", "confidence": 0.7}
+
+        # 无标签时只接受同一行里明显成对的血压格式，跳过日期等其他数字。
+        for line in ocr_text.splitlines():
+            pairs = re.findall(r"(?<!\d)(\d{2,3})\s*/\s*(\d{2,3})(?!\d)", line)
+            if not pairs:
+                pairs = re.findall(r"(?<!\d)(\d{2,3})\s+(\d{2,3})(?!\d)", line)
+            for systolic, diastolic in pairs:
+                sys, dia = int(systolic), int(diastolic)
+                if 30 <= sys <= 300 and 20 <= dia <= 250 and sys > dia:
+                    return {"type": "bp", "systolic": sys, "diastolic": dia,
+                            "value": None, "unit": "mmHg", "confidence": 0.6}
+        return None
+
+    specs = {
+        "bs": {
+            "labels": ("血糖", "GLUCOSE", "GLU", r"\bBS\b"),
+            "units": ("MMOL/L", "MG/DL", "MGDL"),
+            "minimum": 1.0, "maximum": 50.0, "unit": "mmol/L",
+        },
+        "hr": {
+            "labels": ("心率", "脉搏", "PULSE", "PUL", "BPM", r"\bHR\b"),
+            "units": ("BPM", "次/分", "次/min"),
+            "minimum": 30.0, "maximum": 250.0, "unit": "次/分",
+        },
+        "weight": {
+            "labels": ("体重", "WEIGHT", r"\bWT\b"),
+            "units": ("KG", "公斤", "千克"),
+            "minimum": 20.0, "maximum": 300.0, "unit": "kg",
+        },
+    }
+    spec = specs.get(t)
+    if not spec:
+        return None
+
+    for line in ocr_text.splitlines():
+        upper_line = line.upper()
+        label_match = next(
+            (re.search(label, upper_line) for label in spec["labels"] if re.search(label, upper_line)),
+            None,
+        )
+        unit_match = next(
+            (re.search(unit, upper_line) for unit in spec["units"] if re.search(unit, upper_line)),
+            None,
+        )
+
+        # 用标签定位数值，日期/序号位于标签之前时不会被选中。
+        if label_match:
+            value_text = line[label_match.end():]
+            if unit_match and unit_match.start() >= label_match.end():
+                candidates = re.findall(number_pattern, line[label_match.end():unit_match.start()])
+                candidates = candidates[-1:]
+            else:
+                candidates = re.findall(number_pattern, value_text)[:1]
+            if not candidates:
+                continue
+            value = _number(candidates[0])
+        elif unit_match:
+            # 无标签时，单位紧邻指标值也可确定数值；不扫描整张图中的任意数字。
+            before_unit = line[:unit_match.start()]
+            candidates = re.findall(number_pattern, before_unit)
+            if not candidates:
+                after_unit = re.findall(number_pattern, line[unit_match.end():])
+                if not after_unit:
+                    continue
+                value = _number(after_unit[0])
+            else:
+                value = _number(candidates[-1])
+        else:
+            # 只接受单独显示的数值，避免把日期中的月份/日期当体征。
+            if not re.fullmatch(rf"\s*{number_pattern}\s*", line):
+                continue
+            value = _number(re.fullmatch(rf"\s*{number_pattern}\s*", line).group(1))
+
+        if t == "bs" and unit_match and unit_match.group(0).upper() in ("MG/DL", "MGDL"):
+            value /= 18.0
+        if spec["minimum"] <= value <= spec["maximum"]:
+            if t == "bs":
+                value = round(value, 2)
+            elif t == "weight":
+                value = round(value, 1)
+            else:
+                value = float(int(round(value)))
+            return {"type": t, "systolic": None, "diastolic": None,
+                    "value": value, "unit": spec["unit"], "confidence": 0.6}
+
+    return None

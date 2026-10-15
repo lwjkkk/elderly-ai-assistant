@@ -54,6 +54,13 @@ def list_summaries(elder_id: int | None = None,
     target = resolve_elder_id(db, current, elder_id)
 
     q = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
+
+    # 家属看老人数据时：若老人开启了隐私，只返回开启时间之前的记录
+    if current.role == "family" and target != current.id:
+        elder = db.query(User).filter(User.id == target).first()
+        if elder and elder.privacy_enabled_at:
+            q = q.filter(ChatSummary.created_at <= elder.privacy_enabled_at)
+
     if category:
         q = q.filter(ChatSummary.category == category)
     if since:
