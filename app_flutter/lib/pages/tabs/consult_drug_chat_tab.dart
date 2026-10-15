@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:cross_file/cross_file.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
@@ -11,6 +14,7 @@ import '../../services/answer_speech.dart';
 import '../../services/drug_question.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
+import '../../afu/delete_confirm.dart';
 import 'hub_pages.dart';
 import 'vitals_tab.dart';
 import 'health_record_style.dart';
@@ -29,30 +33,128 @@ class _ConsultsTabState extends State<ConsultsTab> {
   List items = [];
   bool loading = true;
   bool uploading = false;
+  bool recording = false;
+  final _recorder = AudioRecorder();
   final _player = AudioPlayer();
   String? _playing;
 
-  Future<void> pickAndUpload() async {
+  Future<void> _toggleRecord() async {
     if (uploading) return;
-    final r = await FilePicker.platform.pickFiles(type: FileType.audio, withData: true);
-    final f = (r == null || r.files.isEmpty) ? null : r.files.first;
-    if (f == null || f.bytes == null) return;
-    setState(() => uploading = true);
-    try {
-      await ApiService.uploadConsult(f.bytes!, f.name);
-      await refresh();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('录音上传成功，家属端同步可见')));
+    if (recording) {
+      setState(() => uploading = true);
+      try {
+        final path = await _recorder.stop();
+        if (mounted) setState(() => recording = false);
+        if (path != null && mounted) await _saveRecording(path);
+      } catch (_) {
+        if (mounted)
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('录音保存失败，请重试')));
+      } finally {
+        if (mounted) setState(() => uploading = false);
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('上传失败，请重试')));
-      }
+      return;
     }
-    if (mounted) setState(() => uploading = false);
+    try {
+      if (!await _recorder.hasPermission()) throw Exception('no permission');
+      final ext = kIsWeb ? 'wav' : 'm4a';
+      final name = 'consult_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final path =
+          kIsWeb ? name : '${(await getTemporaryDirectory()).path}/$name';
+      await _recorder.start(
+          RecordConfig(encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc),
+          path: path);
+      if (mounted) setState(() => recording = true);
+    } catch (_) {
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('录音启动失败，请检查麦克风权限')));
+    }
   }
+
+  Future<void> _saveRecording(String path) async {
+    final address = TextEditingController();
+    final title = TextEditingController();
+    var locationHint = '开启定位后自动提供参考地点';
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        final p = await Geolocator.getCurrentPosition(
+            timeLimit: const Duration(seconds: 6));
+        locationHint =
+            '当前位置 ${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}';
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+              backgroundColor: const Color(0xFFF9E7E9),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+              contentPadding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28)),
+              title: const Text('保存录音',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+              content: SingleChildScrollView(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _consultField(address, '地址', locationHint),
+                const SizedBox(height: 20),
+                _consultField(title, '标题', '请输入标题'),
+              ])),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(c, false),
+                    child: const Text('取消',
+                        style:
+                            TextStyle(fontSize: 19, color: Color(0xFF333333)))),
+                ElevatedButton(
+                    onPressed: () => Navigator.pop(c, true),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFD48792),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 30, vertical: 15),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16))),
+                    child: const Text('上传',
+                        style: TextStyle(
+                            fontSize: 19, fontWeight: FontWeight.w700))),
+              ],
+            ));
+    if (ok != true) return;
+    final bytes = await XFile(path).readAsBytes();
+    final ext = kIsWeb ? 'wav' : 'm4a';
+    await ApiService.uploadConsult(
+        bytes, 'consult_${DateTime.now().millisecondsSinceEpoch}.$ext',
+        hospital: address.text.trim().isEmpty ? null : address.text.trim(),
+        doctor: title.text.trim().isEmpty ? null : title.text.trim(),
+        mine: widget.mine);
+    await refresh();
+    if (mounted)
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('录音已保存')));
+  }
+
+  Widget _consultField(TextEditingController c, String label, String hint) =>
+      TextField(
+          controller: c,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          decoration: InputDecoration(
+              labelText: label,
+              hintText: hint,
+              labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w700, color: Color(0xFFD48792)),
+              hintStyle:
+                  const TextStyle(color: Color(0xFFAAA5AA), fontSize: 16),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(18))));
   @override
   void initState() {
     super.initState();
@@ -64,6 +166,7 @@ class _ConsultsTabState extends State<ConsultsTab> {
 
   @override
   void dispose() {
+    _recorder.dispose();
     _player.dispose();
     super.dispose();
   }
@@ -79,7 +182,8 @@ class _ConsultsTabState extends State<ConsultsTab> {
       await _player.stop();
       final bytes = await ApiService.consultAudioBytes(url);
       if (!mounted) return;
-      await _player.play(BytesSource(bytes, mimeType: ApiService.audioMimeType(url)));
+      await _player
+          .play(BytesSource(bytes, mimeType: ApiService.audioMimeType(url)));
       if (mounted) setState(() => _playing = url);
     } catch (e) {
       if (mounted) {
@@ -88,45 +192,173 @@ class _ConsultsTabState extends State<ConsultsTab> {
       }
     }
   }
+
   Future<void> refresh() async {
-    try { items = await ApiService.consultList(mine: widget.mine); } catch (_) { items = []; }
+    try {
+      items = await ApiService.consultList(mine: widget.mine);
+    } catch (_) {
+      items = [];
+    }
     if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _deleteConsult(Map<String, dynamic> item) async {
+    final id = (item['id'] as num?)?.toInt();
+    if (id == null) return;
+    if (!await showDeleteConfirm(context, '这条咨询录音')) return;
+    try {
+      await ApiService.deleteConsult(id);
+      await refresh();
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (loading) return Center(child: CircularProgressIndicator(color: const Color(0xFF345C87)));
-    return RefreshIndicator(
-      color: const Color(0xFF345C87),
-      onRefresh: refresh,
-      child: ListView(padding: const EdgeInsets.all(16), children: [
-        const Text('问诊录音', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF222222))),
-        const SizedBox(height: 8),
-        const Text('回放长辈与AI问事过程中的问诊录音', style: TextStyle(fontSize: 18, color: Color(0xFF222222))),
-        const SizedBox(height: 8),
-        SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: uploading ? null : pickAndUpload,
-              icon: uploading
-                  ? const SizedBox(width: 24, height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
-                  : const Icon(Icons.mic, size: 28),
-              label: const Text('上传录音', style: TextStyle(fontSize: 20)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (items.isEmpty) const Text('暂无咨询记录', style: TextStyle(fontSize: 20)),
-        ...items.map((e) {
-          final m = Map<String, dynamic>.from(e as Map);
-          final title = (m['hospital'] ?? m['doctor'] ?? m['created_at'] ?? '一条咨询').toString();
-          final audio = (m['audio_url'] ?? '').toString();
-          final full = audio.isEmpty ? '' : ApiService.consultAudioUrl(audio);
-          final playing = _playing != null && _playing == full;
-          return Card(child: ListTile(title: Text(title, style: const TextStyle(fontSize: 20)), subtitle: audio.isEmpty ? null : Text(audio), trailing: audio.isEmpty ? null : IconButton(icon: Icon(playing ? Icons.stop_circle : Icons.play_arrow, size: 32), onPressed: () => _togglePlay(full))));
-        }),
-      ]),
+    if (loading)
+      return const Center(
+          child: CircularProgressIndicator(color: Color(0xFFD48792)));
+    return Container(
+      color: const Color(0xFFF7F8FA),
+      child: RefreshIndicator(
+        color: const Color(0xFFD48792),
+        onRefresh: refresh,
+        child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            children: [
+              SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: uploading ? null : _toggleRecord,
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF9E7E9),
+                        foregroundColor: const Color(0xFF333333),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18))),
+                    icon: uploading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 3, color: Color(0xFFD48792)))
+                        : Icon(
+                            recording
+                                ? Icons.stop_circle
+                                : Icons.mic_none_outlined,
+                            color: const Color(0xFFD48792),
+                            size: 28),
+                    label: Text(recording ? '停止并保存' : '开始录音',
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w700)),
+                  )),
+              const SizedBox(height: 16),
+              _consultTable(),
+            ]),
+      ),
     );
+  }
+
+  Widget _consultTable() {
+    const border = Color(0xFFE5E7EB);
+    if (items.isEmpty) {
+      return Container(
+          height: 310,
+          decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: border),
+              borderRadius: BorderRadius.circular(18)),
+          child: const Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.mic_none_outlined,
+                    size: 58, color: Color(0xFFD48792)),
+                SizedBox(height: 18),
+                Text('暂无录音记录，点击记录就诊历史',
+                    style: TextStyle(fontSize: 18, color: Color(0xFF888888))),
+              ]));
+    }
+    Widget cell(String text,
+            {FontWeight weight = FontWeight.w400,
+            Color color = const Color(0xFF333333)}) =>
+        Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 17,
+                    height: 1.4,
+                    fontWeight: weight,
+                    color: color)));
+    return ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: border),
+              borderRadius: BorderRadius.circular(18)),
+          child: Table(
+              columnWidths: const {
+                0: FlexColumnWidth(3),
+                1: FlexColumnWidth(2),
+                2: FlexColumnWidth(2),
+                3: FlexColumnWidth(2)
+              },
+              border: const TableBorder(
+                  horizontalInside: BorderSide(color: border)),
+              children: [
+                TableRow(
+                    decoration: const BoxDecoration(color: Color(0xFFF9E7E9)),
+                    children: [
+                      for (final h in const ['标题', '时间', 'AI摘要', '地址'])
+                        cell(h, weight: FontWeight.w700)
+                    ]),
+                for (final e in items)
+                  _consultRow(Map<String, dynamic>.from(e as Map), cell),
+              ]),
+        ));
+  }
+
+  TableRow _consultRow(Map<String, dynamic> m,
+      Widget Function(String, {FontWeight weight, Color color}) cell) {
+    final audio = (m['audio_url'] ?? '').toString();
+    final full = audio.isEmpty ? '' : ApiService.consultAudioUrl(audio);
+    final date = (m['created_at'] ?? '').toString();
+    final title = (m['doctor'] ?? '').toString().trim().isNotEmpty
+        ? m['doctor'].toString()
+        : '问诊录音${date.length >= 10 ? date.substring(0, 10) : ''}';
+    final cells = <Widget>[
+      Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(children: [
+            Expanded(
+                child: Text(title,
+                    style: const TextStyle(fontSize: 17, height: 1.4))),
+            if (full.isNotEmpty)
+              IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                      _playing == full ? Icons.stop_circle : Icons.play_arrow,
+                      color: const Color(0xFFD48792),
+                      size: 27),
+                  onPressed: () => _togglePlay(full)),
+          ])),
+      cell(date.length >= 10 ? date.substring(0, 10) : date),
+      cell((m['summary'] ?? '—').toString(), color: const Color(0xFF888888)),
+      cell((m['hospital'] ?? '').toString()),
+    ];
+    return TableRow(children: [
+      for (final child in cells)
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress: () => _deleteConsult(m),
+          child: child,
+        ),
+    ]);
   }
 }
 
@@ -143,38 +375,64 @@ class _DrugQueryTabState extends State<DrugQueryTab> {
 
   Future<void> byName() async {
     if (nameC.text.trim().isEmpty) return;
-    setState(() { busy = true; result = '查询中…'; });
+    setState(() {
+      busy = true;
+      result = '查询中…';
+    });
     try {
       final r = await ApiService.queryDrugByName(nameC.text.trim());
-      result = '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
-    } catch (e) { result = '查询失败：${ApiService.friendly(e)}'; }
+      result =
+          '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
+    } catch (e) {
+      result = '查询失败：${ApiService.friendly(e)}';
+    }
     if (mounted) setState(() => busy = false);
   }
 
   Future<void> byPhoto() async {
     if (busy) return;
-    setState(() { busy = true; result = '识别中…'; });
+    setState(() {
+      busy = true;
+      result = '识别中…';
+    });
     try {
       final f = await ImagePicker().pickImage(source: ImageSource.camera);
       if (f == null) return;
-      final r = await ApiService.queryDrugByImage(await f.readAsBytes(), fileName: f.name);
-      result = '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
-    } catch (e) { result = '识别失败：${ApiService.friendly(e)}'; }
-    finally { if (mounted) setState(() => busy = false); }
+      final r = await ApiService.queryDrugByImage(await f.readAsBytes(),
+          fileName: f.name);
+      result =
+          '识别：${r['ocr_text'] ?? ''}\n\n解读：${r['explanation'] ?? r}\n\n${r['disclaimer'] ?? ApiService.disclaimer}';
+    } catch (e) {
+      result = '识别失败：${ApiService.friendly(e)}';
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(16), children: [
-      const Text('查药助手', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+      const Text('查药助手',
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
       const SizedBox(height: 8),
-      TextField(controller: nameC, decoration: const InputDecoration(labelText: '输入药名', border: OutlineInputBorder())),
+      TextField(
+          controller: nameC,
+          decoration: const InputDecoration(
+              labelText: '输入药名', border: OutlineInputBorder())),
       const SizedBox(height: 12),
-      ElevatedButton(onPressed: busy ? null : byName, child: const Text('输药名查询')),
+      ElevatedButton(
+          onPressed: busy ? null : byName, child: const Text('输药名查询')),
       const SizedBox(height: 8),
-      OutlinedButton.icon(onPressed: busy ? null : byPhoto, icon: const Icon(Icons.camera_alt), label: const Text('拍照识别药盒')),
+      OutlinedButton.icon(
+          onPressed: busy ? null : byPhoto,
+          icon: const Icon(Icons.camera_alt),
+          label: const Text('拍照识别药盒')),
       const SizedBox(height: 12),
-      Card(child: Padding(padding: const EdgeInsets.all(12), child: Text(result.isEmpty ? '结果显示在这里' : result, style: const TextStyle(fontSize: 20)))),
+      Card(
+          child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(result.isEmpty ? '结果显示在这里' : result,
+                  style: const TextStyle(fontSize: 20)))),
     ]);
   }
 }
@@ -194,9 +452,15 @@ class _SymptomTabState extends State<SymptomTab> {
   bool busy = false;
 
   @override
-  void initState() { super.initState(); loadHistory(); }
+  void initState() {
+    super.initState();
+    loadHistory();
+  }
+
   Future<void> loadHistory() async {
-    try { history = await ApiService.symptomHistory(mine: widget.mine); } catch (_) {}
+    try {
+      history = await ApiService.symptomHistory(mine: widget.mine);
+    } catch (_) {}
     if (mounted) setState(() {});
   }
 
@@ -214,7 +478,8 @@ class _SymptomTabState extends State<SymptomTab> {
       loadHistory();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('提交失败：${ApiService.friendly(e)}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('提交失败：${ApiService.friendly(e)}')));
       }
     }
     if (mounted) setState(() => busy = false);
@@ -223,30 +488,64 @@ class _SymptomTabState extends State<SymptomTab> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(16), children: [
-      const Text('症状自查', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-      TextField(controller: c, maxLines: 3, decoration: const InputDecoration(hintText: '描述症状，如最近总是头晕…', border: OutlineInputBorder())),
+      const Text('症状自查',
+          style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+      TextField(
+          controller: c,
+          maxLines: 3,
+          decoration: const InputDecoration(
+              hintText: '描述症状，如最近总是头晕…', border: OutlineInputBorder())),
       const SizedBox(height: 12),
       ElevatedButton(onPressed: submit, child: Text(busy ? '分析中…' : '提交自查')),
       if (last != null) ...[
         const SizedBox(height: 12),
         Card(
-          color: riskColor((last!['risk'] ?? 'green').toString()).withOpacity(0.12),
-          child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('风险：${last!['risk']}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: riskColor((last!['risk'] ?? '').toString()))),
-            const SizedBox(height: 8),
-            Text((last!['advice_text'] ?? '').toString(), style: const TextStyle(fontSize: 20)),
-            if ((last!['risk'] ?? '') == 'red') const Text('请立即拨打120', style: TextStyle(fontSize: 22, color: Colors.red, fontWeight: FontWeight.bold)),
-            if ((last!['risk'] ?? '') == 'yellow') const Text('建议尽快就医', style: TextStyle(fontSize: 20, color: Colors.orange)),
-          ])),
+          color: riskColor((last!['risk'] ?? 'green').toString())
+              .withOpacity(0.12),
+          child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('风险：${last!['risk']}',
+                        style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color:
+                                riskColor((last!['risk'] ?? '').toString()))),
+                    const SizedBox(height: 8),
+                    Text((last!['advice_text'] ?? '').toString(),
+                        style: const TextStyle(fontSize: 20)),
+                    if ((last!['risk'] ?? '') == 'red')
+                      const Text('请立即拨打120',
+                          style: TextStyle(
+                              fontSize: 22,
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold)),
+                    if ((last!['risk'] ?? '') == 'yellow')
+                      const Text('建议尽快就医',
+                          style: TextStyle(fontSize: 20, color: Colors.orange)),
+                  ])),
         ),
       ],
       const SizedBox(height: 12),
-      const Text('历史记录', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+      const Text('历史记录',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
       ...history.map((e) {
         final m = Map<String, dynamic>.from(e as Map);
-        return Card(child: ListTile(title: Text((m['input_text'] ?? '').toString(), style: const TextStyle(fontSize: 18)), subtitle: Text((m['advice_text'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis), trailing: Icon(Icons.circle, color: riskColor((m['risk'] ?? 'green').toString()))));
+        return Card(
+            child: ListTile(
+                title: Text((m['input_text'] ?? '').toString(),
+                    style: const TextStyle(fontSize: 18)),
+                subtitle: Text((m['advice_text'] ?? '').toString(),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                trailing: Icon(Icons.circle,
+                    color: riskColor((m['risk'] ?? 'green').toString()))));
       }),
-      const Padding(padding: EdgeInsets.only(top: 8), child: Text(ApiService.disclaimer, style: TextStyle(fontSize: 14, color: Colors.grey))),
+      const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(ApiService.disclaimer,
+              style: TextStyle(fontSize: 14, color: Colors.grey))),
     ]);
   }
 }
@@ -266,72 +565,174 @@ class _ReportTabState extends State<ReportTab> {
   String? error;
 
   @override
-  void initState() { super.initState(); refresh(); }
+  void initState() {
+    super.initState();
+    refresh();
+  }
 
   Future<void> refresh() async {
     if (!mounted) return;
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final result = await ApiService.reportList(mine: widget.mine);
       if (mounted) setState(() => items = result);
     } catch (e) {
       if (mounted) setState(() => error = ApiService.friendly(e));
-    } finally { if (mounted) setState(() => loading = false); }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   Future<void> upload(ImageSource source) async {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final file = await ImagePicker().pickImage(source: source, maxWidth: 2000);
+      final file =
+          await ImagePicker().pickImage(source: source, maxWidth: 2000);
       if (file == null) return;
-      await ApiService.uploadReport(await file.readAsBytes(), file.name, mine: widget.mine);
+      await ApiService.uploadReport(await file.readAsBytes(), file.name,
+          mine: widget.mine);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('报告已上传并完成解读')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('报告已上传并完成解读')));
       await refresh();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
-    } finally { if (mounted) setState(() => busy = false); }
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _deleteReport(Map<String, dynamic> item) async {
+    final id = (item['id'] as num?)?.toInt();
+    if (id == null || !await showDeleteConfirm(context, '这份报告')) return;
+    try {
+      await ApiService.deleteReport(id);
+      await refresh();
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
+    }
   }
 
   @override
   Widget build(BuildContext context) => RefreshIndicator(
-    color: HealthRecordStyle.primary,
-    onRefresh: refresh,
-    child: ListView(physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.fromLTRB(20, 0, 20, 24), children: [
-      Row(children: [
-        Expanded(child: HealthRecordStyle.button(busy ? '处理中…' : '拍照上传', Icons.camera_alt_outlined, busy ? null : () => upload(ImageSource.camera))),
-        const SizedBox(width: 12),
-        Expanded(child: HealthRecordStyle.button('相册上传', Icons.photo_library_outlined, busy ? null : () => upload(ImageSource.gallery))),
-      ]),
-      const SizedBox(height: 16),
-      if (busy) const Padding(padding: EdgeInsets.only(bottom: 16), child: Column(children: [
-        LinearProgressIndicator(color: HealthRecordStyle.primary, backgroundColor: HealthRecordStyle.soft),
-        SizedBox(height: 8),
-        Text('正在识别并解读报告，请稍候', style: TextStyle(color: HealthRecordStyle.secondary)),
-      ])),
-      HealthRecordStyle.panel(loading ? const SizedBox(height: 190, child: Center(child: CircularProgressIndicator(color: HealthRecordStyle.primary)))
-        : error != null ? Column(children: [Text('加载失败：$error'), HealthRecordStyle.button('重试', Icons.refresh, refresh)])
-        : items.isEmpty ? HealthRecordStyle.empty(Icons.description_outlined, '暂无报告信息')
-        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (final item in items) ...[
-            Text('${item['created_at'] ?? ''}'.replaceAll('T', ' '), style: const TextStyle(fontSize: 16, color: HealthRecordStyle.secondary)),
-            const SizedBox(height: 8),
-            ReportMetrics(report: Map<String, dynamic>.from(item as Map)),
-            const SizedBox(height: 12),
-            Text((item['advice_text'] ?? '').toString().trim().isEmpty ? '暂无解读建议' : item['advice_text'].toString(),
-              style: const TextStyle(fontSize: 19, height: 1.6, color: HealthRecordStyle.ink)),
-            const SizedBox(height: 12),
-            if ((item['image_url'] ?? '').toString().isNotEmpty)
-              TextButton.icon(
-                onPressed: () => showReportOriginal(context, item['image_url'].toString()),
-                icon: const Icon(Icons.image_outlined), label: const Text('查看原图')),
-            const Text(ApiService.disclaimer, style: TextStyle(fontSize: 15, color: HealthRecordStyle.secondary)),
-            const Divider(height: 32, color: HealthRecordStyle.border),
-          ],
-        ])),
-    ]),
-  );
+        color: HealthRecordStyle.primary,
+        onRefresh: refresh,
+        child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            children: [
+              Row(children: [
+                Expanded(
+                    child: HealthRecordStyle.button(
+                        busy ? '处理中…' : '拍照上传',
+                        Icons.camera_alt_outlined,
+                        busy ? null : () => upload(ImageSource.camera))),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: HealthRecordStyle.button(
+                        '相册上传',
+                        Icons.photo_library_outlined,
+                        busy ? null : () => upload(ImageSource.gallery))),
+              ]),
+              const SizedBox(height: 16),
+              if (busy)
+                const Padding(
+                    padding: EdgeInsets.only(bottom: 16),
+                    child: Column(children: [
+                      LinearProgressIndicator(
+                          color: HealthRecordStyle.primary,
+                          backgroundColor: HealthRecordStyle.soft),
+                      SizedBox(height: 8),
+                      Text('正在识别并解读报告，请稍候',
+                          style: TextStyle(color: HealthRecordStyle.secondary)),
+                    ])),
+              HealthRecordStyle.panel(loading
+                  ? const SizedBox(
+                      height: 190,
+                      child: Center(
+                          child: CircularProgressIndicator(
+                              color: HealthRecordStyle.primary)))
+                  : error != null
+                      ? Column(children: [
+                          Text('加载失败：$error'),
+                          HealthRecordStyle.button('重试', Icons.refresh, refresh)
+                        ])
+                      : items.isEmpty
+                          ? HealthRecordStyle.empty(
+                              Icons.description_outlined, '暂无报告信息')
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                  for (final item in items)
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onLongPress: () => _deleteReport(
+                                          Map<String, dynamic>.from(
+                                              item as Map)),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              '${item['created_at'] ?? ''}'
+                                                  .replaceAll('T', ' '),
+                                              style: const TextStyle(
+                                                  fontSize: 16,
+                                                  color: HealthRecordStyle
+                                                      .secondary)),
+                                          const SizedBox(height: 8),
+                                          ReportMetrics(
+                                              report: Map<String, dynamic>.from(
+                                                  item as Map)),
+                                          const SizedBox(height: 12),
+                                          Text(
+                                              (item['advice_text'] ?? '')
+                                                      .toString()
+                                                      .trim()
+                                                      .isEmpty
+                                                  ? '暂无解读建议'
+                                                  : item['advice_text']
+                                                      .toString(),
+                                              style: const TextStyle(
+                                                  fontSize: 19,
+                                                  height: 1.6,
+                                                  color:
+                                                      HealthRecordStyle.ink)),
+                                          const SizedBox(height: 12),
+                                          if ((item['image_url'] ?? '')
+                                              .toString()
+                                              .isNotEmpty)
+                                            TextButton.icon(
+                                                onPressed: () =>
+                                                    showReportOriginal(
+                                                        context,
+                                                        item['image_url']
+                                                            .toString()),
+                                                icon: const Icon(
+                                                    Icons.image_outlined),
+                                                label: const Text('查看原图')),
+                                          const Text(ApiService.disclaimer,
+                                              style: TextStyle(
+                                                  fontSize: 15,
+                                                  color: HealthRecordStyle
+                                                      .secondary)),
+                                          const Divider(
+                                              height: 32,
+                                              color: HealthRecordStyle.border),
+                                        ],
+                                      ),
+                                    ),
+                                ])),
+            ]),
+      );
 }
 
 /// Day5 问事助手：柔和风 UI（AfuElderChatPage），逻辑复用原有 send/语音/天气。
@@ -357,12 +758,16 @@ class _ChatTabState extends State<ChatTab> {
   void initState() {
     super.initState();
     _speech = AnswerSpeech(onError: (text) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-    })..addListener(_speechChanged);
+      if (mounted)
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(text)));
+    })
+      ..addListener(_speechChanged);
     _loadScale();
     _loadHistory();
     chatScale.addListener(_applyScale);
   }
+
   Future<void> _loadHistory() async {
     final id = await ApiService.getUserId();
     final role = await ApiService.getRole() ?? 'unknown';
@@ -387,17 +792,21 @@ class _ChatTabState extends State<ChatTab> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(key, jsonEncode(stable));
   }
+
   Future<void> _loadScale() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       chatScale.value = prefs.getDouble('chat_text_scale') ?? 1.0;
     } catch (_) {}
   }
+
   void _applyScale() {
     if (mounted) setState(() => fontBig = chatScale.value > 1.05);
   }
 
-  void _speechChanged() { if (mounted) setState(() {}); }
+  void _speechChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
@@ -417,7 +826,13 @@ class _ChatTabState extends State<ChatTab> {
     final role = await ApiService.getRole();
     if (!mounted) return;
     if (role == 'family') {
-      HubNav.go(0, i == 0 ? 'mine_vitals' : i == 1 ? 'mine_reports' : 'mine_consults');
+      HubNav.go(
+          0,
+          i == 0
+              ? 'mine_vitals'
+              : i == 1
+                  ? 'mine_reports'
+                  : 'mine_consults');
       return;
     }
     if (i == 0) {
@@ -426,15 +841,45 @@ class _ChatTabState extends State<ChatTab> {
       return;
     }
     Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => HealthRecordPage(child: i == 1 ? const ReportTab() : const ConsultsTab())));
+        builder: (_) => HealthRecordPage(
+            child: i == 1 ? const ReportTab() : const ConsultsTab())));
   }
 
   /// 症状关键词：命中则走专用自查接口并展示风险等级，而非普通问答。
   static const _symptomKeys = [
-    '头晕', '头痛', '头疼', '发烧', '发热', '咳嗽', '胸闷', '心慌', '心悸',
-    '气短', '腹痛', '肚子疼', '胃疼', '恶心', '呕吐', '腹泻', '失眠',
-    '乏力', '疼痛', '麻木', '发麻', '水肿', '感冒', '咽痛', '牙疼',
-    '腰疼', '腿疼', '背疼', '不舒服', '难受', '眩晕', '耳鸣', '皮疹',
+    '头晕',
+    '头痛',
+    '头疼',
+    '发烧',
+    '发热',
+    '咳嗽',
+    '胸闷',
+    '心慌',
+    '心悸',
+    '气短',
+    '腹痛',
+    '肚子疼',
+    '胃疼',
+    '恶心',
+    '呕吐',
+    '腹泻',
+    '失眠',
+    '乏力',
+    '疼痛',
+    '麻木',
+    '发麻',
+    '水肿',
+    '感冒',
+    '咽痛',
+    '牙疼',
+    '腰疼',
+    '腿疼',
+    '背疼',
+    '不舒服',
+    '难受',
+    '眩晕',
+    '耳鸣',
+    '皮疹',
   ];
 
   bool _looksLikeSymptom(String t) {
@@ -465,9 +910,18 @@ class _ChatTabState extends State<ChatTab> {
         try {
           final r = await ApiService.symptomCheck(t);
           final risk = (r['risk'] ?? 'green').toString();
-          final tag = risk == 'red' ? '高风险' : risk == 'yellow' ? '中风险' : '低风险';
-          final tail = risk == 'red' ? '\n请立即拨打120' : risk == 'yellow' ? '\n建议尽快就医' : '';
-          answer = '【症状自查·$tag】\n${r['advice_text'] ?? ''}$tail\n${r['disclaimer'] ?? ApiService.disclaimer}';
+          final tag = risk == 'red'
+              ? '高风险'
+              : risk == 'yellow'
+                  ? '中风险'
+                  : '低风险';
+          final tail = risk == 'red'
+              ? '\n请立即拨打120'
+              : risk == 'yellow'
+                  ? '\n建议尽快就医'
+                  : '';
+          answer =
+              '【症状自查·$tag】\n${r['advice_text'] ?? ''}$tail\n${r['disclaimer'] ?? ApiService.disclaimer}';
         } catch (_) {
           // 同一条提问回退到普通问答，不重复插入消息，也不被 busy 挡住。
           answer = _formatChat(await ApiService.chat(t));
@@ -489,9 +943,13 @@ class _ChatTabState extends State<ChatTab> {
   String _formatChat(Map<String, dynamic> result) {
     final raw = (result['answer'] ?? '').toString();
     if (re_step.hasMatch(raw) || result['steps'] is! List) return raw;
-    final missing = (result['steps'] as List).map((s) => s.toString())
-        .where((s) => s.isNotEmpty && !raw.contains(s)).toList();
-    return missing.isEmpty ? raw : '$raw\n\n步骤：\n${missing.map((s) => '• $s').join('\n')}';
+    final missing = (result['steps'] as List)
+        .map((s) => s.toString())
+        .where((s) => s.isNotEmpty && !raw.contains(s))
+        .toList();
+    return missing.isEmpty
+        ? raw
+        : '$raw\n\n步骤：\n${missing.map((s) => '• $s').join('\n')}';
   }
 
   SpeechToText? _activeStt;
@@ -509,23 +967,31 @@ class _ChatTabState extends State<ChatTab> {
       stt.errorListener = (e) {
         if (mounted) {
           setState(() => listening = false);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-            e.errorMsg.contains('permission') ? '请允许麦克风权限后重试' : '语音识别中断，请重试或手动输入')));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(e.errorMsg.contains('permission')
+                  ? '请允许麦克风权限后重试'
+                  : '语音识别中断，请重试或手动输入')));
         }
       };
       stt.statusListener = (status) {
-        if (mounted && (status == SpeechToText.doneStatus || status == SpeechToText.notListeningStatus)) {
+        if (mounted &&
+            (status == SpeechToText.doneStatus ||
+                status == SpeechToText.notListeningStatus)) {
           setState(() => listening = false);
         }
       };
-      final ok = await stt.initialize(onError: stt.errorListener, onStatus: stt.statusListener)
+      final ok = await stt
+          .initialize(onError: stt.errorListener, onStatus: stt.statusListener)
           .timeout(const Duration(seconds: 8), onTimeout: () => false);
       if (!mounted || generation != _voiceGeneration) return;
       if (!ok) throw StateError('语音识别不可用');
       String? locale;
       final locales = await stt.locales();
       for (final l in locales) {
-        if (l.localeId.startsWith('zh')) { locale = l.localeId; break; }
+        if (l.localeId.startsWith('zh')) {
+          locale = l.localeId;
+          break;
+        }
       }
       if (!mounted || generation != _voiceGeneration) return;
       _autoSend = autoSend;
@@ -534,12 +1000,17 @@ class _ChatTabState extends State<ChatTab> {
         localeId: locale,
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 5),
-        listenOptions: SpeechListenOptions(partialResults: true, cancelOnError: true, listenMode: ListenMode.dictation),
+        listenOptions: SpeechListenOptions(
+            partialResults: true,
+            cancelOnError: true,
+            listenMode: ListenMode.dictation),
         onResult: (res) {
           if (!mounted || generation != _voiceGeneration) return;
           final words = res.recognizedWords.trim();
           if (words.isEmpty) return;
-          inputC.value = TextEditingValue(text: words, selection: TextSelection.collapsed(offset: words.length));
+          inputC.value = TextEditingValue(
+              text: words,
+              selection: TextSelection.collapsed(offset: words.length));
           if (_autoSend && res.finalResult) {
             _autoSend = false;
             unawaited(send(words));
@@ -549,14 +1020,19 @@ class _ChatTabState extends State<ChatTab> {
     } catch (_) {
       if (mounted) {
         setState(() => listening = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('语音不可用，请检查麦克风权限和系统语音识别服务')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('语音不可用，请检查麦克风权限和系统语音识别服务')));
       }
-    } finally { if (mounted) setState(() => _voiceStarting = false); }
+    } finally {
+      if (mounted) setState(() => _voiceStarting = false);
+    }
   }
 
   Future<void> stopHoldToTalk() async {
     if (_voiceStarting) ++_voiceGeneration;
-    try { await _activeStt?.stop(); } catch (_) {}
+    try {
+      await _activeStt?.stop();
+    } catch (_) {}
     if (mounted && listening) setState(() => listening = false);
   }
 
@@ -577,11 +1053,14 @@ class _ChatTabState extends State<ChatTab> {
       speechPaused: _speech.paused,
       onToggleSpeech: (i) {
         if (i >= 0 && i < msgs.length && msgs[i]['role'] == 'ai') {
-          unawaited(stopHoldToTalk().then((_) => _speech.toggle(i, msgs[i]['text'] ?? '')));
+          unawaited(stopHoldToTalk()
+              .then((_) => _speech.toggle(i, msgs[i]['text'] ?? '')));
         }
       },
       onQuickEntry: onQuick,
-      onTipMore: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
+      onTipMore: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) =>
+              const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
       textScale: 1.0,
       onSend: send,
       onVoiceStart: startHoldToTalk,
@@ -599,7 +1078,8 @@ class _ChatTabState extends State<ChatTab> {
       },
       header: ValueListenableBuilder<bool>(
         valueListenable: tipIsWeather,
-        builder: (_, isWx, __) => isWx ? const SizedBox.shrink() : const WeatherCard(),
+        builder: (_, isWx, __) =>
+            isWx ? const SizedBox.shrink() : const WeatherCard(),
       ),
     );
   }
@@ -626,7 +1106,8 @@ class _WeatherCardState extends State<WeatherCard> {
           desiredAccuracy: LocationAccuracy.low,
           timeLimit: const Duration(seconds: 8),
         );
-        final d = await ApiService.weatherRemind(lat: pos.latitude, lon: pos.longitude);
+        final d = await ApiService.weatherRemind(
+            lat: pos.latitude, lon: pos.longitude);
         if (_unconfigured(d)) return null;
         return _Weather(data: d, fromGps: true);
       }
@@ -659,8 +1140,10 @@ class _WeatherCardState extends State<WeatherCard> {
         return Card(
           margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: ListTile(
-            leading: const Icon(Icons.cloud, size: 36, color: AppColors.primary),
-            title: Text('${d['city'] ?? ''} ${d['text'] ?? ''}', style: AppText.body),
+            leading:
+                const Icon(Icons.cloud, size: 36, color: AppColors.primary),
+            title: Text('${d['city'] ?? ''} ${d['text'] ?? ''}',
+                style: AppText.body),
             subtitle: Text(
               '${(d['tip'] ?? '').toString()}${w.fromGps ? '' : '（定位失败，显示武汉）'}',
               style: AppText.secondary,

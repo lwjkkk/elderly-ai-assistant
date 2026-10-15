@@ -23,6 +23,7 @@ import 'me_tab.dart';
 /// 问事页字号总线：设置页调节后问事页实时跟随。
 /// 全局字号总线：小1.0 / 中1.15 / 大1.3，main 的 MediaQuery 全局跟随。
 final chatScale = ValueNotifier<double>(1.0);
+
 /// 消息通知总开关：关闭后 App 内提醒横幅不再弹出。
 final notifyEnabled = ValueNotifier<bool>(true);
 
@@ -78,7 +79,11 @@ class HealthTip {
   final String body;
   final IconData icon;
   final List<String> tags;
-  const HealthTip({required this.title, required this.body, required this.icon, required this.tags});
+  const HealthTip(
+      {required this.title,
+      required this.body,
+      required this.icon,
+      required this.tags});
 }
 
 /// 预留的后端拉取位置：接口就绪后把本函数体换成 dio GET 解析即可，
@@ -148,7 +153,8 @@ class _HealthHubTabState extends State<HealthHubTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = (s == 'news' ? _newsKey : _topKey).currentContext;
       if (ctx != null && mounted) {
-        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), alignment: 0.05);
+        Scrollable.ensureVisible(ctx,
+            duration: const Duration(milliseconds: 400), alignment: 0.05);
       }
     });
   }
@@ -167,14 +173,18 @@ class _HealthHubTabState extends State<HealthHubTab> {
   }
 
   void _open(BuildContext context, String title, Widget page) {
-    Navigator.of(context).push(afuFadeRoute(AfuSubPage(title: title, child: page)));
+    Navigator.of(context)
+        .push(afuFadeRoute(AfuSubPage(title: title, child: page)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FD),
-      appBar: AppBar(title: const Text('健康百事'), backgroundColor: const Color(0xFFF7F9FD), scrolledUnderElevation: 0),
+      appBar: AppBar(
+          title: const Text('健康百事'),
+          backgroundColor: const Color(0xFFF7F9FD),
+          scrolledUnderElevation: 0),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async => setState(() => _tips = fetchHealthTips()),
@@ -250,7 +260,8 @@ class _HealthHubTabState extends State<HealthHubTab> {
                 ],
               ),
               const SizedBox(height: AfuSpace.section),
-              _SectionTitle(key: _newsKey, icon: Icons.newspaper_outlined, text: '健康科普'),
+              _SectionTitle(
+                  key: _newsKey, icon: Icons.newspaper_outlined, text: '健康科普'),
               const SizedBox(height: 8),
               FutureBuilder<List<HealthTip>>(
                 future: _tips,
@@ -262,7 +273,8 @@ class _HealthHubTabState extends State<HealthHubTab> {
                       _TipSkeleton(),
                     ]);
                   }
-                  return Column(children: [for (final t in s.data!) _TipCard(tip: t)]);
+                  return Column(
+                      children: [for (final t in s.data!) _TipCard(tip: t)]);
                 },
               ),
               const Padding(
@@ -293,23 +305,33 @@ class _CareBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2D9F5)),
         boxShadow: [
-          BoxShadow(color: const Color(0xFFA58FD6).withOpacity(0.10), blurRadius: 14, offset: const Offset(0, 4)),
+          BoxShadow(
+              color: const Color(0xFFA58FD6).withOpacity(0.10),
+              blurRadius: 14,
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Row(children: [
         Container(
           width: 60,
           height: 60,
-          decoration: const BoxDecoration(color: Color(0xFFEFEAFA), shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+              color: Color(0xFFEFEAFA), shape: BoxShape.circle),
           child: const Icon(Icons.favorite, size: 32, color: Color(0xFFA58FD6)),
         ),
         const SizedBox(width: 12),
         const Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('家属关怀', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: Color(0xFF222222))),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('家属关怀',
+                style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF222222))),
             SizedBox(height: 4),
             Text('家属已绑定，健康记录可一键分享给家人',
-                style: TextStyle(fontSize: 18, color: Color(0xFF555555), height: 1.4)),
+                style: TextStyle(
+                    fontSize: 18, color: Color(0xFF555555), height: 1.4)),
           ]),
         ),
         const SizedBox(width: 8),
@@ -322,7 +344,11 @@ class _CareBanner extends StatelessWidget {
               color: const Color(0xFFA58FD6),
               borderRadius: BorderRadius.circular(22),
             ),
-            child: const Text('分享记录', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.w700)),
+            child: const Text('分享记录',
+                style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700)),
           ),
         ),
       ]),
@@ -357,30 +383,32 @@ class _FuncCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
-          child: Icon(icon, size: 27, color: main),
-        ),
-        const SizedBox(height: 6),
-        Text(title, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
-        Text(subtitle, style: AfuElderText.secondary.copyWith(fontSize: 17)),
-        const SizedBox(height: 6),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          decoration: BoxDecoration(
-            color: main.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: SizedBox(
-            height: 30,
-            width: double.infinity,
-            child: Opacity(opacity: 0.85, child: art),
-          ),
-        ),
-      ]),
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+              child: Icon(icon, size: 27, color: main),
+            ),
+            const SizedBox(height: 6),
+            Text(title,
+                style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+            Text(subtitle,
+                style: AfuElderText.secondary.copyWith(fontSize: 17)),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: main.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: SizedBox(
+                height: 30,
+                width: double.infinity,
+                child: Opacity(opacity: 0.85, child: art),
+              ),
+            ),
+          ]),
     );
   }
 }
@@ -411,23 +439,28 @@ class _DrugPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
     canvas.drawRRect(
-      RRect.fromLTRBR(w * 0.04, h * 0.25, w * 0.38, h * 0.95, const Radius.circular(6)),
+      RRect.fromLTRBR(
+          w * 0.04, h * 0.25, w * 0.38, h * 0.95, const Radius.circular(6)),
       _Stroke.fill(color.withOpacity(0.18)),
     );
-    canvas.drawLine(Offset(w * 0.10, h * 0.45), Offset(w * 0.32, h * 0.45), _Stroke.of(color, 3));
-    canvas.drawLine(Offset(w * 0.10, h * 0.65), Offset(w * 0.26, h * 0.65), _Stroke.of(color, 3));
+    canvas.drawLine(Offset(w * 0.10, h * 0.45), Offset(w * 0.32, h * 0.45),
+        _Stroke.of(color, 3));
+    canvas.drawLine(Offset(w * 0.10, h * 0.65), Offset(w * 0.26, h * 0.65),
+        _Stroke.of(color, 3));
     canvas.drawRRect(
-      RRect.fromLTRBR(w * 0.44, h * 0.18, w * 0.96, h * 0.70, const Radius.circular(10)),
+      RRect.fromLTRBR(
+          w * 0.44, h * 0.18, w * 0.96, h * 0.70, const Radius.circular(10)),
       _Stroke.of(color, 2.5),
     );
-    canvas.drawCircle(Offset(w * 0.78, h * 0.44), h * 0.12, _Stroke.of(color, 2.5));
-    canvas.drawLine(Offset(w * 0.84, h * 0.52), Offset(w * 0.90, h * 0.62), _Stroke.of(color, 3));
+    canvas.drawCircle(
+        Offset(w * 0.78, h * 0.44), h * 0.12, _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.84, h * 0.52), Offset(w * 0.90, h * 0.62),
+        _Stroke.of(color, 3));
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 用药：时钟 + 药瓶 + 打卡进度条。
 class _MedArt extends StatelessWidget {
@@ -451,20 +484,23 @@ class _MedPainter extends CustomPainter {
     canvas.drawLine(c, c + Offset(0, -r * 0.6), _Stroke.of(color, 2.5));
     canvas.drawLine(c, c + Offset(r * 0.5, r * 0.25), _Stroke.of(color, 2.5));
     canvas.drawRRect(
-      RRect.fromLTRBR(w * 0.38, h * 0.18, w * 0.58, h * 0.72, const Radius.circular(5)),
+      RRect.fromLTRBR(
+          w * 0.38, h * 0.18, w * 0.58, h * 0.72, const Radius.circular(5)),
       _Stroke.fill(color.withOpacity(0.18)),
     );
-    canvas.drawLine(Offset(w * 0.48, h * 0.10), Offset(w * 0.48, h * 0.18), _Stroke.of(color, 3));
+    canvas.drawLine(Offset(w * 0.48, h * 0.10), Offset(w * 0.48, h * 0.18),
+        _Stroke.of(color, 3));
     final y = h * 0.88;
-    canvas.drawLine(Offset(w * 0.64, y), Offset(w * 0.96, y), _Stroke.of(color.withOpacity(0.3), 5));
-    canvas.drawLine(Offset(w * 0.64, y), Offset(w * 0.86, y), _Stroke.of(color, 5));
+    canvas.drawLine(Offset(w * 0.64, y), Offset(w * 0.96, y),
+        _Stroke.of(color.withOpacity(0.3), 5));
+    canvas.drawLine(
+        Offset(w * 0.64, y), Offset(w * 0.86, y), _Stroke.of(color, 5));
     canvas.drawCircle(Offset(w * 0.86, y), 4, _Stroke.fill(color));
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 体征：淡色折线 + 数据点。
 class _VitalArt extends StatelessWidget {
@@ -482,7 +518,14 @@ class _VitalPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
-    final frac = [(0.05, 0.75), (0.22, 0.45), (0.40, 0.60), (0.58, 0.25), (0.76, 0.45), (0.95, 0.20)];
+    final frac = [
+      (0.05, 0.75),
+      (0.22, 0.45),
+      (0.40, 0.60),
+      (0.58, 0.25),
+      (0.76, 0.45),
+      (0.95, 0.20)
+    ];
     final pts = [for (final f in frac) Offset(w * f.$1, h * f.$2)];
     final path = Path()..moveTo(pts.first.dx, pts.first.dy);
     for (final q in pts.skip(1)) {
@@ -498,7 +541,6 @@ class _VitalPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 自查：简易仪表盘。
 class _GaugeArt extends StatelessWidget {
@@ -518,18 +560,20 @@ class _GaugePainter extends CustomPainter {
     final w = size.width, h = size.height;
     final c = Offset(w * 0.5, h * 0.92);
     final r = w * 0.38 < h * 0.85 ? w * 0.38 : h * 0.85;
-    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159, false, _Stroke.of(color.withOpacity(0.35), 6));
-    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159 * 0.65, false, _Stroke.of(color, 6));
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159, 3.14159,
+        false, _Stroke.of(color.withOpacity(0.35), 6));
+    canvas.drawArc(Rect.fromCircle(center: c, radius: r), 3.14159,
+        3.14159 * 0.65, false, _Stroke.of(color, 6));
     const a = 3.14159 + 3.14159 * 0.65;
     const dx = -0.454, dy = -0.891;
-    canvas.drawLine(c, c + Offset(r * 0.65 * dx, r * 0.65 * dy), _Stroke.of(color, 3.5));
+    canvas.drawLine(
+        c, c + Offset(r * 0.65 * dx, r * 0.65 * dy), _Stroke.of(color, 3.5));
     canvas.drawCircle(c, 4, _Stroke.fill(color));
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 报告：文档 + 数据示意线。
 class _ReportArt extends StatelessWidget {
@@ -548,19 +592,22 @@ class _ReportPainter2 extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
     canvas.drawRRect(
-      RRect.fromLTRBR(w * 0.05, h * 0.08, w * 0.42, h * 0.94, const Radius.circular(6)),
+      RRect.fromLTRBR(
+          w * 0.05, h * 0.08, w * 0.42, h * 0.94, const Radius.circular(6)),
       _Stroke.fill(color.withOpacity(0.15)),
     );
     for (var i = 0; i < 3; i++) {
       final y = h * (0.28 + i * 0.22);
-      canvas.drawLine(Offset(w * 0.11, y), Offset(w * 0.36, y), _Stroke.of(color, 3));
+      canvas.drawLine(
+          Offset(w * 0.11, y), Offset(w * 0.36, y), _Stroke.of(color, 3));
     }
     final bars = [0.5, 0.8, 0.4, 0.65];
     for (var i = 0; i < bars.length; i++) {
       final x = w * (0.50 + i * 0.125);
       final bh = (h * 0.78) * bars[i];
       canvas.drawRRect(
-        RRect.fromLTRBR(x, h * 0.86 - bh, x + w * 0.075, h * 0.86, const Radius.circular(3)),
+        RRect.fromLTRBR(x, h * 0.86 - bh, x + w * 0.075, h * 0.86,
+            const Radius.circular(3)),
         _Stroke.fill(color.withOpacity(0.45)),
       );
     }
@@ -569,7 +616,6 @@ class _ReportPainter2 extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 咨询：麦克风 + 波形。
 class _WaveArt extends StatelessWidget {
@@ -588,23 +634,26 @@ class _WavePainter2 extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width, h = size.height;
     canvas.drawRRect(
-        RRect.fromLTRBR(w * 0.06, h * 0.12, w * 0.22, h * 0.70, const Radius.circular(7)),
+        RRect.fromLTRBR(
+            w * 0.06, h * 0.12, w * 0.22, h * 0.70, const Radius.circular(7)),
         _Stroke.of(color, 2.5));
-    canvas.drawLine(Offset(w * 0.14, h * 0.70), Offset(w * 0.14, h * 0.90), _Stroke.of(color, 2.5));
-    canvas.drawLine(Offset(w * 0.07, h * 0.90), Offset(w * 0.21, h * 0.90), _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.14, h * 0.70), Offset(w * 0.14, h * 0.90),
+        _Stroke.of(color, 2.5));
+    canvas.drawLine(Offset(w * 0.07, h * 0.90), Offset(w * 0.21, h * 0.90),
+        _Stroke.of(color, 2.5));
     final midY = h * 0.5;
     final amps = [0.10, 0.22, 0.34, 0.22, 0.40, 0.22, 0.30, 0.16, 0.10, 0.06];
     for (var i = 0; i < amps.length; i++) {
       final x = w * (0.30 + i * 0.065);
       final a = h * amps[i];
-      canvas.drawLine(Offset(x, midY - a), Offset(x, midY + a), _Stroke.of(color.withOpacity(0.6), 2.5));
+      canvas.drawLine(Offset(x, midY - a), Offset(x, midY + a),
+          _Stroke.of(color.withOpacity(0.6), 2.5));
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
 
 /// 科普图文卡：左圆图标 + 右标题说明 + 底部浅色标签。
 class _TipCard extends StatelessWidget {
@@ -634,11 +683,15 @@ class _TipCard extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(tip.title, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text(tip.body, style: AfuElderText.secondary),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(tip.title,
+                        style: AfuElderText.body
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(tip.body, style: AfuElderText.secondary),
+                  ]),
             ),
           ]),
           const SizedBox(height: 10),
@@ -647,12 +700,15 @@ class _TipCard extends StatelessWidget {
             children: [
               for (final tag in tip.tags)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE8EFFD),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Text(tag, style: const TextStyle(fontSize: 16, color: AfuColors.primaryDeep)),
+                  child: Text(tag,
+                      style: const TextStyle(
+                          fontSize: 16, color: AfuColors.primaryDeep)),
                 ),
             ],
           ),
@@ -690,7 +746,8 @@ class _SectionTitle extends StatelessWidget {
       Container(
         width: 44,
         height: 44,
-        decoration: const BoxDecoration(color: AfuColors.primarySoft, shape: BoxShape.circle),
+        decoration: const BoxDecoration(
+            color: AfuColors.primarySoft, shape: BoxShape.circle),
         child: Icon(icon, size: 26, color: AfuColors.primaryDeep),
       ),
       const SizedBox(width: 10),
@@ -704,7 +761,11 @@ class _LinkRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback? onTap;
-  const _LinkRow({required this.icon, required this.title, required this.subtitle, this.onTap});
+  const _LinkRow(
+      {required this.icon,
+      required this.title,
+      required this.subtitle,
+      this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -717,8 +778,11 @@ class _LinkRow extends StatelessWidget {
           Icon(icon, size: 32, color: AfuColors.primaryDeep),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style:
+                      AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
               Text(subtitle, style: AfuElderText.secondary),
             ]),
           ),
@@ -794,9 +858,16 @@ class _FamilyTabState extends State<FamilyTab> {
                 '家人 $idx')
             .toString();
         final key = 'family_chat_${name}_$idx';
-        final avatar = (m['avatar'] ?? m['avatar_url'] ?? m['other_avatar'] ?? '').toString();
+        final avatar =
+            (m['avatar'] ?? m['avatar_url'] ?? m['other_avatar'] ?? '')
+                .toString();
         final bindingId = (m['id'] as num?)?.toInt() ?? 0;
-        final item = _FamConvItem(name: name, key: key, active: active, avatar: avatar, bindingId: bindingId);
+        final item = _FamConvItem(
+            name: name,
+            key: key,
+            active: active,
+            avatar: avatar,
+            bindingId: bindingId);
         items.add(item);
         idx++;
       }
@@ -808,13 +879,11 @@ class _FamilyTabState extends State<FamilyTab> {
           if (raw != null && raw.isNotEmpty) {
             final list = jsonDecode(raw) as List;
             if (list.isNotEmpty) {
-              final last =
-                  Map<String, dynamic>.from(list.last as Map);
+              final last = Map<String, dynamic>.from(list.last as Map);
               final kind = (last['kind'] ?? 'text').toString();
               final txt = (last['text'] ?? (last['title'] ?? '')).toString();
-              final preview = kind == 'image'
-                  ? '[图片]'
-                  : (kind == 'audio' ? '[语音]' : txt);
+              final preview =
+                  kind == 'image' ? '[图片]' : (kind == 'audio' ? '[语音]' : txt);
               items[i] = _FamConvItem(
                   name: items[i].name,
                   key: items[i].key,
@@ -827,7 +896,11 @@ class _FamilyTabState extends State<FamilyTab> {
         } catch (_) {}
       }
     } catch (_) {}
-    if (mounted) setState(() { _convs = items; _loading = false; });
+    if (mounted)
+      setState(() {
+        _convs = items;
+        _loading = false;
+      });
   }
 
   @override
@@ -835,18 +908,17 @@ class _FamilyTabState extends State<FamilyTab> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
-        // 全局规则：不再显示页面顶部标题
-        backgroundColor: const Color(0xFFF7FAFD),
-        scrolledUnderElevation: 0
-      ),
+          // 全局规则：不再显示页面顶部标题
+          backgroundColor: const Color(0xFFF7FAFD),
+          scrolledUnderElevation: 0),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _load,
           color: const Color(0xFF345C87),
           child: _loading
               ? const Center(
-                  child: CircularProgressIndicator(
-                      color: const Color(0xFF345C87)))
+                  child:
+                      CircularProgressIndicator(color: const Color(0xFF345C87)))
               : _convs.isEmpty
                   ? ListView(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -895,16 +967,16 @@ class _FamilyTabState extends State<FamilyTab> {
         borderRadius: 22,
         child: AfuCard(
           child: Row(children: [
-          _FamAvatar(avatar: c.avatar),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(c.name,
-                style:
-                    AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(width: 10),
-          const Text('去对话 >',
-              style: TextStyle(fontSize: 17, color: Color(0xFF6B7280))),
+            _FamAvatar(avatar: c.avatar),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(c.name,
+                  style:
+                      AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 10),
+            const Text('去对话 >',
+                style: TextStyle(fontSize: 17, color: Color(0xFF6B7280))),
           ]),
         ),
       ),
@@ -915,55 +987,55 @@ class _FamilyTabState extends State<FamilyTab> {
   /// 家人互动空状态内容：简约对话插图 + 友好提示（白色圆角卡）。
   Widget _guideBox() {
     return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFFD8E6F3)),
+        boxShadow: [
+          BoxShadow(
+              color: const Color(0xFF345C87).withOpacity(0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 6)),
+        ],
+      ),
+      child: Column(children: [
+        // 简约插图：两个对话气泡
+        Container(
+          width: 120,
+          height: 96,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFD8E6F3)),
-            boxShadow: [
-              BoxShadow(
-                  color: const Color(0xFF345C87).withOpacity(0.08),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6)),
-            ],
+            color: const Color(0xFFEDF4FB),
+            borderRadius: BorderRadius.circular(24),
           ),
-          child: Column(children: [
-            // 简约插图：两个对话气泡
-            Container(
-              width: 120,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEDF4FB),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: CustomPaint(painter: _FamEmptyPainter()),
+          padding: const EdgeInsets.all(16),
+          child: CustomPaint(painter: _FamEmptyPainter()),
+        ),
+        const SizedBox(height: 20),
+        const Text('还没有聊天记录',
+            style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF212936))),
+        const SizedBox(height: 12),
+        const Text('点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
+            style:
+                TextStyle(fontSize: 19, color: Color(0xFF6B7280), height: 1.6),
+            textAlign: TextAlign.center),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF345C87),
+              foregroundColor: Colors.white,
             ),
-            const SizedBox(height: 20),
-            const Text('还没有聊天记录',
-                style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF212936))),
-            const SizedBox(height: 12),
-            const Text('点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
-                style: TextStyle(
-                    fontSize: 19, color: Color(0xFF6B7280), height: 1.6),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF345C87),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: _openBind,
-                child: const Text('去绑定家属'),
-              ),
-            ),
-          ]),
+            onPressed: _openBind,
+            child: const Text('去绑定家属'),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -987,21 +1059,18 @@ class _FamilyTabState extends State<FamilyTab> {
         ),
         const SizedBox(width: 12),
         const Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('家人互联小提示',
-                    style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF212936))),
-                SizedBox(height: 6),
-                Text('绑定长辈后，可查看长辈健康记录，及时收到用药提醒',
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: Color(0xFF6B7280),
-                        height: 1.5)),
-              ]),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('家人互联小提示',
+                style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212936))),
+            SizedBox(height: 6),
+            Text('绑定长辈后，可查看长辈健康记录，及时收到用药提醒',
+                style: TextStyle(
+                    fontSize: 18, color: Color(0xFF6B7280), height: 1.5)),
+          ]),
         ),
       ]),
     );
@@ -1030,8 +1099,8 @@ class _FamEmptyPainter extends CustomPainter {
           Offset(s.width * (0.16 + i * 0.13), s.height * 0.23), 3, fill);
     }
     final b2 = RRect.fromRectAndRadius(
-        Rect.fromLTWH(s.width * 0.36, s.height * 0.52, s.width * 0.64,
-            s.height * 0.48),
+        Rect.fromLTWH(
+            s.width * 0.36, s.height * 0.52, s.width * 0.64, s.height * 0.48),
         const Radius.circular(12));
     canvas.drawRRect(
         b2, Paint()..color = const Color(0xFF345C87).withOpacity(0.18));
@@ -1076,9 +1145,7 @@ class _FamMsg {
         kind: (j['kind'] ?? 'text').toString(),
         text: (j['text'] ?? '').toString(),
         title: (j['title'] ?? '').toString(),
-        lines: [
-          for (final e in (j['lines'] as List? ?? [])) e.toString()
-        ],
+        lines: [for (final e in (j['lines'] as List? ?? [])) e.toString()],
         image: (j['image'] ?? '').toString(),
         dur: (j['dur'] as num? ?? 0).toInt(),
       );
@@ -1123,8 +1190,8 @@ class _FamConversationState extends State<FamConversationPage> {
       _input.text = widget.prefill!;
     }
     _loadHistory();
-    _syncTimer = Timer.periodic(
-        const Duration(seconds: 3), (_) => _loadHistory());
+    _syncTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _loadHistory());
   }
 
   @override
@@ -1147,7 +1214,8 @@ class _FamConversationState extends State<FamConversationPage> {
         for (final raw in server)
           (() {
             final row = Map<String, dynamic>.from(raw as Map);
-            final content = Map<String, dynamic>.from(row['content'] as Map? ?? {});
+            final content =
+                Map<String, dynamic>.from(row['content'] as Map? ?? {});
             content['isMe'] = (row['sender_id'] as num?)?.toInt() == userId;
             content['kind'] = row['kind'] ?? content['kind'] ?? 'text';
             return _FamMsg.fromJson(content);
@@ -1157,15 +1225,15 @@ class _FamConversationState extends State<FamConversationPage> {
     } catch (_) {
       // 兼容升级前的本地历史；服务恢复后新消息会落到后端。
       try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(widget.storeKey);
-      if (raw == null || raw.isEmpty) return;
-      final list = jsonDecode(raw) as List;
-      _msgs = [
-        for (final e in list)
-          _FamMsg.fromJson(Map<String, dynamic>.from(e as Map))
-      ];
-      if (mounted) setState(() {});
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(widget.storeKey);
+        if (raw == null || raw.isEmpty) return;
+        final list = jsonDecode(raw) as List;
+        _msgs = [
+          for (final e in list)
+            _FamMsg.fromJson(Map<String, dynamic>.from(e as Map))
+        ];
+        if (mounted) setState(() {});
       } catch (_) {}
     }
     // 一键询问带入的业务记录：历史加载完后再追加发送，避免被覆盖
@@ -1188,10 +1256,12 @@ class _FamConversationState extends State<FamConversationPage> {
     _saveHistory();
     if (m.isMe && (m.kind == 'text' || m.kind == 'health')) {
       try {
-        await ApiService.sendFamilyMessage(widget.bindingId, m.kind, m.toJson());
+        await ApiService.sendFamilyMessage(
+            widget.bindingId, m.kind, m.toJson());
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('消息发送失败：${ApiService.friendly(e)}')));
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('消息发送失败：${ApiService.friendly(e)}')));
       }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1216,20 +1286,29 @@ class _FamConversationState extends State<FamConversationPage> {
     try {
       if (!await _rec.hasPermission()) throw Exception('no mic');
       if (!mounted || !_voiceRequested) return;
-      final name = 'fam_${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'wav' : 'm4a'}';
-      final path = kIsWeb ? name : '${(await getTemporaryDirectory()).path}/$name';
+      final name =
+          'fam_${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'wav' : 'm4a'}';
+      final path =
+          kIsWeb ? name : '${(await getTemporaryDirectory()).path}/$name';
       if (!mounted || !_voiceRequested) return;
-      await _rec.start(RecordConfig(encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc), path: path);
-      if (!mounted || !_voiceRequested) { await _rec.stop(); return; }
+      await _rec.start(
+          RecordConfig(encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc),
+          path: path);
+      if (!mounted || !_voiceRequested) {
+        await _rec.stop();
+        return;
+      }
       _recStart = DateTime.now();
       if (mounted) setState(() => _holding = true);
     } catch (_) {
       if (mounted) {
         setState(() => _holding = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('录音不可用，请用文字')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('录音不可用，请用文字')));
       }
-    } finally { _voiceStarting = false; }
+    } finally {
+      _voiceStarting = false;
+    }
   }
 
   Future<void> _voiceEnd() async {
@@ -1241,8 +1320,7 @@ class _FamConversationState extends State<FamConversationPage> {
           ? 0
           : DateTime.now().difference(_recStart!).inSeconds;
       if (mounted && path != null && secs >= 1) {
-        _push(
-            _FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
+        _push(_FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
       }
     } catch (_) {}
     _recStart = null;
@@ -1273,10 +1351,7 @@ class _FamConversationState extends State<FamConversationPage> {
         ]));
       } catch (_) {
         _push(const _FamMsg(
-            isMe: true,
-            kind: 'health',
-            title: '体检报告',
-            lines: ['报告读取失败，稍后再试']));
+            isMe: true, kind: 'health', title: '体检报告', lines: ['报告读取失败，稍后再试']));
       }
       return;
     }
@@ -1284,10 +1359,7 @@ class _FamConversationState extends State<FamConversationPage> {
       final h = ChatHistory.items.where((m) => !m.thinking).toList();
       if (h.length < 2) {
         _push(const _FamMsg(
-            isMe: true,
-            kind: 'health',
-            title: '问事记录',
-            lines: ['还没有使用过问事']));
+            isMe: true, kind: 'health', title: '问事记录', lines: ['还没有使用过问事']));
         return;
       }
       final q = h[h.length - 2].text;
@@ -1305,8 +1377,7 @@ class _FamConversationState extends State<FamConversationPage> {
         final map = m is Map
             ? Map<String, dynamic>.from(m as Map)
             : <String, dynamic>{};
-        final slots =
-            map['slots'] is List ? List.from(map['slots']) : [];
+        final slots = map['slots'] is List ? List.from(map['slots']) : [];
         for (final s in slots) {
           total++;
           final sm = s is Map
@@ -1331,8 +1402,7 @@ class _FamConversationState extends State<FamConversationPage> {
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
@@ -1341,8 +1411,8 @@ class _FamConversationState extends State<FamConversationPage> {
             title: const Text('上传图片', style: AfuElderText.body),
             onTap: () async {
               Navigator.of(context).pop();
-              final f = await ImagePicker()
-                  .pickImage(source: ImageSource.gallery);
+              final f =
+                  await ImagePicker().pickImage(source: ImageSource.gallery);
               if (f == null || !mounted) return;
               try {
                 final bytes = await f.readAsBytes();
@@ -1353,8 +1423,8 @@ class _FamConversationState extends State<FamConversationPage> {
                     image: base64Encode(bytes)));
               } catch (_) {
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('图片读取失败，请重试')));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('图片读取失败，请重试')));
               }
             },
           ),
@@ -1373,15 +1443,15 @@ class _FamConversationState extends State<FamConversationPage> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     for (var k = 0; k < 3; k++)
                       ListTile(
-                        leading: Icon([
-                          Icons.description_outlined,
-                          Icons.chat_bubble_outline,
-                          Icons.check_circle_outline
-                        ][k],
+                        leading: Icon(
+                            [
+                              Icons.description_outlined,
+                              Icons.chat_bubble_outline,
+                              Icons.check_circle_outline
+                            ][k],
                             size: 32,
                             color: AfuColors.primaryDeep),
-                        title: Text(
-                            ['体检报告', '问事记录', '打卡记录'][k],
+                        title: Text(['体检报告', '问事记录', '打卡记录'][k],
                             style: AfuElderText.body),
                         onTap: () {
                           Navigator.of(context).pop();
@@ -1419,8 +1489,7 @@ class _FamConversationState extends State<FamConversationPage> {
                 ? const Padding(
                     padding: EdgeInsets.only(top: 24),
                     child: Center(
-                      child: Text(
-                          '还没有聊天记录\n点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
+                      child: Text('还没有聊天记录\n点击下方卡片，引用一条健康记录到对话中，\n和家人一起讨论',
                           style: TextStyle(
                               fontSize: 18,
                               color: Color(0xFF555555),
@@ -1448,6 +1517,7 @@ class _FamConversationState extends State<FamConversationPage> {
     );
   }
 }
+
 class _QuickBar extends StatelessWidget {
   final ValueChanged<int> onTap;
   const _QuickBar({required this.onTap});
@@ -1518,17 +1588,13 @@ class _FamBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor =
-        msg.isMe ? AfuColors.primaryDeep : Colors.white;
-    final inkColor =
-        msg.isMe ? Colors.white : const Color(0xFF222222);
-    final border =
-        msg.isMe ? null : Border.all(color: const Color(0xFFDCE6F7));
+    final baseColor = msg.isMe ? AfuColors.primaryDeep : Colors.white;
+    final inkColor = msg.isMe ? Colors.white : const Color(0xFF222222);
+    final border = msg.isMe ? null : Border.all(color: const Color(0xFFDCE6F7));
     if (msg.kind == 'image' && msg.image.isNotEmpty) {
       try {
         return Align(
-          alignment:
-              msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
+          alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
             margin: EdgeInsets.only(
                 left: msg.isMe ? 48 : 0,
@@ -1568,63 +1634,60 @@ class _FamBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             border: border,
           ),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: msg.isMe
-                        ? Colors.white.withOpacity(0.16)
-                        : const Color(0xFFF5F8FD),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.health_and_safety_outlined,
-                              size: 24, color: inkColor),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(msg.title,
-                                style: TextStyle(
-                                    fontSize: 19,
-                                    fontWeight: FontWeight.w800,
-                                    color: inkColor)),
-                          ),
-                        ]),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: msg.isMe
-                                ? Colors.white.withOpacity(0.25)
-                                : const Color(0xFFE8EFFD),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text('来源：${msg.title}',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  color: msg.isMe
-                                      ? Colors.white
-                                      : AfuColors.primaryDeep)),
-                        ),
-                        const SizedBox(height: 6),
-                        for (final line in msg.lines)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(line,
-                                style: TextStyle(
-                                    fontSize: 18,
-                                    height: 1.5,
-                                    color: inkColor)),
-                          ),
-                      ]),
-                ),
-              ]),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: msg.isMe
+                    ? Colors.white.withOpacity(0.16)
+                    : const Color(0xFFF5F8FD),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Icon(Icons.health_and_safety_outlined,
+                          size: 24, color: inkColor),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(msg.title,
+                            style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: inkColor)),
+                      ),
+                    ]),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: msg.isMe
+                            ? Colors.white.withOpacity(0.25)
+                            : const Color(0xFFE8EFFD),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text('来源：${msg.title}',
+                          style: TextStyle(
+                              fontSize: 16,
+                              color: msg.isMe
+                                  ? Colors.white
+                                  : AfuColors.primaryDeep)),
+                    ),
+                    const SizedBox(height: 6),
+                    for (final line in msg.lines)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(line,
+                            style: TextStyle(
+                                fontSize: 18, height: 1.5, color: inkColor)),
+                      ),
+                  ]),
+            ),
+          ]),
         ),
       );
     }
@@ -1691,9 +1754,8 @@ class _FamInputBar extends StatelessWidget {
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: holding
-                  ? const Color(0xFFE57373)
-                  : const Color(0xFFE8EFFD),
+              color:
+                  holding ? const Color(0xFFE57373) : const Color(0xFFE8EFFD),
             ),
             child: Icon(holding ? Icons.mic : Icons.mic_none_outlined,
                 size: 28,
@@ -1744,8 +1806,8 @@ class _FamInputBar extends StatelessWidget {
               shape: BoxShape.circle,
               color: Color(0xFFE8EFFD),
             ),
-            child: const Icon(Icons.add,
-                size: 28, color: AfuColors.primaryDeep),
+            child:
+                const Icon(Icons.add, size: 28, color: AfuColors.primaryDeep),
           ),
         ),
         const SizedBox(width: 8),
@@ -1793,15 +1855,17 @@ class _AudioBubbleState extends State<_AudioBubble> {
         if (mounted) setState(() => _playing = false);
         return;
       }
-      await _player.play(kIsWeb ? UrlSource(widget.msg.text) : DeviceFileSource(widget.msg.text));
+      await _player.play(kIsWeb
+          ? UrlSource(widget.msg.text)
+          : DeviceFileSource(widget.msg.text));
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _playing = false);
       });
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('录音找不到了，可能已被清理')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('录音找不到了，可能已被清理')));
       }
     }
   }
@@ -1813,16 +1877,12 @@ class _AudioBubbleState extends State<_AudioBubble> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: EdgeInsets.only(
-            left: isMe ? 48 : 0,
-            right: isMe ? 0 : 48,
-            top: 6,
-            bottom: 6),
+            left: isMe ? 48 : 0, right: isMe ? 0 : 48, top: 6, bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: isMe ? AfuColors.primaryDeep : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border:
-              isMe ? null : Border.all(color: const Color(0xFFDCE6F7)),
+          border: isMe ? null : Border.all(color: const Color(0xFFDCE6F7)),
         ),
         child: AfuPressable(
           onTap: _toggle,
@@ -1838,8 +1898,7 @@ class _AudioBubbleState extends State<_AudioBubble> {
                     : const Color(0xFFE8EFFD),
               ),
               child: Icon(_playing ? Icons.stop : Icons.play_arrow,
-                  size: 28,
-                  color: isMe ? Colors.white : AfuColors.primaryDeep),
+                  size: 28, color: isMe ? Colors.white : AfuColors.primaryDeep),
             ),
             const SizedBox(width: 10),
             Text('${widget.msg.dur}秒语音',
@@ -1882,13 +1941,15 @@ class _ElderDynamicState extends State<_ElderDynamic> {
     try {
       final meds = await ApiService.medsToday();
       for (final m in meds) {
-        final map =
-            m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
+        final map = m is Map
+            ? Map<String, dynamic>.from(m as Map)
+            : <String, dynamic>{};
         final name = (map['name'] ?? '').toString();
         final slots = map['slots'] is List ? List.from(map['slots']) : [];
         for (final s in slots) {
-          final sm =
-              s is Map ? Map<String, dynamic>.from(s as Map) : <String, dynamic>{};
+          final sm = s is Map
+              ? Map<String, dynamic>.from(s as Map)
+              : <String, dynamic>{};
           if ((sm['status'] ?? 'pending').toString() == 'pending' &&
               name.isNotEmpty) {
             final slot = (sm['slot'] ?? '').toString();
@@ -1907,9 +1968,15 @@ class _ElderDynamicState extends State<_ElderDynamic> {
             : <String, dynamic>{};
         final type = (m['type'] ?? '').toString();
         if (type == 'bp') {
-          vit = '血压 ${m['systolic'] ?? '-'}/${m['diastolic'] ?? '-'}';
+          vit = '血压 ${m['systolic'] ?? '-'}/${m['diastolic'] ?? '-'} mmHg';
+        } else if (type == 'bs') {
+          vit = '血糖 ${m['value'] ?? '-'} mmol/L';
+        } else if (type == 'hr') {
+          vit = '心率 ${m['value'] ?? '-'} 次/分';
+        } else if (type == 'weight') {
+          vit = '体重 ${m['value'] ?? '-'} kg';
         } else {
-          vit = '$type ${m['value'] ?? ''}'.trim();
+          vit = '体征 ${m['value'] ?? ''}'.trim();
         }
       }
     } catch (_) {}
@@ -1975,10 +2042,7 @@ class _ElderDynamicState extends State<_ElderDynamic> {
   }
 }
 
-/// 联系人动态头像：优先展示后端返回的用户自定义头像（http 远端或本地路径），
-/// 无自定义头像时展示默认占位图标。跟随后端接口返回实时刷新。
-/// 【等待后端接口开发完成】bind 接口暂未返回头像字段（avatar/avatar_url），
-/// 字段就绪后 _load 中已预留读取逻辑，无需改 UI。
+/// 联系人动态头像：优先展示后端返回的用户头像。
 class _FamAvatar extends StatelessWidget {
   final String avatar;
   const _FamAvatar({required this.avatar});
@@ -1986,9 +2050,10 @@ class _FamAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget inner;
-    if (avatar.startsWith('http')) {
+    if (avatar.startsWith('http') || avatar.startsWith('/')) {
       inner = ClipOval(
-        child: Image.network(avatar,
+        child: Image.network(
+            '${ApiService.avatarFullUrl(avatar)}?v=${DateTime.now().millisecondsSinceEpoch}',
             width: 72,
             height: 72,
             fit: BoxFit.cover,
@@ -2042,27 +2107,22 @@ class _ElderTipCard extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         const Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('家人互联小贴士',
-                    style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF212936))),
-                SizedBox(height: 6),
-                Text('绑定家属后，家属可及时查看您的用药提醒和健康记录，帮助您按时用药。',
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: Color(0xFF6B7280),
-                        height: 1.5)),
-                SizedBox(height: 6),
-                Text('有问题可随时点击去对话联系家属。',
-                    style: TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF6B7280),
-                        height: 1.5)),
-              ]),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('家人互联小贴士',
+                style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212936))),
+            SizedBox(height: 6),
+            Text('绑定家属后，家属可及时查看您的用药提醒和健康记录，帮助您按时用药。',
+                style: TextStyle(
+                    fontSize: 18, color: Color(0xFF6B7280), height: 1.5)),
+            SizedBox(height: 6),
+            Text('有问题可随时点击去对话联系家属。',
+                style: TextStyle(
+                    fontSize: 16, color: Color(0xFF6B7280), height: 1.5)),
+          ]),
         ),
       ]),
     );

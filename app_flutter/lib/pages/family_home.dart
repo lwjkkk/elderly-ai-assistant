@@ -11,10 +11,9 @@ import 'package:flutter/services.dart';
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
 import '../services/api.dart';
- 
+
 import 'tabs/health_overview.dart';
- 
- 
+
 import 'login_page.dart';
 import 'tabs/consult_drug_chat_tab.dart' show ChatTab;
 import 'tabs/hub_pages.dart' show FamilyTab, chatScale, HubNav;
@@ -50,7 +49,7 @@ class _FamilyHomeState extends State<FamilyHome> {
     }
   }
 
-    @override
+  @override
   Widget build(BuildContext context) {
     const pages = [
       HealthOverviewTab(role: 'family'),
@@ -65,25 +64,29 @@ class _FamilyHomeState extends State<FamilyHome> {
       bottomNavigationBar: ValueListenableBuilder<Color?>(
         valueListenable: HubNav.accent,
         builder: (_, accent, __) => BottomNavigationBar(
-              currentIndex: idx,
-              type: BottomNavigationBarType.fixed,
-              selectedFontSize: 15,
-              unselectedFontSize: 14,
-              selectedItemColor: accent ?? const Color(0xFF345C87),
-              unselectedItemColor: const Color(0xFF6B7280),
-              onTap: (i) => setState(() => idx = (i == 1 && idx == 1) ? 0 : i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard_outlined, size: 30), label: '健康总览'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline, size: 30), label: 'AI问事'),
-          BottomNavigationBarItem(icon: Icon(Icons.family_restroom_outlined, size: 30), label: '家人互动'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline, size: 30), label: '个人中心'),
-                ],
-              ),
-            ),
+          currentIndex: idx,
+          type: BottomNavigationBarType.fixed,
+          selectedFontSize: 15,
+          unselectedFontSize: 14,
+          selectedItemColor: accent ?? const Color(0xFF345C87),
+          unselectedItemColor: const Color(0xFF6B7280),
+          onTap: (i) => setState(() => idx = (i == 1 && idx == 1) ? 0 : i),
+          items: const [
+            BottomNavigationBarItem(
+                icon: Icon(Icons.dashboard_outlined, size: 30), label: '健康总览'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.chat_bubble_outline, size: 30), label: 'AI问事'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.family_restroom_outlined, size: 30),
+                label: '家人互动'),
+            BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline, size: 30), label: '个人中心'),
+          ],
+        ),
+      ),
     );
   }
 }
-
 
 /// 4) Me page: profile + bind management + logout.
 class FamMe extends StatefulWidget {
@@ -115,17 +118,27 @@ class _FamMeState extends State<FamMe> {
   }
 
   bool get bound => binds.any((b) {
-    final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-    return (m['status'] ?? '').toString() == 'active';
-  });
+        final m = b is Map
+            ? Map<String, dynamic>.from(b as Map)
+            : <String, dynamic>{};
+        return (m['status'] ?? '').toString() == 'active';
+      });
 
   Future<void> _load() async {
     try {
-        nickname = await ApiService.getNickname() ?? '\u5bb6\u5c5e';
+      nickname = await ApiService.getNickname() ?? '\u5bb6\u5c5e';
       binds = await ApiService.bindList();
       try {
         final prefs = await SharedPreferences.getInstance();
         avatarAsset = prefs.getString('avatar') ?? avatarAsset;
+      } catch (_) {}
+      try {
+        final profile = await ApiService.getProfile();
+        final remote = (profile['avatar_url'] ?? '').toString();
+        if (remote.isNotEmpty) {
+          avatarAsset =
+              '${ApiService.avatarFullUrl(remote)}?v=${DateTime.now().millisecondsSinceEpoch}';
+        }
       } catch (_) {}
     } catch (_) {
       binds = [];
@@ -139,13 +152,17 @@ class _FamMeState extends State<FamMe> {
       setState(() => msg = '\u5148\u8f93\u5165\u9080\u8bf7\u7801');
       return;
     }
-    setState(() { binding = true; msg = ''; });
+    setState(() {
+      binding = true;
+      msg = '';
+    });
     try {
       await ApiService.acceptInvite(c);
       codeC.clear();
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('\u7ed1\u5b9a\u6210\u529f')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('\u7ed1\u5b9a\u6210\u529f')));
       }
     } catch (e) {
       if (mounted) setState(() => msg = ApiService.friendly(e));
@@ -197,11 +214,12 @@ class _FamMeState extends State<FamMe> {
                 backgroundColor: const Color(0xFF345C87),
                 foregroundColor: Colors.white,
                 elevation: 2,
-                shadowColor:
-                    const Color(0xFF345C87).withOpacity(0.3),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shadowColor: const Color(0xFF345C87).withOpacity(0.3),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                textStyle:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               child: const Text('\u9000\u51fa\u767b\u5f55'),
             ),
@@ -215,8 +233,8 @@ class _FamMeState extends State<FamMe> {
   Widget _fontEntry() {
     return AfuCard(
       child: AfuPressable(
-        onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const _FontSizePage())),
+        onTap: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const _FontSizePage())),
         borderRadius: 18,
         child: Row(children: [
           Container(
@@ -249,7 +267,6 @@ class _FamMeState extends State<FamMe> {
     );
   }
 
-
   /// 头像信息区：左侧圆形头像（水波纹环绕）+ 右侧用户名与编辑入口。
   /// 头像信息区：无白色卡片底，与长辈端一致，直接放在页面底色上，配波浪动态背景。
   Widget _profileCard() {
@@ -268,15 +285,14 @@ class _FamMeState extends State<FamMe> {
         AfuPressable(
           onTap: () async {
             await Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => _EditProfilePage(
-                    nickname: nickname, asset: avatarAsset)));
+                builder: (_) =>
+                    _EditProfilePage(nickname: nickname, asset: avatarAsset)));
             await _load();
             if (mounted) setState(() {});
           },
           borderRadius: 16,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFEDF4FB),
               borderRadius: BorderRadius.circular(16),
@@ -292,15 +308,15 @@ class _FamMeState extends State<FamMe> {
     );
   }
 
-
-
-
   Widget _bindCard() {
     return AfuCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('\u4eb2\u5c5e\u7ed1\u5b9a\u7ba1\u7406', style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+        Text('\u4eb2\u5c5e\u7ed1\u5b9a\u7ba1\u7406',
+            style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text('\u8f93\u5165\u9080\u8bf7\u7801\u53ef\u7ed1\u5b9a\u957f\u8f88', style: AfuElderText.secondary),
+        const Text(
+            '\u8f93\u5165\u9080\u8bf7\u7801\u53ef\u7ed1\u5b9a\u957f\u8f88',
+            style: AfuElderText.secondary),
         const SizedBox(height: 12),
         TextField(
           controller: codeC,
@@ -310,7 +326,8 @@ class _FamMeState extends State<FamMe> {
             hintStyle: const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
               borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
@@ -333,16 +350,17 @@ class _FamMeState extends State<FamMe> {
               backgroundColor: const Color(0xFF345C87),
               foregroundColor: Colors.white,
               elevation: 2,
-              shadowColor:
-                  const Color(0xFF345C87).withOpacity(0.3),
+              shadowColor: const Color(0xFF345C87).withOpacity(0.3),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20)),
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w700),
+              textStyle:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             onPressed: binding ? null : _doBind,
-            child: Text(binding ? '\u7ed1\u5b9a\u4e2d\u2026' : '\u786e\u8ba4\u7ed1\u5b9a'),
+            child: Text(binding
+                ? '\u7ed1\u5b9a\u4e2d\u2026'
+                : '\u786e\u8ba4\u7ed1\u5b9a'),
           ),
         ),
         const SizedBox(height: 12),
@@ -353,13 +371,12 @@ class _FamMeState extends State<FamMe> {
               backgroundColor: const Color(0xFFEDF4FB),
               foregroundColor: const Color(0xFF345C87),
               elevation: 2,
-              shadowColor:
-                  const Color(0xFF345C87).withOpacity(0.25),
+              shadowColor: const Color(0xFF345C87).withOpacity(0.25),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20)),
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.w700),
+              textStyle:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
             ),
             onPressed: generating ? null : _genInvite,
             child: Text(generating ? '生成中…' : '生成邀请码'),
@@ -369,8 +386,7 @@ class _FamMeState extends State<FamMe> {
           const SizedBox(height: 12),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 18, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             decoration: BoxDecoration(
               color: const Color(0xFFEDF4FB),
               borderRadius: BorderRadius.circular(18),
@@ -385,16 +401,13 @@ class _FamMeState extends State<FamMe> {
               ),
               AfuPressable(
                 onTap: () {
-                  Clipboard.setData(
-                      ClipboardData(text: inviteCode!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('邀请码已复制')));
+                  Clipboard.setData(ClipboardData(text: inviteCode!));
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
                 },
                 borderRadius: 12,
                 child: const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Text('复制',
                       style: TextStyle(
                           fontSize: 18, color: const Color(0xFF345C87))),
@@ -405,7 +418,8 @@ class _FamMeState extends State<FamMe> {
         ],
         if (msg.isNotEmpty) ...[
           const SizedBox(height: 8),
-          Text(msg, style: const TextStyle(fontSize: 18, color: Color(0xFFB3261E))),
+          Text(msg,
+              style: const TextStyle(fontSize: 18, color: Color(0xFFB3261E))),
         ],
         const SizedBox(height: 12),
         if (binds.isEmpty)
@@ -417,7 +431,8 @@ class _FamMeState extends State<FamMe> {
   }
 
   Widget _bindRow(dynamic b) {
-    final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
+    final m =
+        b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
     final name = (m['other_nickname'] ?? m['nickname'] ?? '对方').toString();
     final status = (m['status'] ?? '').toString();
     final code = (m['invite_code'] ?? '').toString();
@@ -433,15 +448,19 @@ class _FamMeState extends State<FamMe> {
         Container(
           width: 52,
           height: 52,
-          decoration: const BoxDecoration(color: Color(0xFFFFFFFF), shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+              color: Color(0xFFFFFFFF), shape: BoxShape.circle),
           child: const Icon(Icons.person, size: 30, color: Color(0xFF345C87)),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name,
+                style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
             if (code.isNotEmpty)
-              Text('\u9080\u8bf7\u7801 ' + code, style: AfuElderText.secondary.copyWith(fontSize: 16)),
+              Text('\u9080\u8bf7\u7801 ' + code,
+                  style: AfuElderText.secondary.copyWith(fontSize: 16)),
           ]),
         ),
         Container(
@@ -453,7 +472,9 @@ class _FamMeState extends State<FamMe> {
           child: Text(active ? '\u5df2\u7ed1\u5b9a' : status,
               style: TextStyle(
                   fontSize: 17,
-                  color: active ? const Color(0xFF345C87) : const Color(0xFF6B7280))),
+                  color: active
+                      ? const Color(0xFF345C87)
+                      : const Color(0xFF6B7280))),
         ),
       ]),
     );
@@ -524,8 +545,7 @@ class _FontSizePageState extends State<_FontSizePage> {
                               const SizedBox(height: 4),
                               Text(_descs[i],
                                   style: const TextStyle(
-                                      fontSize: 16,
-                                      color: Color(0xFF6B7280))),
+                                      fontSize: 16, color: Color(0xFF6B7280))),
                             ]),
                       ),
                       ValueListenableBuilder<double>(
@@ -628,8 +648,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
         if (mounted) setState(() => _picked = dest.path);
         return;
       }
-      final bytes = await ApiService.avatarBytes(
-          ApiService.avatarFullUrl(url));
+      final bytes = await ApiService.avatarBytes(ApiService.avatarFullUrl(url));
       if (bytes.isEmpty) return;
       await dest.writeAsBytes(bytes, flush: true);
       if (mounted) setState(() => _picked = dest.path);
@@ -662,10 +681,8 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       if (nick.isNotEmpty) {
         await prefs.setString('nickname', nick);
       }
-      await prefs.setString(
-          'gender', (r['gender'] ?? '').toString());
-      await prefs.setString(
-          'birth_ym', (r['birth_ym'] ?? '').toString());
+      await prefs.setString('gender', (r['gender'] ?? '').toString());
+      await prefs.setString('birth_ym', (r['birth_ym'] ?? '').toString());
       final url = (r['avatar_url'] ?? '').toString();
       await prefs.setString('avatar_url', url);
       if (_picked != null) {
@@ -676,15 +693,14 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           _remoteAvatar = url;
           _avatarChanged = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('资料已保存，多端已同步')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('资料已保存，多端已同步')));
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                '保存失败：${ApiService.friendly(e)}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('保存失败：${ApiService.friendly(e)}')));
       }
     }
   }
@@ -695,22 +711,18 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     final src = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (c) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
-            leading: const Icon(Icons.camera_alt_outlined,
-                color: Color(0xFF345C87)),
-            title: const Text('拍照',
-                style: TextStyle(fontSize: 20)),
+            leading:
+                const Icon(Icons.camera_alt_outlined, color: Color(0xFF345C87)),
+            title: const Text('拍照', style: TextStyle(fontSize: 20)),
             onTap: () => Navigator.pop(c, ImageSource.camera),
           ),
           ListTile(
-            leading: const Icon(Icons.photo_outlined,
-                color: Color(0xFF345C87)),
-            title: const Text('从相册选择',
-                style: TextStyle(fontSize: 20)),
+            leading: const Icon(Icons.photo_outlined, color: Color(0xFF345C87)),
+            title: const Text('从相册选择', style: TextStyle(fontSize: 20)),
             onTap: () => Navigator.pop(c, ImageSource.gallery),
           ),
           const SizedBox(height: 8),
@@ -720,16 +732,14 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     if (src == null || !mounted) return;
     setState(() => _busyAvatar = true);
     try {
-      final f = await ImagePicker()
-          .pickImage(source: src, maxWidth: 1600);
+      final f = await ImagePicker().pickImage(source: src, maxWidth: 1600);
       if (f == null) {
         if (mounted) setState(() => _busyAvatar = false);
         return;
       }
       final cropped = await ImageCropper().cropImage(
         sourcePath: f.path,
-        aspectRatio:
-            const CropAspectRatio(ratioX: 1, ratioY: 1),
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           AndroidUiSettings(
             toolbarTitle: '裁剪头像',
@@ -763,9 +773,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content:
-                    Text('头像设置失败：${ApiService.friendly(e)}')));
+            SnackBar(content: Text('头像设置失败：${ApiService.friendly(e)}')));
       }
     }
     if (mounted) setState(() => _busyAvatar = false);
@@ -777,8 +785,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       onTap: onTap,
       borderRadius: 16,
       child: Padding(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 6, vertical: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 18),
         child: Row(children: [
           SizedBox(
             width: 110,
@@ -790,8 +797,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Text(
-                value.isEmpty ? '未设置' : value,
+            child: Text(value.isEmpty ? '未设置' : value,
                 textAlign: TextAlign.right,
                 softWrap: false,
                 overflow: TextOverflow.ellipsis,
@@ -820,25 +826,21 @@ class _EditProfilePageState extends State<_EditProfilePage> {
         content: TextField(
           controller: c,
           autofocus: true,
-          style:
-              const TextStyle(fontSize: 21, color: Color(0xFF212936)),
+          style: const TextStyle(fontSize: 21, color: Color(0xFF212936)),
           decoration: InputDecoration(
             hintText: '输入新昵称',
-            hintStyle: const TextStyle(
-                fontSize: 20, color: Color(0xFF6B7280)),
+            hintStyle: const TextStyle(fontSize: 20, color: Color(0xFF6B7280)),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 22, vertical: 19),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide:
-                  const BorderSide(color: Color(0xFFD8E6F3)),
+              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
-              borderSide:
-                  const BorderSide(color: Color(0xFFD8E6F3)),
+              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
             ),
           ),
         ),
@@ -846,19 +848,15 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           TextButton(
               onPressed: () => Navigator.pop(d, false),
               child: const Text('取消',
-                  style: TextStyle(
-                      fontSize: 20, color: Color(0xFF6B7280)))),
+                  style: TextStyle(fontSize: 20, color: Color(0xFF6B7280)))),
           ElevatedButton(
               onPressed: () => Navigator.pop(d, true),
               style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      const Color(0xFF345C87),
+                  backgroundColor: const Color(0xFF345C87),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(16))),
-              child: const Text('确定',
-                  style: TextStyle(fontSize: 20))),
+                      borderRadius: BorderRadius.circular(16))),
+              child: const Text('确定', style: TextStyle(fontSize: 20))),
         ],
       ),
     );
@@ -880,11 +878,9 @@ class _EditProfilePageState extends State<_EditProfilePage> {
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           for (final g in ['男', '女'])
             ListTile(
-              title: Text(g,
-                  style: const TextStyle(fontSize: 21)),
+              title: Text(g, style: const TextStyle(fontSize: 21)),
               trailing: _gender == g
-                  ? const Icon(Icons.check_circle,
-                      color: Color(0xFF345C87))
+                  ? const Icon(Icons.check_circle, color: Color(0xFF345C87))
                   : null,
               onTap: () => Navigator.pop(d, g),
             ),
@@ -893,8 +889,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           TextButton(
               onPressed: () => Navigator.pop(d),
               child: const Text('取消',
-                  style: TextStyle(
-                      fontSize: 20, color: Color(0xFF6B7280)))),
+                  style: TextStyle(fontSize: 20, color: Color(0xFF6B7280)))),
         ],
       ),
     );
@@ -913,8 +908,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     final ok = await showModalBottomSheet<bool>(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(24))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (c) => StatefulBuilder(
         builder: (c, setD) => SafeArea(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -924,9 +918,8 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                 TextButton(
                     onPressed: () => Navigator.pop(c, false),
                     child: const Text('取消',
-                        style: TextStyle(
-                            fontSize: 20,
-                            color: Color(0xFF6B7280)))),
+                        style:
+                            TextStyle(fontSize: 20, color: Color(0xFF6B7280)))),
                 const Expanded(
                   child: Text('选择出生年月',
                       textAlign: TextAlign.center,
@@ -951,33 +944,27 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                   child: CupertinoPicker(
                     itemExtent: 48,
                     scrollController: FixedExtentScrollController(
-                        initialItem: (y - 1900).clamp(
-                            0, now.year - 1900)),
-                    onSelectedItemChanged: (i) =>
-                        setD(() => y = 1900 + i),
+                        initialItem: (y - 1900).clamp(0, now.year - 1900)),
+                    onSelectedItemChanged: (i) => setD(() => y = 1900 + i),
                     children: [
                       for (var yy = 1900; yy <= now.year; yy++)
                         Center(
                             child: Text('$yy年',
-                                style: const TextStyle(
-                                    fontSize: 22))),
+                                style: const TextStyle(fontSize: 22))),
                     ],
                   ),
                 ),
                 Expanded(
                   child: CupertinoPicker(
                     itemExtent: 48,
-                    scrollController:
-                        FixedExtentScrollController(
-                            initialItem: (mo - 1).clamp(0, 11)),
-                    onSelectedItemChanged: (i) =>
-                        setD(() => mo = i + 1),
+                    scrollController: FixedExtentScrollController(
+                        initialItem: (mo - 1).clamp(0, 11)),
+                    onSelectedItemChanged: (i) => setD(() => mo = i + 1),
                     children: [
                       for (var mm = 1; mm <= 12; mm++)
                         Center(
                             child: Text('$mm月',
-                                style: const TextStyle(
-                                    fontSize: 22))),
+                                style: const TextStyle(fontSize: 22))),
                     ],
                   ),
                 ),
@@ -989,8 +976,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       ),
     );
     if (ok == true && mounted) {
-      setState(() => _birthYm =
-          '$y-${mo.toString().padLeft(2, '0')}');
+      setState(() => _birthYm = '$y-${mo.toString().padLeft(2, '0')}');
     }
   }
 
@@ -1005,8 +991,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back,
-              color: Color(0xFF212936)),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF212936)),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text('编辑资料',
@@ -1022,8 +1007,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
         children: [
           // 头像模块：居中头像 + 上传
           AfuCard(
-            padding:
-                const EdgeInsets.symmetric(vertical: 32),
+            padding: const EdgeInsets.symmetric(vertical: 32),
             child: Column(children: [
               Container(
                 width: 110,
@@ -1033,37 +1017,29 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                          color: const Color(0xFF345C87)
-                              .withOpacity(0.12),
+                          color: const Color(0xFF345C87).withOpacity(0.12),
                           blurRadius: 12,
                           offset: const Offset(0, 4)),
                     ]),
                 child: ClipOval(
-                    child: _busyAvatar ||
-                            _loadingProfile
+                    child: _busyAvatar || _loadingProfile
                         ? const Center(
                             child: CircularProgressIndicator(
                                 color: Color(0xFF345C87)))
                         : _remoteAvatar.isNotEmpty
                             ? Image.network(
-                                ApiService.avatarFullUrl(
-                                    _remoteAvatar),
+                                ApiService.avatarFullUrl(_remoteAvatar),
                                 width: 106,
                                 height: 106,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                    Image(
-                                        image: avatarImage(
-                                            _picked ??
-                                                widget.asset),
-                                        width: 106,
-                                        height: 106,
-                                        fit: BoxFit.cover),
+                                errorBuilder: (_, __, ___) => Image(
+                                    image: avatarImage(_picked ?? widget.asset),
+                                    width: 106,
+                                    height: 106,
+                                    fit: BoxFit.cover),
                               )
                             : Image(
-                                image: avatarImage(
-                                    _picked ??
-                                        widget.asset),
+                                image: avatarImage(_picked ?? widget.asset),
                                 width: 106,
                                 height: 106,
                                 fit: BoxFit.cover)),
@@ -1073,8 +1049,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                 onTap: _busyAvatar ? () {} : _pickAvatar,
                 borderRadius: 14,
                 child: const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Text('上传头像',
                       style: TextStyle(
                           fontSize: 21,
@@ -1087,15 +1062,12 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           const SizedBox(height: 20),
           // 资料表单：一行一编辑
           AfuCard(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 18, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
             child: Column(children: [
               _row('昵称', _nameC.text.trim(), _editNick),
-              const Divider(
-                  height: 1, color: Color(0xFFEDF4FB)),
+              const Divider(height: 1, color: Color(0xFFEDF4FB)),
               _row('性别', _gender, _editGender),
-              const Divider(
-                  height: 1, color: Color(0xFFEDF4FB)),
+              const Divider(height: 1, color: Color(0xFFEDF4FB)),
               _row('出生年月', _birthText, _editBirth),
             ]),
           ),
@@ -1105,16 +1077,13 @@ class _EditProfilePageState extends State<_EditProfilePage> {
             child: ElevatedButton(
               onPressed: _save,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    const Color(0xFF345C87),
+                backgroundColor: const Color(0xFF345C87),
                 foregroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 19),
+                padding: const EdgeInsets.symmetric(vertical: 19),
                 shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(22)),
-                textStyle: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w700),
+                    borderRadius: BorderRadius.circular(22)),
+                textStyle:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
               child: const Text('保存'),
             ),
@@ -1124,7 +1093,6 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     );
   }
 }
-
 
 /// 家属个人中心头像水波纹：浅蓝半透明圆环，柔和循环向外扩散。
 class _FamRippleAvatar extends StatefulWidget {
@@ -1162,8 +1130,11 @@ class _FamRippleAvatarState extends State<_FamRippleAvatar>
               decoration: const BoxDecoration(
                   color: Color(0xFFEDF4FB), shape: BoxShape.circle),
               child: ClipOval(
-                  child: Image(image: avatarImage(widget.asset),
-                      width: 64, height: 64, fit: BoxFit.cover)),
+                  child: Image(
+                      image: avatarImage(widget.asset),
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover)),
             ),
           ),
         ),
@@ -1184,8 +1155,7 @@ class _FamRipplePainter extends CustomPainter {
           c,
           30 + p * 14,
           Paint()
-            ..color =
-                const Color(0xFF345C87).withOpacity(0.35 * (1 - p))
+            ..color = const Color(0xFF345C87).withOpacity(0.35 * (1 - p))
             ..style = PaintingStyle.stroke
             ..strokeWidth = 4);
     }
