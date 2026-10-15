@@ -2,6 +2,7 @@
 # 权限：仅 elder 可读写自己的；family 调用返回 403（家属不能替长辈开关）
 
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -29,9 +30,20 @@ def get_privacy(current: User = Depends(get_current_user)):
 def update_privacy(payload: PrivacyUpdate,
                    db: Session = Depends(get_db),
                    current: User = Depends(get_current_user)):
-    """更新当前老人的隐私开关，返回最新值。"""
+    """更新当前老人的隐私开关，返回最新值。
+
+    开启隐私（sync_summary_to_family=False）：记录当前时间到 privacy_enabled_at，
+        此后新产生的对话摘要/查药记录不再同步给家属；开启前的历史仍可见。
+    关闭隐私（sync_summary_to_family=True）：清空 privacy_enabled_at，全部恢复同步。
+    """
     _require_elder(current)
     current.sync_summary_to_family = payload.sync_summary_to_family
+    if payload.sync_summary_to_family:
+        current.privacy_enabled_at = None
+    else:
+        # 与数据库 CURRENT_TIMESTAMP 产生的 UTC 时间保持一致，避免本地时区
+        # （例如 UTC+8）导致隐私开启后的记录被误认为是开启前的记录。
+        current.privacy_enabled_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
     db.refresh(current)
     return PrivacyOut(sync_summary_to_family=current.sync_summary_to_family)

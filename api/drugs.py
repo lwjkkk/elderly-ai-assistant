@@ -138,15 +138,15 @@ def list_drug_records(elder_id: int | None = None,
 
     q = q.order_by(DrugQuery.created_at.desc(), DrugQuery.id.desc()).limit(limit)
 
-    # kind="chat" 的查药记录来自日常问答，受老人「对话记录同步家属」隐私开关约束：
-    # 老人本人看自己的记录不过滤；家属代看时，若老人关闭同步则不返回这类记录。
+    # kind="chat" 的查药记录来自日常问答，受老人隐私开关约束：
+    # 老人本人看自己的不过滤；家属代看时，若老人开启了隐私，只返回开启时间之前的。
     target_user = db.query(User).filter(User.id == target).first()
-    privacy_off = target_user is not None and not target_user.sync_summary_to_family
     viewed_by_family = current.id != target
+    privacy_cutoff = target_user.privacy_enabled_at if (target_user and viewed_by_family) else None
 
     result = []
     for rec in q.all():
-        if rec.kind == "chat" and privacy_off and viewed_by_family:
+        if rec.kind == "chat" and privacy_cutoff and rec.created_at and rec.created_at > privacy_cutoff:
             continue
         result.append(DrugQueryOut.model_validate(rec).model_dump())
     return result

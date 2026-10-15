@@ -2,14 +2,17 @@
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
 from sqlalchemy.orm import Session
 
 from db.database import get_db
 from db.models import User, FamilyBinding, ConsultRecord
 from db.schemas import ConsultOut
 from core.security import get_current_user
+from core.security import SECRET_KEY, ALGORITHM
 from config.settings import HOST, PORT
 
 router = APIRouter(prefix="/api/consults", tags=["问诊录音"])
@@ -30,6 +33,26 @@ AUDIO_TYPES = {
     ".opus": "audio/ogg",
     ".flac": "audio/flac",
 }
+
+_AUDIO_URL_TOKEN_TTL = timedelta(minutes=15)
+
+
+def _audio_url_for_user(record: ConsultRecord, current: User) -> str:
+    """Return a short-lived, file-scoped URL usable by native audio players without headers."""
+    import jwt
+
+    filename = record.audio_url.rsplit("/", 1)[-1]
+    token = jwt.encode(
+        {
+            "sub": str(current.id),
+            "scope": "consult_audio",
+            "filename": filename,
+            "exp": datetime.now(timezone.utc) + _AUDIO_URL_TOKEN_TTL,
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    return f"{record.audio_url}?{urlencode({'token': token})}"
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
@@ -102,37 +125,122 @@ async def upload_consult(
         if os.path.exists(filepath):
             os.remove(filepath)
         raise
-    return record
+    out = ConsultOut.model_validate(record).model_dump()
+    out["audio_url"] = _audio_url_for_user(record, current)
+    return out
 
 
 @router.get("", response_model=list[ConsultOut])
 def list_consults(elder_id: int | None = None,
                   db: Session = Depends(get_db),
                   current: User = Depends(get_current_user)):
-    """查询问诊录音列表。"""
-    target = resolve_elder_id(db, current, elder_id)
-    return (
+    """查询问诊录音列表。
+
+    - 老人：返回自己的录音；
+    - 家属：传 elder_id 则查指定老人；不传则返回自己的录音 + 所有已绑定老人的录音。
+    """
+    if current.role == "elder":
+        targets = [current.id]
+    elif elder_id is not None:
+        # 显式指定老人：校验绑定
+        binding = (
+            db.query(FamilyBinding)
+            .filter(FamilyBinding.elder_id == elder_id)
+            .filter(FamilyBinding.family_id == current.id)
+            .filter(FamilyBinding.status == "active")
+            .first()
+        )
+        if not binding:
+            raise HTTPException(status_code=403, detail="未绑定该老人，无权查看")
+        targets = [elder_id]
+    else:
+        # 家属不传 elder_id：自己的录音 + 所有绑定老人的录音
+        targets = [current.id]
+        bindings = (
+            db.query(FamilyBinding)
+            .filter(FamilyBinding.family_id == current.id)
+            .filter(FamilyBinding.status == "active")
+            .all()
+        )
+        targets += [b.elder_id for b in bindings]
+
+    records = (
         db.query(ConsultRecord)
-        .filter(ConsultRecord.elder_id == target)
+        .filter(ConsultRecord.elder_id.in_(targets))
         .order_by(ConsultRecord.created_at.desc())
         .all()
     )
+    result = []
+    for record in records:
+        out = ConsultOut.model_validate(record).model_dump()
+        out["audio_url"] = _audio_url_for_user(record, current)
+        result.append(out)
+    return result
 
 
 @router.get("/audio/{filename}")
 def get_audio(filename: str,
-              db: Session = Depends(get_db),
-              current: User = Depends(get_current_user)):
-    """播放/下载录音文件（需登录且为数据所有者或绑定家属）。"""
-    from fastapi.responses import FileResponse
+              token: str | None = None,
+              authorization: str | None = Header(None, alias="Authorization"),
+              db: Session = Depends(get_db)):
+    """播放/下载录音文件。
 
-    # 校验文件归属：通过 audio_url 反查 ConsultRecord 记录
+    鉴权方式二选一：
+    - Authorization: Bearer <token>（普通 API 请求）
+    - URL 参数 ?token=<token>（<audio> 标签播放时，浏览器不会带 header）
+
+    允许：
+    - 录音所有者本人（不管是老人还是家属自己上传的）；
+    - 与录音所属老人存在有效绑定的家属。
+    """
+    from fastapi.responses import FileResponse
+    import jwt
+    from core.security import SECRET_KEY, ALGORITHM
+
+    # 解析 token：优先 header，其次 query 参数
+    raw_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        raw_token = authorization[7:]
+    elif token:
+        raw_token = token
+
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    try:
+        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload.get("sub"))
+    except (jwt.PyJWTError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="登录已过期")
+
+    # API 返回给音频播放器的短期令牌仅允许访问它绑定的文件。
+    if payload.get("scope") == "consult_audio" and payload.get("filename") != filename:
+        raise HTTPException(status_code=403, detail="该播放链接无权访问此录音")
+
+    current = db.query(User).filter(User.id == user_id).first()
+    if not current:
+        raise HTTPException(status_code=401, detail="用户不存在")
+
     audio_url = f"/api/consults/audio/{filename}"
     record = db.query(ConsultRecord).filter(ConsultRecord.audio_url == audio_url).first()
     if not record:
         raise HTTPException(status_code=404, detail="录音文件不存在")
-    # 权限：老人本人 / 已绑定家属才能查看
-    resolve_elder_id(db, current, record.elder_id)
+
+    # 权限校验
+    if record.elder_id == current.id:
+        pass  # 本人录音
+    elif current.role == "family":
+        binding = (
+            db.query(FamilyBinding)
+            .filter(FamilyBinding.elder_id == record.elder_id)
+            .filter(FamilyBinding.family_id == current.id)
+            .filter(FamilyBinding.status == "active")
+            .first()
+        )
+        if not binding:
+            raise HTTPException(status_code=403, detail="无权播放该录音")
+    else:
+        raise HTTPException(status_code=403, detail="无权播放该录音")
 
     filepath = os.path.join(UPLOAD_DIR, filename)
     if not os.path.exists(filepath):

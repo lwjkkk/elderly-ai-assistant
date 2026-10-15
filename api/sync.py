@@ -87,18 +87,34 @@ def sync(since: str | None = None,
         q_dq = q_dq.filter(DrugQuery.created_at >= ts)
     drug_queries = q_dq.all()
 
-    # 对话摘要：受老人的隐私开关约束——关闭时返回空数组
+    # 对话摘要和 kind=chat 的查药记录：受老人隐私开关约束。
+    # 若老人开启了隐私（privacy_enabled_at 不为空），家属只能看到开启时间之前的记录。
     chat_summaries: list[ChatSummary] = []
     target_user = db.query(User).filter(User.id == target).first()
     is_owner = current.id == target
-    if not is_owner and (not target_user or not target_user.sync_summary_to_family):
-        drug_queries = [record for record in drug_queries if record.kind != "chat"]
 
-    if target_user and target_user.sync_summary_to_family:
+    privacy_cutoff = None
+    if not is_owner and target_user and target_user.privacy_enabled_at:
+        privacy_cutoff = target_user.privacy_enabled_at
+
+    if privacy_cutoff is None:
+        # 未开隐私，或本人看自己：全部返回
         q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
         if ts:
             q_cs = q_cs.filter(ChatSummary.created_at >= ts)
         chat_summaries = q_cs.all()
+    else:
+        # 开了隐私：只返回开启时间之前的摘要
+        q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
+        q_cs = q_cs.filter(ChatSummary.created_at <= privacy_cutoff)
+        if ts:
+            q_cs = q_cs.filter(ChatSummary.created_at >= ts)
+        chat_summaries = q_cs.all()
+        # 查药记录里 kind=chat 的，开启时间之后的过滤掉
+        drug_queries = [
+            r for r in drug_queries
+            if r.kind != "chat" or (r.created_at and r.created_at <= privacy_cutoff)
+        ]
 
     server_time = datetime.now(timezone.utc).replace(microsecond=0)
 
