@@ -61,10 +61,12 @@ def assert_can_access(db: Session, current: User, elder_id: int) -> int:
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     """解析目标数据归属：
-    - 老人：总是操作自己的数据（忽略传入的 elder_id）；
+    - 老人：只能操作自己的数据；
     - 家属：传 elder_id 则必须已绑定该老人（代录/查看长辈）；不传则操作自己的本人记录。
     """
     if current.role == "elder":
+        if elder_id is not None and elder_id != current.id:
+            raise HTTPException(status_code=403, detail="只能操作自己的数据")
         return assert_can_access(db, current, current.id)
     if elder_id is None:
         # 家属本人区：管理自己的体征/报告/录音等记录

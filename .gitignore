@@ -50,7 +50,6 @@ data/processed_private/
 # 模型权重和缓存
 models/*
 !models/.gitkeep
-ocr_models/
 *.bin
 *.safetensors
 *.onnx
@@ -109,3 +108,18 @@ venv/
 env/
 *.env
 .DS_Store
+ocr_models/
+backend_validation/originals/
+backend_validation/*.log
+backend_validation/*.pdf
+backend_validation/*.png
+backend_validation/*.json
+
+# Local dependency caches, worktrees and generated validation artifacts
+.pubcache/
+flutter_pub_cache/
+.worktrees/
+~$*
+backend_validation/*.tar.gz
+docs/local_*audit.json
+docs/local_vitals_model_output.json

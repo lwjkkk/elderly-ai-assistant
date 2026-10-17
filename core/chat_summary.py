@@ -127,7 +127,7 @@ def save_summary_sync(elder_id: int, question: str, answer: str, module: str):
                 kind="chat",
                 input_text=question.strip(),
                 ocr_text=question.strip(),
-                explanation=(answer or "")[:500],
+                explanation=answer or "",
                 disclaimer=DRUG_DISCLAIMER,
             ))
         db.commit()
