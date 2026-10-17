@@ -130,9 +130,10 @@ class _LoginPageState extends State<LoginPage> {
   /// 兼容旧版本：以前注册头像只保存在本机，首次登录后补传到服务端。
   Future<void> _syncLegacyAvatar() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('avatar_removed_${await ApiService.getRole()}_${await ApiService.getUserId()}') == true) return;
       final profile = await ApiService.getProfile();
       if ((profile['avatar_url'] ?? '').toString().isNotEmpty) return;
-      final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString('avatar_${phone.text.trim()}') ??
           prefs.getString('avatar');
       if (saved == null || saved.isEmpty) return;

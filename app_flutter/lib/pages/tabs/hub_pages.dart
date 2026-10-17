@@ -13,6 +13,8 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/afu_chat_page.dart' show AfuMessage, AfuBubble;
 import '../../services/api.dart';
+import '../../afu/delete_confirm.dart';
+import 'package:cross_file/cross_file.dart';
 import 'consult_drug_chat_tab.dart';
 import '../bind_page.dart';
 import 'meds_tab.dart';
@@ -1118,6 +1120,9 @@ class _FamEmptyPainter extends CustomPainter {
 
 /// 单条消息的数据模型（本地持久化）。
 class _FamMsg {
+  final int? serverId;
+  final String clientId;
+  final String transcript;
   final bool isMe;
   final String kind;
   final String text;
@@ -1126,6 +1131,9 @@ class _FamMsg {
   final String image;
   final int dur;
   const _FamMsg({
+    this.serverId,
+    this.clientId = '',
+    this.transcript = '',
     required this.isMe,
     this.kind = 'text',
     this.text = '',
@@ -1136,6 +1144,9 @@ class _FamMsg {
   });
 
   Map<String, dynamic> toJson() => {
+        'server_id': serverId,
+        'client_id': clientId,
+        'transcript': transcript,
         'isMe': isMe,
         'kind': kind,
         'text': text,
@@ -1146,6 +1157,9 @@ class _FamMsg {
       };
 
   static _FamMsg fromJson(Map<String, dynamic> j) => _FamMsg(
+        serverId: (j['server_id'] as num?)?.toInt(),
+        clientId: (j['client_id'] ?? '').toString(),
+        transcript: (j['transcript'] ?? '').toString(),
         isMe: j['isMe'] == true,
         kind: (j['kind'] ?? 'text').toString(),
         text: (j['text'] ?? '').toString(),
@@ -1183,10 +1197,18 @@ class _FamConversationState extends State<FamConversationPage> {
   bool _holding = false;
   bool _voiceStarting = false;
   bool _voiceRequested = false;
+  bool _voiceEnding = false;
   final _rec = AudioRecorder();
   DateTime? _recStart;
   Timer? _syncTimer;
   bool _initialLoaded = false;
+  bool _loadingHistory = false;
+  bool _historyRestored = false;
+  int _revision = 0;
+  final Map<String, _FamMsg> _pending = {};
+  final Set<String> _failed = {};
+  final Set<String> _sending = {};
+  Timer? _recordLimit;
 
   @override
   void initState() {
@@ -1194,7 +1216,7 @@ class _FamConversationState extends State<FamConversationPage> {
     if ((widget.prefill ?? '').isNotEmpty) {
       _input.text = widget.prefill!;
     }
-    _loadHistory();
+    _restoreHistory();
     _syncTimer =
         Timer.periodic(const Duration(seconds: 3), (_) => _loadHistory());
   }
@@ -1203,6 +1225,7 @@ class _FamConversationState extends State<FamConversationPage> {
   void dispose() {
     _voiceRequested = false;
     _syncTimer?.cancel();
+    _recordLimit?.cancel();
     _input.dispose();
     _list.dispose();
     try {
@@ -1212,10 +1235,14 @@ class _FamConversationState extends State<FamConversationPage> {
   }
 
   Future<void> _loadHistory() async {
+    if (!_historyRestored || _loadingHistory || !mounted) return;
+    _loadingHistory = true;
+    final revision = _revision;
     try {
       final userId = await ApiService.getUserId();
       final server = await ApiService.familyMessages(widget.bindingId);
-      _msgs = [
+      if (!mounted || revision != _revision) return;
+      final received = [
         for (final raw in server)
           (() {
             final row = Map<String, dynamic>.from(raw as Map);
@@ -1223,29 +1250,49 @@ class _FamConversationState extends State<FamConversationPage> {
                 Map<String, dynamic>.from(row['content'] as Map? ?? {});
             content['isMe'] = (row['sender_id'] as num?)?.toInt() == userId;
             content['kind'] = row['kind'] ?? content['kind'] ?? 'text';
+            content['server_id'] = row['id'];
             return _FamMsg.fromJson(content);
           })(),
       ];
-      if (mounted) setState(() {});
+      for (final message in received) {
+        _pending.remove(message.clientId);
+        _failed.remove(message.clientId);
+      }
+      setState(() => _msgs = [...received, ..._pending.values]);
+      await _saveHistory();
     } catch (_) {
-      // 兼容升级前的本地历史；服务恢复后新消息会落到后端。
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final raw = prefs.getString(widget.storeKey);
-        if (raw == null || raw.isEmpty) return;
-        final list = jsonDecode(raw) as List;
-        _msgs = [
-          for (final e in list)
-            _FamMsg.fromJson(Map<String, dynamic>.from(e as Map))
-        ];
-        if (mounted) setState(() {});
-      } catch (_) {}
+      // 保留当前消息和失败消息；网络恢复后再同步。
+    } finally {
+      _loadingHistory = false;
     }
     // 一键询问带入的业务记录：历史加载完后再追加发送，避免被覆盖
     if (!_initialLoaded && (widget.autoText ?? '').isNotEmpty && mounted) {
       unawaited(_push(_FamMsg(isMe: true, text: widget.autoText!)));
     }
     _initialLoaded = true;
+  }
+
+  Future<void> _restoreHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(widget.storeKey);
+      if (raw != null) {
+        final saved = (jsonDecode(raw) as List)
+            .map((m) => _FamMsg.fromJson(Map<String, dynamic>.from(m as Map)))
+            .toList();
+        for (final message in saved) {
+          if (message.isMe &&
+              message.serverId == null &&
+              message.clientId.isNotEmpty) {
+            _pending[message.clientId] = message;
+            _failed.add(message.clientId);
+          }
+        }
+        if (mounted) setState(() => _msgs = saved);
+      }
+    } catch (_) {}
+    _historyRestored = true;
+    await _loadHistory();
   }
 
   Future<void> _saveHistory() async {
@@ -1257,24 +1304,85 @@ class _FamConversationState extends State<FamConversationPage> {
   }
 
   Future<void> _push(_FamMsg m) async {
+    if (!mounted) return;
+    final content = m.toJson();
+    content['client_id'] = DateTime.now().microsecondsSinceEpoch.toString();
+    m = _FamMsg.fromJson(content);
+    ++_revision;
+    _pending[m.clientId] = m;
     setState(() => _msgs.add(m));
-    _saveHistory();
-    if (m.isMe && (m.kind == 'text' || m.kind == 'health')) {
-      try {
-        await ApiService.sendFamilyMessage(
-            widget.bindingId, m.kind, m.toJson());
-      } catch (e) {
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('消息发送失败：${ApiService.friendly(e)}')));
-      }
-    }
+    await _saveHistory();
+    await _deliver(m);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_list.hasClients) return;
       _list.animateTo(_list.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic);
     });
+  }
+
+  Future<void> _deliver(_FamMsg message) async {
+    if (_sending.contains(message.clientId)) return;
+    _sending.add(message.clientId);
+    _failed.remove(message.clientId);
+    if (mounted) setState(() {});
+    try {
+      final Map<String, dynamic> row;
+      if (message.kind == 'audio') {
+        final file = XFile(message.text);
+        row = await ApiService.uploadFamilyAudio(
+            widget.bindingId,
+            await file.readAsBytes(),
+            kIsWeb ? 'voice.wav' : 'voice.m4a',
+            message.dur,
+            message.clientId);
+      } else {
+        row = await ApiService.sendFamilyMessage(
+            widget.bindingId, message.kind, message.toJson());
+      }
+      ++_revision;
+      final content = Map<String, dynamic>.from(row['content'] as Map);
+      content
+          .addAll({'isMe': true, 'server_id': row['id'], 'kind': row['kind']});
+      final confirmed = _FamMsg.fromJson(content);
+      _pending.remove(message.clientId);
+      _failed.remove(message.clientId);
+      if (mounted)
+        setState(() {
+          final index = _msgs.indexWhere((m) => m.clientId == message.clientId);
+          if (index >= 0) _msgs[index] = confirmed;
+        });
+      await _saveHistory();
+    } catch (e) {
+      _failed.add(message.clientId);
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('消息发送失败，已保留，可点击重试：${ApiService.friendly(e)}')));
+    } finally {
+      _sending.remove(message.clientId);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _deleteMessage(_FamMsg message) async {
+    if (!message.isMe || _sending.contains(message.clientId)) return;
+    if (!await showDeleteConfirm(context, '这条消息')) return;
+    try {
+      if (message.serverId != null) {
+        await ApiService.deleteFamilyMessage(
+            widget.bindingId, message.serverId!);
+      }
+      ++_revision;
+      _pending.remove(message.clientId);
+      _failed.remove(message.clientId);
+      if (mounted) setState(() => _msgs.removeWhere((m) => message.serverId != null
+          ? m.serverId == message.serverId : m.clientId == message.clientId));
+      await _saveHistory();
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
+    }
   }
 
   void _sendText() {
@@ -1285,12 +1393,17 @@ class _FamConversationState extends State<FamConversationPage> {
   }
 
   Future<void> _voiceStart() async {
-    if (_voiceStarting || _holding) return;
+    if (_voiceStarting || _holding || _voiceEnding) return;
     _voiceStarting = true;
     _voiceRequested = true;
     try {
       if (!await _rec.hasPermission()) throw Exception('no mic');
-      if (!mounted || !_voiceRequested) return;
+      if (!mounted) return;
+      if (!_voiceRequested) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('麦克风已准备好，请再次长按话筒录音')));
+        return;
+      }
       final name =
           'fam_${DateTime.now().millisecondsSinceEpoch}.${kIsWeb ? 'wav' : 'm4a'}';
       final path =
@@ -1304,6 +1417,8 @@ class _FamConversationState extends State<FamConversationPage> {
         return;
       }
       _recStart = DateTime.now();
+      _recordLimit?.cancel();
+      _recordLimit = Timer(const Duration(seconds: 60), _voiceEnd);
       if (mounted) setState(() => _holding = true);
     } catch (_) {
       if (mounted) {
@@ -1318,17 +1433,24 @@ class _FamConversationState extends State<FamConversationPage> {
 
   Future<void> _voiceEnd() async {
     _voiceRequested = false;
+    _recordLimit?.cancel();
     if (!_holding) return;
+    _voiceEnding = true;
+    if (mounted) setState(() => _holding = false);
     try {
       final path = await _rec.stop();
       final secs = _recStart == null
           ? 0
-          : DateTime.now().difference(_recStart!).inSeconds;
+          : DateTime.now().difference(_recStart!).inSeconds.clamp(0, 60);
       if (mounted && path != null && secs >= 1) {
         _push(_FamMsg(isMe: true, kind: 'audio', text: path, dur: secs));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('录音太短，请长按话筒至少1秒后松开发送')));
       }
     } catch (_) {}
     _recStart = null;
+    _voiceEnding = false;
     if (mounted) setState(() => _holding = false);
   }
 
@@ -1416,8 +1538,10 @@ class _FamConversationState extends State<FamConversationPage> {
             title: const Text('上传图片', style: AfuElderText.body),
             onTap: () async {
               Navigator.of(context).pop();
-              final f =
-                  await ImagePicker().pickImage(source: ImageSource.gallery);
+              final f = await ImagePicker().pickImage(
+                  source: ImageSource.gallery,
+                  maxWidth: 1600,
+                  imageQuality: 85);
               if (f == null || !mounted) return;
               try {
                 final bytes = await f.readAsBytes();
@@ -1506,7 +1630,27 @@ class _FamConversationState extends State<FamConversationPage> {
                     controller: _list,
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                     itemCount: _msgs.length,
-                    itemBuilder: (c, i) => _FamBubble(msg: _msgs[i]),
+                    itemBuilder: (c, i) {
+                      final message = _msgs[i];
+                      return GestureDetector(
+                        key: ValueKey(message.serverId ??
+                            (message.clientId.isEmpty ? 'legacy_$i' : message.clientId)),
+                        onLongPress:
+                            message.isMe ? () => _deleteMessage(message) : null,
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _FamBubble(
+                                  msg: message, bindingId: widget.bindingId),
+                              if (_sending.contains(message.clientId))
+                                const Text('发送中…'),
+                              if (_failed.contains(message.clientId))
+                                TextButton(
+                                    onPressed: () => _deliver(message),
+                                    child: const Text('发送失败，点击重试')),
+                            ]),
+                      );
+                    },
                   ),
           ),
           _FamInputBar(
@@ -1589,7 +1733,8 @@ class _QuickBar extends StatelessWidget {
 /// 聊天泡：长辈右蓝、家属左白；引用的记录以内嵌缩略卡展示并标注来源。
 class _FamBubble extends StatelessWidget {
   final _FamMsg msg;
-  const _FamBubble({required this.msg});
+  final int bindingId;
+  const _FamBubble({required this.msg, required this.bindingId});
 
   @override
   Widget build(BuildContext context) {
@@ -1622,7 +1767,7 @@ class _FamBubble extends StatelessWidget {
       } catch (_) {}
     }
     if (msg.kind == 'audio') {
-      return _AudioBubble(msg: msg);
+      return _AudioBubble(msg: msg, bindingId: bindingId);
     }
     if (msg.kind == 'health') {
       return Align(
@@ -1751,9 +1896,11 @@ class _FamInputBar extends StatelessWidget {
       ),
       child: Row(children: [
         GestureDetector(
-          onTap: () => holding ? onVoiceEnd() : onVoiceStart(),
+          onTap: () => ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('请长按话筒说话，松开后发送语音'))),
           onLongPressStart: (_) => onVoiceStart(),
           onLongPressEnd: (_) => onVoiceEnd(),
+          onLongPressCancel: onVoiceEnd,
           child: Container(
             width: 56,
             height: 56,
@@ -1777,7 +1924,7 @@ class _FamInputBar extends StatelessWidget {
             textInputAction: TextInputAction.send,
             onSubmitted: (_) => onSubmit(),
             decoration: InputDecoration(
-              hintText: '和家人说点什么…',
+              hintText: holding ? '正在录音，松开话筒发送…' : '文字输入，或长按话筒发送语音',
               hintStyle:
                   const TextStyle(fontSize: 18, color: Color(0xFF555555)),
               filled: true,
@@ -1837,7 +1984,8 @@ class _FamInputBar extends StatelessWidget {
 /// 语音泡：点播放键收听，显示秒数。
 class _AudioBubble extends StatefulWidget {
   final _FamMsg msg;
-  const _AudioBubble({required this.msg});
+  final int bindingId;
+  const _AudioBubble({required this.msg, required this.bindingId});
 
   @override
   State<_AudioBubble> createState() => _AudioBubbleState();
@@ -1846,6 +1994,25 @@ class _AudioBubble extends StatefulWidget {
 class _AudioBubbleState extends State<_AudioBubble> {
   final _player = AudioPlayer();
   bool _playing = false;
+  bool _transcribing = false;
+  String? _transcript;
+
+  Future<void> _transcribe() async {
+    if (_transcribing || widget.msg.serverId == null) return;
+    setState(() => _transcribing = true);
+    try {
+      final text = await ApiService.transcribeFamilyAudio(
+          widget.bindingId, widget.msg.serverId!);
+      if (mounted) setState(() => _transcript = text);
+    } catch (e) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text(ApiService.errorDetail(e) ?? ApiService.friendly(e))));
+    } finally {
+      if (mounted) setState(() => _transcribing = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -1860,9 +2027,16 @@ class _AudioBubbleState extends State<_AudioBubble> {
         if (mounted) setState(() => _playing = false);
         return;
       }
-      await _player.play(kIsWeb
-          ? UrlSource(widget.msg.text)
-          : DeviceFileSource(widget.msg.text));
+      if (widget.msg.text.startsWith('/api/') ||
+          widget.msg.text.startsWith('http')) {
+        final bytes = await ApiService.familyAudioBytes(widget.msg.text);
+        await _player.play(BytesSource(bytes,
+            mimeType: ApiService.audioMimeType(widget.msg.text)));
+      } else {
+        await _player.play(kIsWeb
+            ? UrlSource(widget.msg.text)
+            : DeviceFileSource(widget.msg.text));
+      }
       if (mounted) setState(() => _playing = true);
       _player.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _playing = false);
@@ -1889,29 +2063,54 @@ class _AudioBubbleState extends State<_AudioBubble> {
           borderRadius: BorderRadius.circular(20),
           border: isMe ? null : Border.all(color: const Color(0xFFDCE6F7)),
         ),
-        child: AfuPressable(
-          onTap: _toggle,
-          borderRadius: 14,
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isMe
-                    ? Colors.white.withOpacity(0.25)
-                    : const Color(0xFFE8EFFD),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AfuPressable(
+                onTap: _toggle,
+                borderRadius: 14,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isMe
+                          ? Colors.white.withOpacity(0.25)
+                          : const Color(0xFFE8EFFD),
+                    ),
+                    child: Icon(_playing ? Icons.stop : Icons.play_arrow,
+                        size: 28,
+                        color: isMe ? Colors.white : AfuColors.primaryDeep),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('${widget.msg.dur}秒语音',
+                      style: TextStyle(
+                          fontSize: 19,
+                          color:
+                              isMe ? Colors.white : const Color(0xFF222222))),
+                ]),
               ),
-              child: Icon(_playing ? Icons.stop : Icons.play_arrow,
-                  size: 28, color: isMe ? Colors.white : AfuColors.primaryDeep),
-            ),
-            const SizedBox(width: 10),
-            Text('${widget.msg.dur}秒语音',
-                style: TextStyle(
-                    fontSize: 19,
-                    color: isMe ? Colors.white : const Color(0xFF222222))),
-          ]),
-        ),
+              TextButton(
+                onPressed: widget.msg.serverId == null || _transcribing
+                    ? null
+                    : _transcribe,
+                style: TextButton.styleFrom(
+                    foregroundColor:
+                        isMe ? Colors.white : AfuColors.primaryDeep),
+                child: Text(_transcribing
+                    ? '转写中…'
+                    : widget.msg.serverId == null
+                        ? '发送完成后可转文字'
+                        : '语音转文字'),
+              ),
+              if ((_transcript ?? widget.msg.transcript).isNotEmpty)
+                Text(_transcript ?? widget.msg.transcript,
+                    style: TextStyle(
+                        fontSize: 18,
+                        color: isMe ? Colors.white : const Color(0xFF212936))),
+            ]),
       ),
     );
   }

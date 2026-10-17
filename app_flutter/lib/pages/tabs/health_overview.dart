@@ -2360,7 +2360,7 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
                           _tCell(r['weight']!),
                         ],
                     ],
-                    rowLongPress: [
+                    rowLongPress: widget.forElder ? null : [
                       for (final r in _pivot()) () => _deleteVitalDay(r),
                     ],
                     emptyIcon: Icons.show_chart_outlined,
@@ -2649,10 +2649,9 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                               40)),
                         ],
                     ],
-                    rowLongPress: [
+                    rowLongPress: widget.forElder ? null : [
                       for (final e in _items)
-                        () =>
-                            _deleteReport(Map<String, dynamic>.from(e as Map)),
+                        () => _deleteReport(Map<String, dynamic>.from(e as Map)),
                     ],
                     emptyIcon: Icons.description_outlined,
                     emptyAccent: _mRep,
@@ -2728,6 +2727,18 @@ class _MineConsultsPage extends StatefulWidget {
 }
 
 class _MineConsultsPageState extends State<_MineConsultsPage> {
+  Future<void> _deleteConsult(Map<String, dynamic> item) async {
+    final id = (item['id'] as num?)?.toInt();
+    if (id == null || !await showDeleteConfirm(context, '这条咨询录音')) return;
+    try {
+      await _player.stop();
+      await ApiService.deleteConsult(id);
+      await _refresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
+    }
+  }
   List _items = [];
   bool _loading = true;
   bool _busy = false;
@@ -3024,6 +3035,8 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
                     emptyIcon: Icons.mic_none_outlined,
                     emptyAccent: _mCon,
                     emptyText: '暂无录音记录，点击记录就诊历史',
+                    rowLongPress: [for (final item in _items)
+                      () => _deleteConsult(Map<String, dynamic>.from(item as Map))],
                   ),
                 ],
               ),
