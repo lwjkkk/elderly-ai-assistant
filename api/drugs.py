@@ -142,11 +142,14 @@ def list_drug_records(elder_id: int | None = None,
     # 老人本人看自己的不过滤；家属代看时，若老人开启了隐私，只返回开启时间之前的。
     target_user = db.query(User).filter(User.id == target).first()
     viewed_by_family = current.id != target
-    privacy_cutoff = target_user.privacy_enabled_at if (target_user and viewed_by_family) else None
+    privacy_enabled = bool(target_user and viewed_by_family
+                           and not target_user.sync_summary_to_family)
+    privacy_cutoff = target_user.privacy_enabled_at if privacy_enabled else None
 
     result = []
     for rec in q.all():
-        if rec.kind == "chat" and privacy_cutoff and rec.created_at and rec.created_at > privacy_cutoff:
-            continue
+        if rec.kind == "chat" and privacy_enabled:
+            if privacy_cutoff is None or not rec.created_at or rec.created_at > privacy_cutoff:
+                continue
         result.append(DrugQueryOut.model_validate(rec).model_dump())
     return result

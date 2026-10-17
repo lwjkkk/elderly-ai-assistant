@@ -93,17 +93,17 @@ def sync(since: str | None = None,
     target_user = db.query(User).filter(User.id == target).first()
     is_owner = current.id == target
 
-    privacy_cutoff = None
-    if not is_owner and target_user and target_user.privacy_enabled_at:
-        privacy_cutoff = target_user.privacy_enabled_at
+    privacy_enabled = bool(not is_owner and target_user
+                           and not target_user.sync_summary_to_family)
+    privacy_cutoff = target_user.privacy_enabled_at if privacy_enabled else None
 
-    if privacy_cutoff is None:
+    if not privacy_enabled:
         # 未开隐私，或本人看自己：全部返回
         q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
         if ts:
             q_cs = q_cs.filter(ChatSummary.created_at >= ts)
         chat_summaries = q_cs.all()
-    else:
+    elif privacy_cutoff is not None:
         # 开了隐私：只返回开启时间之前的摘要
         q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
         q_cs = q_cs.filter(ChatSummary.created_at <= privacy_cutoff)
@@ -115,6 +115,10 @@ def sync(since: str | None = None,
             r for r in drug_queries
             if r.kind != "chat" or (r.created_at and r.created_at <= privacy_cutoff)
         ]
+    else:
+        # 兼容旧数据：隐私已开启但缺少开启时刻时，不向家属返回任何对话派生记录。
+        chat_summaries = []
+        drug_queries = [r for r in drug_queries if r.kind != "chat"]
 
     server_time = datetime.now(timezone.utc).replace(microsecond=0)
 

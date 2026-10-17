@@ -2333,14 +2333,6 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
                           icon: const Icon(Icons.edit_outlined),
                           label: const Text('手动录入', softWrap: false)),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                          onPressed: _recognizing ? null : _pickPhoto,
-                          style: _tintBtn(_kText, _mVitBg),
-                          icon: const Icon(Icons.camera_alt_outlined),
-                          label: const Text('拍照上传', softWrap: false)),
-                    ),
                   ]),
                   const SizedBox(height: 16),
                   _MineTable(
@@ -3150,7 +3142,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
                         prompt: '这次查的药品，服用方法和注意事项都清楚了吗？');
                   },
                   style: _tintBtn(_eDrug, _eDrugBg),
-                  child: const Text('一键问医生', softWrap: false),
+                  child: const Text('一键询问长辈', softWrap: false),
                 ),
               ),
             if (list.isNotEmpty) const SizedBox(height: 16),

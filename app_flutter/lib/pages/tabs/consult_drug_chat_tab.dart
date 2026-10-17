@@ -20,6 +20,7 @@ import 'vitals_tab.dart';
 import 'health_record_style.dart';
 import 'report_details.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
 class ConsultsTab extends StatefulWidget {
@@ -75,17 +76,10 @@ class _ConsultsTabState extends State<ConsultsTab> {
   Future<void> _saveRecording(String path) async {
     final address = TextEditingController();
     final title = TextEditingController();
-    var locationHint = '开启定位后自动提供参考地点';
-    try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
-        final p = await Geolocator.getCurrentPosition(
-            timeLimit: const Duration(seconds: 6));
-        locationHint =
-            '当前位置 ${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}';
-      }
-    } catch (_) {}
+    final locationHint = await _suggestAddress();
+    if (locationHint.startsWith('推荐地址：')) {
+      address.text = locationHint.substring('推荐地址：'.length);
+    }
     if (!mounted) return;
     final ok = await showDialog<bool>(
         context: context,
@@ -136,6 +130,44 @@ class _ConsultsTabState extends State<ConsultsTab> {
     if (mounted)
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('录音已保存')));
+  }
+
+  Future<String> _suggestAddress() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return '请开启手机定位后获取推荐地址';
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return '允许定位权限后自动推荐地址';
+      }
+      final p = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 8));
+      final places = await placemarkFromCoordinates(p.latitude, p.longitude);
+      if (places.isNotEmpty) {
+        final place = places.first;
+        final parts = <String>[
+          place.administrativeArea ?? '',
+          place.locality ?? '',
+          place.subLocality ?? '',
+          place.street ?? '',
+          place.name ?? '',
+        ].where((e) => e.trim().isNotEmpty).toList();
+        final unique = <String>[];
+        for (final part in parts) {
+          if (!unique.contains(part)) unique.add(part);
+        }
+        if (unique.isNotEmpty) return '推荐地址：${unique.join('')}';
+      }
+      return '当前位置 ${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}';
+    } catch (_) {
+      return '定位暂不可用，请手动填写地址';
+    }
   }
 
   Widget _consultField(TextEditingController c, String label, String hint) =>
@@ -953,25 +985,20 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   SpeechToText? _activeStt;
+  Future<bool>? _sttInitialization;
 
   bool _autoSend = false;
 
-  Future<void> startHoldToTalk({bool autoSend = false}) async {
-    if (listening || _voiceStarting || busy) return;
-    final generation = ++_voiceGeneration;
-    setState(() => _voiceStarting = true);
-    await _speech.stop();
-    try {
+  Future<bool> _ensureSpeechReady() {
+    return _sttInitialization ??= () async {
       final stt = _activeStt ??= SpeechToText();
-      // speech_to_text 是单例，initialize 成功后不会重绑回调；每次进入页面都重新绑定。
       stt.errorListener = (e) {
-        if (mounted) {
-          setState(() => listening = false);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(e.errorMsg.contains('permission')
-                  ? '请允许麦克风权限后重试'
-                  : '语音识别中断，请重试或手动输入')));
-        }
+        if (!mounted) return;
+        setState(() => listening = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.errorMsg.contains('permission')
+                ? '请在系统设置中允许麦克风权限后重试'
+                : '语音识别中断，请再次点击话筒')));
       };
       stt.statusListener = (status) {
         if (mounted &&
@@ -980,11 +1007,25 @@ class _ChatTabState extends State<ChatTab> {
           setState(() => listening = false);
         }
       };
-      final ok = await stt
+      return stt
           .initialize(onError: stt.errorListener, onStatus: stt.statusListener)
-          .timeout(const Duration(seconds: 8), onTimeout: () => false);
+          .timeout(const Duration(seconds: 10), onTimeout: () => false);
+    }();
+  }
+
+  Future<void> startHoldToTalk({bool autoSend = false}) async {
+    if (listening || _voiceStarting || busy) return;
+    final generation = ++_voiceGeneration;
+    setState(() => _voiceStarting = true);
+    await _speech.stop();
+    try {
+      final stt = _activeStt ??= SpeechToText();
+      final ok = await _ensureSpeechReady();
       if (!mounted || generation != _voiceGeneration) return;
-      if (!ok) throw StateError('语音识别不可用');
+      if (!ok) {
+        _sttInitialization = null;
+        throw StateError('语音识别不可用');
+      }
       String? locale;
       final locales = await stt.locales();
       for (final l in locales) {
@@ -1063,7 +1104,7 @@ class _ChatTabState extends State<ChatTab> {
               const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
       textScale: 1.0,
       onSend: send,
-      onVoiceStart: startHoldToTalk,
+      onVoiceStart: () => startHoldToTalk(),
       onVoiceEnd: stopHoldToTalk,
       voiceActive: listening || _voiceStarting,
       onToggleTextScale: () async {

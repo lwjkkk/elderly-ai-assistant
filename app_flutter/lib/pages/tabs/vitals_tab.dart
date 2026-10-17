@@ -267,10 +267,6 @@ class _VitalsTabState extends State<VitalsTab> {
                           '手动录入',
                           Icons.edit_outlined,
                           busy ? null : () => showAddDialog())),
-                  const SizedBox(width: 12),
-                  Expanded(
-                      child: HealthRecordStyle.button(busy ? '处理中…' : '拍照上传',
-                          Icons.camera_alt_outlined, busy ? null : photo)),
                 ]),
               const SizedBox(height: 16),
               HealthRecordStyle.panel(loading

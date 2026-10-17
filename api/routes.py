@@ -31,7 +31,8 @@ def chat(request: ChatRequest,
     result = get_agent_answer(request.question)
 
     # 仅老人登录且问题属于需同步的 4 类时，异步落库（不阻塞回答返回）
-    if current is not None and current.role == "elder":
+    if (current is not None and current.role == "elder"
+            and current.sync_summary_to_family):
         module = result.get("module", "")
         threading.Thread(
             target=save_summary_sync,
@@ -58,8 +59,12 @@ def list_summaries(elder_id: int | None = None,
     # 家属看老人数据时：若老人开启了隐私，只返回开启时间之前的记录
     if current.role == "family" and target != current.id:
         elder = db.query(User).filter(User.id == target).first()
-        if elder and elder.privacy_enabled_at:
-            q = q.filter(ChatSummary.created_at <= elder.privacy_enabled_at)
+        if elder and not elder.sync_summary_to_family:
+            if elder.privacy_enabled_at:
+                q = q.filter(ChatSummary.created_at <= elder.privacy_enabled_at)
+            else:
+                # 兼容旧数据：开关已关闭同步但尚无开启时间时，优先保护隐私。
+                q = q.filter(ChatSummary.id == -1)
 
     if category:
         q = q.filter(ChatSummary.category == category)
