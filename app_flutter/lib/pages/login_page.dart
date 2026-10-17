@@ -121,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
                 role == 'family' ? const FamilyHome() : const ElderHome()),
       );
     } catch (e) {
-      setState(() => err = '登录失败：${ApiService.friendly(e)}\n请确认后端已启动且地址正确');
+      setState(() => err = '登录失败：${ApiService.friendly(e)}');
     } finally {
       if (mounted) setState(() => loading = false);
     }
