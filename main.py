@@ -13,6 +13,7 @@ from api.routes import router as chat_router
 from api.auth import router as auth_router
 from api.bind import router as bind_router
 from api.meds import router as meds_router
+from api.medication_recognition import router as medication_recognition_router
 from api.drugs import router as drugs_router
 from api.vitals import router as vitals_router
 from api.consults import router as consults_router
@@ -66,6 +67,7 @@ app.include_router(chat_router)    # 原有 /api/chat
 app.include_router(auth_router)    # 鉴权 /api/auth
 app.include_router(bind_router)    # 绑定 /api/bind
 app.include_router(meds_router)    # 用药 /api/meds
+app.include_router(medication_recognition_router)
 app.include_router(drugs_router)   # 查药 /api/drugs
 app.include_router(vitals_router)  # 体征 /api/vitals
 app.include_router(consults_router)  # 问诊录音 /api/consults
