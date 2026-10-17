@@ -5,6 +5,7 @@ import 'afu_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api.dart';
+import '../services/location_access.dart';
 
 /// 图片资源说明：
 /// - 欢迎卡助手形象：assets/assistant.png（透明底全身像，pubspec.yaml 已注册）
@@ -21,7 +22,8 @@ class AfuMessage {
   final String text;
   final bool isMe;
   final bool thinking;
-  const AfuMessage({required this.text, required this.isMe, this.thinking = false});
+  const AfuMessage(
+      {required this.text, required this.isMe, this.thinking = false});
 }
 
 /// 一级 Tab【问事】AI 问答主页（纯 UI，不调接口）。
@@ -33,6 +35,7 @@ class AfuElderChatPage extends StatefulWidget {
   final VoidCallback onVoiceStart;
   final VoidCallback onVoiceEnd;
   final bool voiceActive;
+  final String voiceHint;
   final VoidCallback onToggleTextScale;
   final Widget? header;
   final TextEditingController? inputController;
@@ -49,6 +52,7 @@ class AfuElderChatPage extends StatefulWidget {
     required this.onVoiceStart,
     required this.onVoiceEnd,
     this.voiceActive = false,
+    this.voiceHint = '点按话筒开始说话，再点停止',
     required this.onToggleTextScale,
     this.inputController,
     this.onQuickEntry,
@@ -107,7 +111,8 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_list.hasClients) return;
-      _list.animateTo(_list.position.maxScrollExtent, duration: AfuMotion.bubbleIn, curve: Curves.easeOutCubic);
+      _list.animateTo(_list.position.maxScrollExtent,
+          duration: AfuMotion.bubbleIn, curve: Curves.easeOutCubic);
     });
   }
 
@@ -121,56 +126,61 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        backgroundColor: Colors.transparent,
-        // 全局规则：不再保留页面顶部黑色标题（字号调节已移到「个人中心」）
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFFF7FAFD), Color(0xFFF7FAFD)],
-            ),
-          ),
-          child: Column(
-            children: [
-              if (widget.header != null) widget.header!,
-              Expanded(
-                child: widget.messages.isEmpty
-                    ? SingleChildScrollView(
-                        child: Column(children: [
-                          _TipCard(onMore: widget.onTipMore),
-                          const _WelcomeCard(),
-                          _FuncCards(onTap: (i) => widget.onQuickEntry?.call(i)),
-                          const SizedBox(height: 8),
-                        ]),
-                      )
-                    : ListView.builder(
-                        controller: _list,
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-                        itemCount: widget.messages.length,
-                        itemBuilder: (c, i) {
-                          final m = widget.messages[i];
-                          if (m.thinking) return const _ThinkingRow();
-                          return m.isMe ? _UserRow(text: m.text) : _AiRow(
-                            text: m.text,
-                            speaking: widget.speakingMessage == i && !widget.speechPaused,
-                            onToggleSpeech: widget.onToggleSpeech == null ? null
-                                : () => widget.onToggleSpeech!(i),
-                          );
-                        },
-                      ),
-              ),
-              _InputBar(
-                controller: _input,
-                busy: widget.busy,
-                onSubmit: _submit,
-                onVoiceStart: widget.onVoiceStart,
-                onVoiceEnd: widget.onVoiceEnd,
-                voiceActive: widget.voiceActive,
-              ),
-            ],
+      backgroundColor: Colors.transparent,
+      // 全局规则：不再保留页面顶部黑色标题（字号调节已移到「个人中心」）
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF7FAFD), Color(0xFFF7FAFD)],
           ),
         ),
+        child: Column(
+          children: [
+            if (widget.header != null) widget.header!,
+            Expanded(
+              child: widget.messages.isEmpty
+                  ? SingleChildScrollView(
+                      child: Column(children: [
+                        _TipCard(onMore: widget.onTipMore),
+                        const _WelcomeCard(),
+                        _FuncCards(onTap: (i) => widget.onQuickEntry?.call(i)),
+                        const SizedBox(height: 8),
+                      ]),
+                    )
+                  : ListView.builder(
+                      controller: _list,
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                      itemCount: widget.messages.length,
+                      itemBuilder: (c, i) {
+                        final m = widget.messages[i];
+                        if (m.thinking) return const _ThinkingRow();
+                        return m.isMe
+                            ? _UserRow(text: m.text)
+                            : _AiRow(
+                                text: m.text,
+                                speaking: widget.speakingMessage == i &&
+                                    !widget.speechPaused,
+                                onToggleSpeech: widget.onToggleSpeech == null
+                                    ? null
+                                    : () => widget.onToggleSpeech!(i),
+                              );
+                      },
+                    ),
+            ),
+            _InputBar(
+              controller: _input,
+              busy: widget.busy,
+              onSubmit: _submit,
+              onVoiceStart: widget.onVoiceStart,
+              onVoiceEnd: widget.onVoiceEnd,
+              voiceActive: widget.voiceActive,
+              voiceHint: widget.voiceHint,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -191,12 +201,15 @@ class _PrivacyDialog extends StatelessWidget {
         Container(
           width: 72,
           height: 72,
-          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-          child: const Icon(Icons.shield_outlined, size: 40, color: Color(0xFF345C87)),
+          decoration:
+              const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+          child: const Icon(Icons.shield_outlined,
+              size: 40, color: Color(0xFF345C87)),
         ),
         const SizedBox(height: 16),
         const Text('隐私保护说明',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: _kInk)),
+            style: TextStyle(
+                fontSize: 24, fontWeight: FontWeight.w800, color: _kInk)),
         const SizedBox(height: 10),
         const Text('对话已开启隐私保护，您的提问仅用于本次解答',
             style: TextStyle(fontSize: 19, color: _kSub, height: 1.5),
@@ -241,12 +254,17 @@ class _TipCardState extends State<_TipCard> {
       });
       final meds = await ApiService.medsToday();
       for (final m in meds) {
-        final map = m is Map ? Map<String, dynamic>.from(m as Map) : <String, dynamic>{};
+        final map = m is Map
+            ? Map<String, dynamic>.from(m as Map)
+            : <String, dynamic>{};
         final name = (map['name'] ?? '').toString();
         final slots = map['slots'] is List ? List.from(map['slots']) : [];
         for (final s in slots) {
-          final sm = s is Map ? Map<String, dynamic>.from(s as Map) : <String, dynamic>{};
-          if ((sm['status'] ?? 'pending').toString() == 'pending' && name.isNotEmpty) {
+          final sm = s is Map
+              ? Map<String, dynamic>.from(s as Map)
+              : <String, dynamic>{};
+          if ((sm['status'] ?? 'pending').toString() == 'pending' &&
+              name.isNotEmpty) {
             final slot = (sm['slot'] ?? '').toString();
             return '今日用药提醒：$name，${slot.isEmpty ? '按时' : slot}服用，请不要随意停药。';
           }
@@ -256,16 +274,15 @@ class _TipCardState extends State<_TipCard> {
     try {
       Map<String, dynamic>? d;
       try {
-        var perm = await Geolocator.checkPermission();
-        if (perm == LocationPermission.denied) {
-          perm = await Geolocator.requestPermission();
-        }
-        if (perm == LocationPermission.whileInUse || perm == LocationPermission.always) {
+        final perm = await LocationAccess.ensurePermission();
+        if (perm == LocationPermission.whileInUse ||
+            perm == LocationPermission.always) {
           final pos = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.low,
             timeLimit: const Duration(seconds: 8),
           );
-          d = await ApiService.weatherRemind(lat: pos.latitude, lon: pos.longitude);
+          d = await ApiService.weatherRemind(
+              lat: pos.latitude, lon: pos.longitude);
         }
       } catch (_) {}
       d ??= await ApiService.weatherRemind(city: '武汉');
@@ -293,7 +310,6 @@ class _TipCardState extends State<_TipCard> {
       },
     );
   }
-
 }
 
 class _TipBody extends StatelessWidget {
@@ -310,33 +326,43 @@ class _TipBody extends StatelessWidget {
         color: const Color(0xFFFFFFFF),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFD8E6F3)),
-        boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
+        boxShadow: [
+          BoxShadow(
+              color: _kDeep.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3))
+        ],
       ),
       child: Column(children: [
         Row(children: [
           Container(
             width: 46,
             height: 46,
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: const Icon(Icons.lightbulb_outline, size: 28, color: Color(0xFF345C87)),
+            decoration: const BoxDecoration(
+                color: Colors.white, shape: BoxShape.circle),
+            child: const Icon(Icons.lightbulb_outline,
+                size: 28, color: Color(0xFF345C87)),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(text,
-                style: const TextStyle(fontSize: 19, color: _kInk, height: 1.45)),
+                style:
+                    const TextStyle(fontSize: 19, color: _kInk, height: 1.45)),
           ),
         ]),
         Align(
           alignment: Alignment.bottomRight,
           child: TextButton(
             onPressed: onMore,
-            child: const Text('查看更多', style: TextStyle(fontSize: 18, color: _kDeep)),
+            child: const Text('查看更多',
+                style: TextStyle(fontSize: 18, color: _kDeep)),
           ),
         ),
       ]),
     );
   }
 }
+
 /// 快捷功能区：【体征】【报告】【咨询】三张卡片。
 /// 卡片样式：左上角圆形图标 + 右侧两字标题 + 标题下方灰色小字说明，无底部装饰图。
 /// 查药 / 自查 / 咨询不再做独立卡片入口，统一由 AI 对话完成。
@@ -414,25 +440,23 @@ class _FuncCards extends StatelessWidget {
           const SizedBox(width: 16),
           // 右侧两字标题 + 标题下方灰色小字说明
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: _kInk)),
-                  const SizedBox(height: 6),
-                  Text(desc,
-                      style:
-                          const TextStyle(fontSize: 17, color: _kSub, height: 1.4)),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.w800, color: _kInk)),
+              const SizedBox(height: 6),
+              Text(desc,
+                  style:
+                      const TextStyle(fontSize: 17, color: _kSub, height: 1.4)),
+            ]),
           ),
         ]),
       ),
     );
   }
 }
+
 /// 空态欢迎卡：AI 助手形象 + 引导文字（推荐问题小卡片已移除）。
 class _WelcomeCard extends StatelessWidget {
   const _WelcomeCard();
@@ -491,11 +515,13 @@ class _WelcomeCard extends StatelessWidget {
     );
   }
 }
+
 class _AiRow extends StatefulWidget {
   final String text;
   final VoidCallback? onToggleSpeech;
   final bool speaking;
-  const _AiRow({required this.text, this.onToggleSpeech, this.speaking = false});
+  const _AiRow(
+      {required this.text, this.onToggleSpeech, this.speaking = false});
   @override
   State<_AiRow> createState() => _AiRowState();
 }
@@ -510,8 +536,10 @@ class _AiRowState extends State<_AiRow> {
       tween: Tween(begin: 0, end: 1),
       duration: AfuMotion.bubbleIn,
       curve: Curves.easeOutCubic,
-      builder: (context, v, child) =>
-          Opacity(opacity: v, child: Transform.translate(offset: Offset(0, 10 * (1 - v)), child: child)),
+      builder: (context, v, child) => Opacity(
+          opacity: v,
+          child: Transform.translate(
+              offset: Offset(0, 10 * (1 - v)), child: child)),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -530,23 +558,27 @@ class _AiRowState extends State<_AiRow> {
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFFD8E6F3)),
               ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  !_open && widget.text.length > _limit
-                      ? '${widget.text.substring(0, _limit)}……'
-                      : widget.text,
-                  style: const TextStyle(fontSize: 19, color: _kInk, height: 1.5),
-                ),
-                if (widget.text.length > _limit)
-                  GestureDetector(
-                    onTap: () => setState(() => _open = !_open),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(_open ? '收起 ▲' : '展开全文 ▼',
-                          style: const TextStyle(fontSize: 18, color: _kDeep)),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      !_open && widget.text.length > _limit
+                          ? '${widget.text.substring(0, _limit)}……'
+                          : widget.text,
+                      style: const TextStyle(
+                          fontSize: 19, color: _kInk, height: 1.5),
                     ),
-                  ),
-              ]),
+                    if (widget.text.length > _limit)
+                      GestureDetector(
+                        onTap: () => setState(() => _open = !_open),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(_open ? '收起 ▲' : '展开全文 ▼',
+                              style:
+                                  const TextStyle(fontSize: 18, color: _kDeep)),
+                        ),
+                      ),
+                  ]),
             ),
           ),
           if (widget.onToggleSpeech != null)
@@ -558,7 +590,8 @@ class _AiRowState extends State<_AiRow> {
                 foregroundColor: const Color(0xFF6B7280),
                 minimumSize: const Size(48, 48),
               ),
-              icon: Icon(widget.speaking ? Icons.pause : Icons.volume_up_outlined),
+              icon: Icon(
+                  widget.speaking ? Icons.pause : Icons.volume_up_outlined),
             ),
         ]),
       ),
@@ -577,8 +610,10 @@ class _UserRow extends StatelessWidget {
       tween: Tween(begin: 0, end: 1),
       duration: AfuMotion.bubbleIn,
       curve: Curves.easeOutCubic,
-      builder: (context, v, child) =>
-          Opacity(opacity: v, child: Transform.translate(offset: Offset(0, 10 * (1 - v)), child: child)),
+      builder: (context, v, child) => Opacity(
+          opacity: v,
+          child: Transform.translate(
+              offset: Offset(0, 10 * (1 - v)), child: child)),
       child: Align(
         alignment: Alignment.centerRight,
         child: Container(
@@ -587,9 +622,16 @@ class _UserRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: _kDeep,
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.12), blurRadius: 8, offset: const Offset(0, 3))],
+            boxShadow: [
+              BoxShadow(
+                  color: _kDeep.withOpacity(0.12),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))
+            ],
           ),
-          child: Text(text, style: const TextStyle(fontSize: 19, color: Colors.white, height: 1.5)),
+          child: Text(text,
+              style: const TextStyle(
+                  fontSize: 19, color: Colors.white, height: 1.5)),
         ),
       ),
     );
@@ -619,7 +661,10 @@ class _ThinkingRow extends StatelessWidget {
           ),
           child: const Row(mainAxisSize: MainAxisSize.min, children: [
             SizedBox(
-                width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 3, color: _kDeep)),
+                width: 22,
+                height: 22,
+                child:
+                    CircularProgressIndicator(strokeWidth: 3, color: _kDeep)),
             SizedBox(width: 12),
             Text('正在思考…', style: TextStyle(fontSize: 18, color: _kSub)),
           ]),
@@ -637,6 +682,7 @@ class _InputBar extends StatefulWidget {
   final VoidCallback onVoiceStart;
   final VoidCallback onVoiceEnd;
   final bool voiceActive;
+  final String voiceHint;
   const _InputBar({
     required this.controller,
     required this.busy,
@@ -644,6 +690,7 @@ class _InputBar extends StatefulWidget {
     required this.onVoiceStart,
     required this.onVoiceEnd,
     this.voiceActive = false,
+    this.voiceHint = '点按话筒开始说话，再点停止',
   });
 
   @override
@@ -681,7 +728,12 @@ class _InputBarState extends State<_InputBar> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(32),
-        boxShadow: [BoxShadow(color: _kDeep.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+              color: _kDeep.withOpacity(0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4))
+        ],
       ),
       child: Row(children: [
         GestureDetector(
@@ -692,9 +744,12 @@ class _InputBarState extends State<_InputBar> {
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _holding ? const Color(0xFFE57373) : const Color(0xFFEDF4FB),
+              color:
+                  _holding ? const Color(0xFFE57373) : const Color(0xFFEDF4FB),
             ),
-            child: Icon(_holding ? Icons.mic : Icons.mic_none, size: 30, color: _holding ? Colors.white : const Color(0xFF345C87)),
+            child: Icon(_holding ? Icons.mic : Icons.mic_none,
+                size: 30,
+                color: _holding ? Colors.white : const Color(0xFF345C87)),
           ),
         ),
         const SizedBox(width: 8),
@@ -709,11 +764,12 @@ class _InputBarState extends State<_InputBar> {
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => widget.onSubmit(),
               decoration: InputDecoration(
-                hintText: '请输入问题，长按话筒可说话',
+                hintText: widget.voiceHint,
                 hintStyle: const TextStyle(fontSize: 18, color: _kSub),
                 filled: true,
                 fillColor: const Color(0xFFFFFFFF),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(28),
                   borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
@@ -742,12 +798,18 @@ class _InputBarState extends State<_InputBar> {
               color: widget.busy ? const Color(0xFF6B7280) : _kDeep,
               boxShadow: widget.busy
                   ? null
-                  : [BoxShadow(color: _kDeep.withOpacity(0.14), blurRadius: 8, offset: const Offset(0, 3))],
+                  : [
+                      BoxShadow(
+                          color: _kDeep.withOpacity(0.14),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3))
+                    ],
             ),
             child: widget.busy
                 ? const Padding(
                     padding: EdgeInsets.all(17),
-                    child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 3, color: Colors.white),
                   )
                 : const Icon(Icons.send, size: 28, color: Colors.white),
           ),

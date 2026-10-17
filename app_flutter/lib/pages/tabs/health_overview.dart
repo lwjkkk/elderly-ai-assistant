@@ -16,11 +16,11 @@ import 'report_details.dart';
 import '../../services/vital_validation.dart';
 import '../../services/medication_time.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../services/location_access.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:geolocator/geolocator.dart';
 import '../../services/file_download.dart';
 
 /// 全局色彩规范（本人视图与绑定长辈视图共用，身份区分靠顶部切换文字）。
@@ -1564,8 +1564,16 @@ class _MineMedsPageState extends State<_MineMedsPage> {
   /// 录入用药安排：支持选择用药开始日期。
   /// 【等待后端接口开发完成】medications 暂无开始日期字段，日期仅用于本地展示，
   /// 后端仍以服务端时间为准。
-  Future<void> _openAdd({String? presetName}) async {
-    final data = await showMedFormDialog(context, presetName: presetName);
+  Future<void> _openAdd(
+      {String? presetName,
+      String? presetDose,
+      String? presetFreq,
+      List<String>? presetTimes}) async {
+    final data = await showMedFormDialog(context,
+        presetName: presetName,
+        presetDose: presetDose,
+        presetFreq: presetFreq,
+        presetTimes: presetTimes);
     if (data == null) return;
     try {
       await ApiService.addMed(
@@ -1591,11 +1599,15 @@ class _MineMedsPageState extends State<_MineMedsPage> {
           .pickImage(source: ImageSource.camera, maxWidth: 1600);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      final r = await ApiService.queryDrugByImage(bytes.toList(),
+      final r = await ApiService.recognizeMedication(bytes.toList(),
           mine: !widget.forElder);
-      final ocr = (r['ocr_text'] ?? '').toString().split('\n').first.trim();
       if (!mounted) return;
-      await _openAdd(presetName: ocr.isEmpty ? null : ocr);
+      await _openAdd(
+          presetName: (r['name'] ?? '').toString(),
+          presetDose: (r['dosage'] ?? '').toString(),
+          presetFreq: (r['frequency'] ?? '').toString(),
+          presetTimes:
+              r['times'] is List ? List<String>.from(r['times']) : null);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2815,18 +2827,11 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
     final bytes = await XFile(path).readAsBytes();
     final hospC = TextEditingController();
     final titleC = TextEditingController();
-    var locationHint = '开启定位后自动提供参考地点';
-    try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
-        final pos = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.medium,
-            timeLimit: const Duration(seconds: 6));
-        locationHint =
-            '当前位置 ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}';
-      }
-    } catch (_) {}
+    final locationHint = await LocationAccess.suggestAddress();
+    if (locationHint.startsWith('推荐地址：')) {
+      hospC.text = locationHint.substring('推荐地址：'.length);
+    }
+    if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -3055,7 +3060,10 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
       _error = null;
     });
     try {
-      _items = await ApiService.drugRecords();
+      final records = await ApiService.drugRecords();
+      _items = records
+          .where((record) => record is Map && record['kind'] == 'chat')
+          .toList();
     } catch (e) {
       _error = ApiService.friendly(e);
     }

@@ -325,6 +325,16 @@ class ApiService {
   }
 
   // ---------- 5.4 查药（JSON base64，不是 multipart） ----------
+  /// 用药说明书识别只回填录药表单，不产生查药记录。
+  static Future<Map<String, dynamic>> recognizeMedication(List<int> bytes,
+      {bool mine = false}) async {
+    final res = await _dio.post('/api/meds/recognize-instructions',
+        data: {'image_base64': base64Encode(bytes)},
+        queryParameters: await withElder({}, mine),
+        options: Options(receiveTimeout: const Duration(minutes: 2)));
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   static Future<Map<String, dynamic>> queryDrugByName(String name,
       {bool mine = false}) async {
     final res = await _dio.post('/api/drugs/query-name',

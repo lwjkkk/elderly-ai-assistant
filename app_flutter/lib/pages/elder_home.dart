@@ -55,7 +55,7 @@ class _ElderHomeState extends State<ElderHome> {
         unselectedFontSize: 14,
         selectedItemColor: const Color(0xFF345C87),
         unselectedItemColor: const Color(0xFF6B7280),
-        onTap: (i) => setState(() => idx = (i == 1 && idx == 1) ? 0 : i),
+        onTap: (i) => setState(() => idx = i),
         items: [
           for (var i = 0; i < labels.length; i++)
             BottomNavigationBarItem(icon: Icon(icons[i], size: 30), label: labels[i]),
