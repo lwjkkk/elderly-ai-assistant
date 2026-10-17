@@ -182,6 +182,34 @@ class ApiService {
     return res.data is List ? res.data as List : [];
   }
 
+  static Future<Map<String, dynamic>> uploadFamilyAudio(int bindingId,
+      List<int> bytes, String filename, int seconds, String clientId) async {
+    final result = await _dio.post('/api/messages/$bindingId/audio',
+        data: FormData.fromMap({
+          'file': MultipartFile.fromBytes(bytes, filename: filename),
+          'duration': seconds,
+          'client_id': clientId
+        }),
+        options: Options(receiveTimeout: const Duration(minutes: 2)));
+    return Map<String, dynamic>.from(result.data as Map);
+  }
+
+  static Future<Uint8List> familyAudioBytes(String url) async {
+    final result = await _dio.get<List<int>>(url,
+        options: Options(responseType: ResponseType.bytes));
+    return Uint8List.fromList(result.data ?? []);
+  }
+
+  static Future<String> transcribeFamilyAudio(int bindingId, int id) async {
+    final result = await _dio.post('/api/messages/$bindingId/$id/transcribe',
+        options: Options(receiveTimeout: const Duration(minutes: 2)));
+    return (result.data['text'] ?? '').toString();
+  }
+
+  static Future<void> deleteFamilyMessage(int bindingId, int id) async {
+    await _dio.delete('/api/messages/$bindingId/$id');
+  }
+
   static Future<Map<String, dynamic>> sendFamilyMessage(
       int bindingId, String kind, Map<String, dynamic> content) async {
     final res = await _dio.post('/api/messages/$bindingId',
@@ -504,7 +532,19 @@ class ApiService {
       if (birthYm != null) 'birth_ym': birthYm,
       if (avatarBytes != null) 'avatar_base64': base64Encode(avatarBytes),
     });
+    if (avatarBytes != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('avatar_removed_${await getRole()}_${await getUserId()}');
+    }
     return Map<String, dynamic>.from(res.data);
+  }
+
+  static Future<void> deleteAvatar() async {
+    await _dio.delete('/api/users/avatar');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('avatar_removed_${await getRole()}_${await getUserId()}', true);
+    await prefs.setString('avatar', 'assets/avatars/avatar1.png');
+    await prefs.remove('avatar_url');
   }
 
   static String consultAudioUrl(String audioUrl) {

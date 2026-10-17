@@ -1,6 +1,12 @@
 # 家人消息路由：老人/家属双端互发文字或健康消息，持久化存库
 
-from fastapi import APIRouter, Depends, HTTPException
+import base64
+import logging
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -9,6 +15,26 @@ from db.models import User, FamilyBinding, FamilyMessage
 from core.security import get_current_user
 
 router = APIRouter(prefix="/api/messages", tags=["家人消息"])
+logger = logging.getLogger(__name__)
+MEDIA_DIR = Path(__file__).resolve().parent.parent / 'uploads' / 'family_messages'
+AUDIO_TYPES = {'.m4a': 'audio/mp4', '.wav': 'audio/wav', '.mp3': 'audio/mpeg',
+               '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.webm': 'audio/webm'}
+
+
+def _out(message: FamilyMessage) -> dict:
+    return {'id': message.id, 'binding_id': message.binding_id,
+            'sender_id': message.sender_id, 'kind': message.kind,
+            'content': message.content,
+            'created_at': message.created_at.isoformat() if message.created_at else None}
+
+
+def _message(db: Session, binding_id: int, message_id: int, current: User) -> FamilyMessage:
+    _assert_binding_member(db, binding_id, current)
+    message = db.query(FamilyMessage).filter(
+        FamilyMessage.id == message_id, FamilyMessage.binding_id == binding_id).first()
+    if not message:
+        raise HTTPException(status_code=404, detail='消息不存在')
+    return message
 
 
 class MessageCreate(BaseModel):
@@ -63,8 +89,22 @@ def send_message(binding_id: int,
                  current: User = Depends(get_current_user)):
     """发送一条消息到该绑定会话。"""
     binding = _assert_binding_member(db, binding_id, current)
-    if payload.kind not in ("text", "health"):
-        raise HTTPException(status_code=400, detail="kind 只能是 text 或 health")
+    if payload.kind not in ("text", "health", "image"):
+        raise HTTPException(status_code=400, detail="消息类型不支持，语音请使用录音上传接口")
+    if payload.kind == 'image':
+        try:
+            image = base64.b64decode(payload.content.get('image', ''), validate=True)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail='图片内容无效')
+        if not image or len(image) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail='图片为空或超过5MB，请压缩后重试')
+    client_id = payload.content.get('client_id')
+    if client_id:
+        for existing in db.query(FamilyMessage).filter(
+                FamilyMessage.binding_id == binding_id,
+                FamilyMessage.sender_id == current.id).all():
+            if existing.content.get('client_id') == client_id:
+                return _out(existing)
     msg = FamilyMessage(
         binding_id=binding_id,
         sender_id=current.id,
@@ -82,3 +122,94 @@ def send_message(binding_id: int,
         "content": msg.content,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
     }
+
+
+@router.post('/{binding_id}/audio')
+async def upload_audio(binding_id: int, file: UploadFile = File(...),
+                       duration: int = Form(..., ge=1, le=60), client_id: str = Form(''),
+                       db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    _assert_binding_member(db, binding_id, current)
+    if client_id:
+        for existing in db.query(FamilyMessage).filter(
+                FamilyMessage.binding_id == binding_id,
+                FamilyMessage.sender_id == current.id).all():
+            if existing.content.get('client_id') == client_id:
+                return _out(existing)
+    extension = Path(file.filename or '').suffix.lower()
+    if extension not in AUDIO_TYPES:
+        raise HTTPException(status_code=400, detail='不支持的录音格式')
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if not data or len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='录音为空或超过10MB')
+    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    path = MEDIA_DIR / f'{uuid.uuid4().hex}{extension}'
+    path.write_bytes(data)
+    url = f'/api/messages/audio/{path.name}'
+    message = FamilyMessage(binding_id=binding_id, sender_id=current.id, kind='audio',
+        content={'kind': 'audio', 'text': url, 'dur': duration, 'client_id': client_id})
+    try:
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+    except Exception:
+        db.rollback()
+        path.unlink(missing_ok=True)
+        raise
+    return _out(message)
+
+
+@router.get('/audio/{filename}')
+def audio_file(filename: str, db: Session = Depends(get_db),
+               current: User = Depends(get_current_user)):
+    if Path(filename).name != filename or Path(filename).suffix.lower() not in AUDIO_TYPES:
+        raise HTTPException(status_code=404, detail='录音不存在')
+    url = f'/api/messages/audio/{filename}'
+    message = db.query(FamilyMessage).filter(
+        FamilyMessage.kind == 'audio', FamilyMessage.content['text'].as_string() == url).first()
+    if not message:
+        raise HTTPException(status_code=404, detail='录音不存在')
+    _assert_binding_member(db, message.binding_id, current)
+    path = MEDIA_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail='录音文件不存在')
+    return FileResponse(path, media_type=AUDIO_TYPES[path.suffix])
+
+
+@router.post('/{binding_id}/{message_id}/transcribe')
+def transcribe_message(binding_id: int, message_id: int,
+                       db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    message = _message(db, binding_id, message_id, current)
+    if message.kind != 'audio':
+        raise HTTPException(status_code=400, detail='只能转写语音消息')
+    content = dict(message.content)
+    if content.get('transcript'):
+        return {'text': content['transcript']}
+    path = MEDIA_DIR / Path(content.get('text', '')).name
+    if not path.is_file() or path.suffix not in AUDIO_TYPES:
+        raise HTTPException(status_code=404, detail='录音文件不存在')
+    try:
+        from core.speech_transcription import transcribe_audio
+        text = transcribe_audio(path, AUDIO_TYPES[path.suffix])
+    except Exception:
+        logger.exception('家人语音转写失败，message_id=%s', message_id)
+        raise HTTPException(status_code=503, detail='语音转文字暂不可用，请稍后重试；录音仍可播放')
+    db.refresh(message)
+    content = dict(message.content)
+    content['transcript'] = text
+    message.content = content
+    db.commit()
+    return {'text': text}
+
+
+@router.delete('/{binding_id}/{message_id}')
+def delete_message(binding_id: int, message_id: int,
+                   db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    message = _message(db, binding_id, message_id, current)
+    if message.sender_id != current.id:
+        raise HTTPException(status_code=403, detail='只能删除自己发送的消息')
+    path = MEDIA_DIR / Path(message.content.get('text', '')).name if message.kind == 'audio' else None
+    db.delete(message)
+    db.commit()
+    if path and path.is_file():
+        path.unlink()
+    return {'ok': True}

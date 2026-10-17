@@ -1005,7 +1005,9 @@ class _ChatTabState extends State<ChatTab> {
       _voiceHint = '正在准备麦克风…';
     });
     try {
-      await _speech.stop().timeout(const Duration(seconds: 2), onTimeout: () {});
+      await _speech
+          .stop()
+          .timeout(const Duration(seconds: 2), onTimeout: () {});
       final stt = _activeStt ??= SpeechToText();
       final ok = await _ensureSpeechReady();
       if (!mounted || generation != _voiceGeneration) return;
@@ -1014,7 +1016,9 @@ class _ChatTabState extends State<ChatTab> {
         throw StateError('请允许麦克风权限，并在手机设置中启用系统语音识别服务');
       }
       String? locale = 'zh_CN';
-      final locales = await stt.locales().timeout(const Duration(seconds: 3), onTimeout: () => []);
+      final locales = await stt
+          .locales()
+          .timeout(const Duration(seconds: 3), onTimeout: () => []);
       for (final l in locales) {
         final id = l.localeId.toLowerCase().replaceAll('-', '_');
         if (id == 'zh_cn' || id.startsWith('zh_hans') || id.startsWith('cmn')) {
@@ -1101,8 +1105,10 @@ class _ChatTabState extends State<ChatTab> {
       },
       onQuickEntry: onQuick,
       onTipMore: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) =>
-              const AfuSubPage(title: '咨询记录', child: ConsultsTab()))),
+          builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('当地天气与穿衣提醒')),
+                body: const WeatherCard(),
+              ))),
       textScale: 1.0,
       onSend: send,
       onVoiceStart: () => startHoldToTalk(),
@@ -1140,10 +1146,6 @@ class _ChatTabState extends State<ChatTab> {
                 },
               )),
         ),
-        ValueListenableBuilder<bool>(
-            valueListenable: tipIsWeather,
-            builder: (_, isWx, __) =>
-                isWx ? const SizedBox.shrink() : const WeatherCard()),
       ]),
     );
   }
@@ -1160,7 +1162,7 @@ class _WeatherCardState extends State<WeatherCard> {
 
   static Future<_Weather?> _load() async {
     try {
-      final perm = await LocationAccess.ensurePermission();
+      final perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.whileInUse ||
           perm == LocationPermission.always) {
         final pos = await Geolocator.getCurrentPosition(
@@ -1173,13 +1175,7 @@ class _WeatherCardState extends State<WeatherCard> {
         return _Weather(data: d, fromGps: true);
       }
     } catch (_) {}
-    try {
-      final d = await ApiService.weatherRemind(city: '武汉');
-      if (_unconfigured(d)) return null;
-      return _Weather(data: d, fromGps: false);
-    } catch (_) {
-      return null;
-    }
+    return null;
   }
 
   static bool _unconfigured(Map<String, dynamic> d) {
@@ -1196,7 +1192,12 @@ class _WeatherCardState extends State<WeatherCard> {
       future: _future,
       builder: (c, s) {
         final w = s.data;
-        if (w == null) return const SizedBox.shrink();
+        if (w == null)
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('请允许定位并开启手机定位服务，以查看当地天气和穿衣提醒。',
+                style: TextStyle(fontSize: 20)),
+          );
         final d = w.data;
         return Card(
           margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),

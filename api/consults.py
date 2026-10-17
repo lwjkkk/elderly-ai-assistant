@@ -178,6 +178,24 @@ def list_consults(elder_id: int | None = None,
     return result
 
 
+@router.delete("/{consult_id}")
+def delete_consult(consult_id: int,
+                   db: Session = Depends(get_db),
+                   current: User = Depends(get_current_user)):
+    """删除本人上传的咨询录音及对应文件。"""
+    record = db.query(ConsultRecord).filter(ConsultRecord.id == consult_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="咨询记录不存在")
+    if record.elder_id != current.id:
+        raise HTTPException(status_code=403, detail="只能删除本人上传的咨询记录")
+    audio_path = os.path.join(UPLOAD_DIR, os.path.basename((record.audio_url or "").split("?", 1)[0]))
+    db.delete(record)
+    db.commit()
+    if os.path.isfile(audio_path):
+        os.remove(audio_path)
+    return {"ok": True}
+
+
 @router.get("/audio/{filename}")
 def get_audio(filename: str,
               token: str | None = None,

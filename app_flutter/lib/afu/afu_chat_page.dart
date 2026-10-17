@@ -252,7 +252,7 @@ class _TipCardState extends State<_TipCard> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         tipIsWeather.value = false;
       });
-      final meds = await ApiService.medsToday();
+      final meds = await ApiService.medsToday(mine: true);
       for (final m in meds) {
         final map = m is Map
             ? Map<String, dynamic>.from(m as Map)
@@ -274,7 +274,7 @@ class _TipCardState extends State<_TipCard> {
     try {
       Map<String, dynamic>? d;
       try {
-        final perm = await LocationAccess.ensurePermission();
+        final perm = await Geolocator.checkPermission();
         if (perm == LocationPermission.whileInUse ||
             perm == LocationPermission.always) {
           final pos = await Geolocator.getCurrentPosition(
@@ -285,7 +285,7 @@ class _TipCardState extends State<_TipCard> {
               lat: pos.latitude, lon: pos.longitude);
         }
       } catch (_) {}
-      d ??= await ApiService.weatherRemind(city: '武汉');
+      if (d == null) return null;
       final raw = '${d['text'] ?? ''} ${d['tip'] ?? ''}';
       if (raw.contains('未配置') || raw.contains('API_KEY')) return null;
       tipIsWeather.value = true;
@@ -294,7 +294,7 @@ class _TipCardState extends State<_TipCard> {
       final body = (text + '，' + tip).trim().replaceAll(RegExp('^，|，\$'), '');
       if (body.isNotEmpty) return '今日天气：$body';
     } catch (_) {}
-    return '今日小贴士：降压药建议固定时间服用，不要随意停药。';
+    return null;
   }
 
   @override
@@ -303,10 +303,12 @@ class _TipCardState extends State<_TipCard> {
       future: _future,
       builder: (c, s) {
         if (s.connectionState == ConnectionState.waiting) {
-          return _TipBody(text: '正在加载今日小贴士…', onMore: widget.onMore);
+          return const SizedBox.shrink();
         }
         if (s.data == null) return const SizedBox.shrink();
-        return _TipBody(text: s.data!, onMore: widget.onMore);
+        return _TipBody(
+            text: s.data!,
+            onMore: s.data!.startsWith('今日天气：') ? null : widget.onMore);
       },
     );
   }
@@ -350,14 +352,15 @@ class _TipBody extends StatelessWidget {
                     const TextStyle(fontSize: 19, color: _kInk, height: 1.45)),
           ),
         ]),
-        Align(
-          alignment: Alignment.bottomRight,
-          child: TextButton(
-            onPressed: onMore,
-            child: const Text('查看更多',
-                style: TextStyle(fontSize: 18, color: _kDeep)),
+        if (onMore != null)
+          Align(
+            alignment: Alignment.bottomRight,
+            child: TextButton(
+              onPressed: onMore,
+              child: const Text('查看更多',
+                  style: TextStyle(fontSize: 18, color: _kDeep)),
+            ),
           ),
-        ),
       ]),
     );
   }

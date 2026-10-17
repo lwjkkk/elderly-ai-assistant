@@ -109,6 +109,24 @@ def list_reports(elder_id: int | None = None,
     return result
 
 
+@router.delete("/{report_id}")
+def delete_report(report_id: int,
+                  db: Session = Depends(get_db),
+                  current: User = Depends(get_current_user)):
+    """删除本人上传的报告及对应图片。"""
+    record = db.query(HealthReport).filter(HealthReport.id == report_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="报告不存在")
+    if record.elder_id != current.id:
+        raise HTTPException(status_code=403, detail="只能删除本人上传的报告")
+    image_path = os.path.join(UPLOAD_DIR, os.path.basename(record.image_url or ""))
+    db.delete(record)
+    db.commit()
+    if os.path.isfile(image_path):
+        os.remove(image_path)
+    return {"ok": True}
+
+
 @router.get("/image/{filename}")
 def get_image(filename: str,
               db: Session = Depends(get_db),

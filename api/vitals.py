@@ -138,6 +138,21 @@ def list_vitals(vital_type: str | None = None,
     return query.order_by(Vitals.measured_at.desc()).all()
 
 
+@router.delete("/{vital_id}")
+def delete_vital(vital_id: int,
+                 db: Session = Depends(get_db),
+                 current: User = Depends(get_current_user)):
+    """删除本人录入的体征记录。"""
+    record = db.query(Vitals).filter(Vitals.id == vital_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="体征记录不存在")
+    if record.elder_id != current.id:
+        raise HTTPException(status_code=403, detail="只能删除本人录入的体征记录")
+    db.delete(record)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/trend", response_model=dict[str, list[TrendPoint]])
 def trend(vital_type: str | None = None,
           elder_id: int | None = None,

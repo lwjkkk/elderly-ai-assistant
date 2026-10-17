@@ -99,3 +99,16 @@ def get_avatar(filename: str):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="头像不存在")
     return FileResponse(filepath)
+
+
+@router.delete('/avatar')
+def delete_avatar(db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == current.id).first()
+    old_url = user.avatar_url or ''
+    user.avatar_url = None
+    db.commit()
+    if old_url.startswith('/api/users/avatar/'):
+        path = os.path.join(AVATAR_DIR, os.path.basename(old_url))
+        if os.path.isfile(path):
+            os.remove(path)
+    return {'ok': True}

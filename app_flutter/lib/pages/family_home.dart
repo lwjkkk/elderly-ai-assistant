@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
 import '../services/api.dart';
+import '../afu/uploaded_avatar_actions.dart';
 
 import 'tabs/health_overview.dart';
 
@@ -273,7 +274,10 @@ class _FamMeState extends State<FamMe> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        _FamRippleAvatar(asset: avatarAsset),
+        UploadedAvatarActions(onDeleted: () async {
+          avatarAsset = kAvatarAssets.first;
+          await _load();
+        }, child: _FamRippleAvatar(asset: avatarAsset)),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,

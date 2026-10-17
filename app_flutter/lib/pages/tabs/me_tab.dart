@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../services/api.dart';
+import '../../afu/uploaded_avatar_actions.dart';
 import '../login_page.dart';
 import 'hub_pages.dart' show chatScale, notifyEnabled;
 
@@ -458,7 +459,10 @@ class _MeTabState extends State<MeTab> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        _ElderRippleAvatar(asset: avatarAsset),
+        UploadedAvatarActions(onDeleted: () async {
+          avatarAsset = kAvatarAssets.first;
+          await _loadPrefs();
+        }, child: _ElderRippleAvatar(asset: avatarAsset)),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,
