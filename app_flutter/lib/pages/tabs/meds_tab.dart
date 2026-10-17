@@ -24,6 +24,7 @@ class _MedsTabState extends State<MedsTab> {
   String err = '';
   Timer? _clock;
   final Set<String> _checking = {};
+  bool _recognizingPhoto = false;
   String _loadedDate = medicationNow().toIso8601String().split('T').first;
 
   @override
@@ -110,16 +111,67 @@ class _MedsTabState extends State<MedsTab> {
     await _medFormDialog();
   }
 
-  /// 拍照录入：唤起相机拍照，识别后回填药名/剂量/频次，
+  /// 拍照录入：先让用户选择相机或相册，识别后回填药名/剂量/频次。
   /// 开始用药日期与提醒用药时间点仍由用户手动填写。
   Future<void> _pickPhoto() async {
+    if (_recognizingPhoto) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD5DCE5),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('选择录入方式',
+                  style: TextStyle(
+                      color: Color(0xFF212936),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined,
+                    color: Color(0xFF345C87), size: 28),
+                title: const Text('直接拍照', style: TextStyle(fontSize: 18)),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined,
+                    color: Color(0xFF345C87), size: 28),
+                title: const Text('从相册选择', style: TextStyle(fontSize: 18)),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
     try {
-      final f = await ImagePicker()
-          .pickImage(source: ImageSource.camera, maxWidth: 1600);
+      final f = await ImagePicker().pickImage(
+          source: source, maxWidth: 1600, imageQuality: 88);
       if (f == null) return;
+      setState(() => _recognizingPhoto = true);
+      _showRecognizingMessage();
       final bytes = await f.readAsBytes();
       final r =
           await ApiService.queryDrugByImage(bytes.toList(), mine: widget.mine);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       final ocr = (r['ocr_text'] ?? '').toString();
       var name = '';
       var dose = '';
@@ -137,17 +189,40 @@ class _MedsTabState extends State<MedsTab> {
         if (fm != null) freq = fm.group(0) ?? '';
       }
       if (!mounted) return;
+      final recognized = ocr.trim().isNotEmpty;
+      if (!recognized) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('图片已处理，但没有识别到药品信息，请手动填写')));
+      }
       await _medFormDialog(
           presetName: name,
           presetDose: dose,
           presetFreq: freq,
-          autoNote: '已自动识别填充，可手动修改');
+          autoNote: recognized ? '已自动识别填充，可手动修改' : '请核对药品包装并手动填写');
     } catch (e) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('识别失败：${ApiService.friendly(e)}')));
       }
+    } finally {
+      if (mounted) setState(() => _recognizingPhoto = false);
     }
+  }
+
+  void _showRecognizingMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      duration: Duration(minutes: 10),
+      content: Row(children: [
+        SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Colors.white)),
+        SizedBox(width: 12),
+        Expanded(child: Text('正在识别药品，请稍候…')),
+      ]),
+    ));
   }
 
   /// 录入药品弹窗：浅灰白底、超大圆角、整体下移留白。
@@ -272,7 +347,9 @@ class _MedsTabState extends State<MedsTab> {
             Row(children: [
               Expanded(child: _topBtn('手动录入', _openManual)),
               const SizedBox(width: 12),
-              Expanded(child: _topBtn('拍照录入', _pickPhoto)),
+              Expanded(
+                  child: _topBtn(
+                      _recognizingPhoto ? '正在识别…' : '拍照录入', _pickPhoto)),
             ]),
             const SizedBox(height: 16),
           ],
