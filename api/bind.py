@@ -118,5 +118,6 @@ def list_bindings(
             "status": b.status,
             "invite_code": b.invite_code,
             "other_nickname": other.nickname if other else None,
+            "other_avatar": other.avatar_url if other else None,
         })
     return result
