@@ -81,6 +81,10 @@ def init_db():
         "created_at",
         "ALTER TABLE vitals ADD COLUMN created_at DATETIME",
     )
+    for column, sql_type in [('transcript', 'TEXT'), ('summary', 'TEXT'),
+                             ('summary_status', 'VARCHAR(20)'), ('summary_error', 'VARCHAR(200)')]:
+        _add_column_if_missing('consult_records', column,
+                              f'ALTER TABLE consult_records ADD COLUMN {column} {sql_type}')
     # 回填历史数据：把已有记录的 updated_at/created_at 设为其 created_at/measured_at
     _backfill_column(
         "medications", "updated_at",

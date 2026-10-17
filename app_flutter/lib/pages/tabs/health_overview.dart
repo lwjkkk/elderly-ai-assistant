@@ -9,6 +9,7 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/delete_confirm.dart';
 import '../../services/api.dart';
+import '../../widgets/consult_summary_cell.dart';
 import 'consult_drug_chat_tab.dart';
 import 'med_form.dart';
 import 'hub_pages.dart';
@@ -2360,9 +2361,11 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
                           _tCell(r['weight']!),
                         ],
                     ],
-                    rowLongPress: widget.forElder ? null : [
-                      for (final r in _pivot()) () => _deleteVitalDay(r),
-                    ],
+                    rowLongPress: widget.forElder
+                        ? null
+                        : [
+                            for (final r in _pivot()) () => _deleteVitalDay(r),
+                          ],
                     emptyIcon: Icons.show_chart_outlined,
                     emptyAccent: _mVit,
                     emptyText: '暂无体征数据，今天记录一条吧',
@@ -2649,10 +2652,13 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                               40)),
                         ],
                     ],
-                    rowLongPress: widget.forElder ? null : [
-                      for (final e in _items)
-                        () => _deleteReport(Map<String, dynamic>.from(e as Map)),
-                    ],
+                    rowLongPress: widget.forElder
+                        ? null
+                        : [
+                            for (final e in _items)
+                              () => _deleteReport(
+                                  Map<String, dynamic>.from(e as Map)),
+                          ],
                     emptyIcon: Icons.description_outlined,
                     emptyAccent: _mRep,
                     emptyText: widget.forElder ? '暂无报告信息' : '暂无历史体检报告，今天记录一条吧',
@@ -2735,10 +2741,12 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
       await ApiService.deleteConsult(id);
       await _refresh();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除失败：${ApiService.friendly(e)}')));
     }
   }
+
   List _items = [];
   bool _loading = true;
   bool _busy = false;
@@ -3024,8 +3032,9 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
                             _playBtn(Map<String, dynamic>.from(e as Map)),
                           ]),
                           _tCell(_dateOf(Map<String, dynamic>.from(e as Map))),
-                          // 后端暂无录音转写摘要字段，待 AI 识别能力上线
-                          _tCell('—', color: _kSub),
+                          ConsultSummaryCell(
+                              record: Map<String, dynamic>.from(e as Map),
+                              key: ValueKey('summary_${(e as Map)['id']}')),
                           _tCell((Map<String, dynamic>.from(
                                       e as Map)['hospital'] ??
                                   '')
@@ -3035,8 +3044,11 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
                     emptyIcon: Icons.mic_none_outlined,
                     emptyAccent: _mCon,
                     emptyText: '暂无录音记录，点击记录就诊历史',
-                    rowLongPress: [for (final item in _items)
-                      () => _deleteConsult(Map<String, dynamic>.from(item as Map))],
+                    rowLongPress: [
+                      for (final item in _items)
+                        () => _deleteConsult(
+                            Map<String, dynamic>.from(item as Map))
+                    ],
                   ),
                 ],
               ),
@@ -3497,7 +3509,8 @@ class _ElderConsultsPageState extends State<_ElderConsultsPage> {
                   [
                     _tCell(_md((m['created_at'] ?? '').toString()),
                         color: _kSub2),
-                    _tCell(_ctitle(m), maxLines: 3),
+                    ConsultSummaryCell(
+                        key: ValueKey('summary_${m['id']}'), record: m),
                     _tCell(
                         ((m['audio_url'] ?? '').toString()).isEmpty
                             ? '无'

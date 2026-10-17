@@ -57,6 +57,47 @@ class FamilyMediaTests(unittest.TestCase):
             replacement.stop()
         self.directory.cleanup()
 
+    def test_consult_summary_is_generated_persisted_and_bound(self):
+        with patch('core.consult_summary.SessionLocal', sessionmaker(bind=self.engine)), \
+             patch('core.speech_transcription.transcribe_audio', return_value='医生说注意休息') as asr, \
+             patch('core.qwen_llm.call_qwen', return_value='医生交代：注意休息') as llm:
+            response = self.client.post('/api/consults/upload',
+                files={'file': ('visit.m4a', b'audio', 'audio/mp4')})
+            self.assertEqual(response.status_code, 200, response.text)
+            record_id = response.json()['id']
+            self.db.expire_all()
+            url = f'/api/consults/{record_id}/summary'
+            data = self.client.get(url).json()
+            self.assertEqual(data['summary_status'], 'ready')
+            self.assertEqual(data['summary'], '医生交代：注意休息')
+            self.assertEqual(data['transcript'], '医生说注意休息')
+            self.current_id = 2
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.client.post(f'/api/consults/{record_id}/summarize')
+            asr.assert_called_once()
+            llm.assert_called_once()
+            self.current_id = 3
+            self.assertEqual(self.client.get(url).status_code, 403)
+            self.assertEqual(self.client.post(f'/api/consults/{record_id}/summarize').status_code, 403)
+
+    def test_consult_summary_failure_and_historical_retry(self):
+        record = ConsultRecord(elder_id=1, audio_url='/api/consults/audio/old.m4a')
+        self.db.add(record)
+        self.db.commit()
+        (Path(self.directory.name) / 'old.m4a').write_bytes(b'audio')
+        url = f'/api/consults/{record.id}/summarize'
+        with patch('core.consult_summary.SessionLocal', sessionmaker(bind=self.engine)), \
+             patch('core.speech_transcription.transcribe_audio', side_effect=RuntimeError('offline')):
+            self.assertEqual(self.client.post(url).status_code, 200)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(ConsultRecord, record.id).summary_status, 'failed')
+        with patch('core.consult_summary.SessionLocal', sessionmaker(bind=self.engine)), \
+             patch('core.speech_transcription.transcribe_audio', return_value='清晰录音'), \
+             patch('core.qwen_llm.call_qwen', return_value='主要诉求：咨询'):
+            self.assertEqual(self.client.post(url).status_code, 200)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(ConsultRecord, record.id).summary_status, 'ready')
+
     def upload(self):
         return self.client.post('/api/messages/1/audio',
             files={'file': ('voice.m4a', b'test-audio-data', 'audio/mp4')},

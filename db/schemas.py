@@ -302,6 +302,10 @@ class ConsultOut(BaseModel):
     duration: int | None = None
     hospital: str | None = None
     doctor: str | None = None
+    transcript: str | None = None
+    summary: str | None = None
+    summary_status: str | None = None
+    summary_error: str | None = None
     created_at: datetime | None = None
 
     class Config:

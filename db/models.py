@@ -110,6 +110,10 @@ class ConsultRecord(Base):
     duration = Column(Integer, nullable=True)          # 录音时长（秒）
     hospital = Column(String(100), nullable=True)      # 医院名
     doctor = Column(String(50), nullable=True)         # 医生名
+    transcript = Column(String, nullable=True)
+    summary = Column(String, nullable=True)
+    summary_status = Column(String(20), nullable=True)
+    summary_error = Column(String(200), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
