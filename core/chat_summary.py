@@ -87,6 +87,15 @@ def extract_risk(question: str, answer: str, category: str) -> str | None:
 def save_summary_sync(elder_id: int, question: str, answer: str, module: str):
     """同步落库：判定分类→提炼摘要→写入 chat_summaries（独立 session，供后台线程用）。
     兜底：LLM 提炼失败时用问题截断作为记录，保证健康类对话不因模型不可用而丢失。"""
+    # 在线程真正开始提取前再次读取隐私状态，覆盖“请求后立刻开启隐私”的竞态。
+    privacy_db = SessionLocal()
+    try:
+        elder = privacy_db.query(User).filter(User.id == elder_id).first()
+        if elder is None or not elder.sync_summary_to_family:
+            return False
+    finally:
+        privacy_db.close()
+
     category = classify_category(question)
     if not category:
         return False

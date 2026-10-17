@@ -685,19 +685,8 @@ class _InputBarState extends State<_InputBar> {
       ),
       child: Row(children: [
         GestureDetector(
-          // Web 端桌面点击无法长按：单击切换开始/停止；移动端仍可按住说话
+          // 统一使用单击开始、再次单击停止，避免首次权限初始化时松手导致识别被取消。
           onTap: _toggleVoice,
-          onLongPressStart: (_) {
-            if (widget.busy) return;
-            if (!_holding) {
-              setState(() => _holding = true);
-              widget.onVoiceStart();
-            }
-          },
-          onLongPressEnd: (_) {
-            setState(() => _holding = false);
-            widget.onVoiceEnd();
-          },
           child: Container(
             width: 56,
             height: 56,
