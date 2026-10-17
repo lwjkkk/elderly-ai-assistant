@@ -320,7 +320,7 @@ class _MedsTabState extends State<MedsTab> {
                         : () => doCheckin(medId.toInt(), slot),
                     child: Text(
                         done
-                            ? '已打卡'
+                            ? (due ? '已打卡' : '时间未到')
                             : checking
                                 ? '提交中'
                                 : due

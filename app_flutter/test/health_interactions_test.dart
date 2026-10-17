@@ -8,6 +8,7 @@ import 'package:elderly_ai_assistant/pages/tabs/consult_drug_chat_tab.dart';
 import 'package:elderly_ai_assistant/services/api.dart';
 import 'package:elderly_ai_assistant/services/drug_question.dart';
 import 'package:elderly_ai_assistant/services/medication_time.dart';
+import 'package:elderly_ai_assistant/services/medication_name.dart';
 import 'package:elderly_ai_assistant/services/answer_speech.dart';
 
 class _Adapter implements HttpClientAdapter {
@@ -18,8 +19,7 @@ class _Adapter implements HttpClientAdapter {
     requests.add(options);
     String body = '[]';
     if (options.path == '/api/chat')
-      body =
-          '{"answer":"第一段说明\\n第二段说明","module":"health","steps":[]}';
+      body = '{"answer":"第一段说明\\n第二段说明","module":"health","steps":[]}';
     if (options.path.contains('weather')) body = '{"text":"未配置API_KEY"}';
     if (options.path == '/api/vitals/export')
       return ResponseBody.fromString('{"detail":"暂无体征记录，无法导出"}', 400, headers: {
@@ -55,15 +55,25 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('check-in respects Shanghai time and exact boundary', () {
+  test('OCR medicine name removes English sections and preserves identifiers', () {
+    expect(medicationChineseName('复方消化酶胶囊\n英文名称：CompoundDigestiveEnzymeCapsules'), '复方消化酶胶囊');
+    expect(medicationChineseName('通用名称：复方消化酶胶囊英文名称: Compound Digestive Enzyme Capsules'), '复方消化酶胶囊');
+    expect(medicationChineseName('阿司匹林 Aspirin'), '阿司匹林');
+    expect(medicationChineseName('维生素B12片'), '维生素B12片');
+  });
+  test('check-in respects both phone time and Shanghai time', () {
     expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 12, 23, 59)),
         false);
-    expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 13, 0, 0)),
+    expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 13, 8, 0)),
         true);
     expect(
         medicationSlotDue('08:00',
             date: '2026-10-14', now: DateTime.utc(2026, 10, 13, 0, 0)),
         false);
+    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 8, 47)),
+        false);
+    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 13, 0)),
+        true);
     expect(medicationSlotDue('99:00', now: DateTime.utc(2026, 10, 13)), false);
   });
   test('drug queries use names and leave ordinary questions unchanged', () {
@@ -92,7 +102,8 @@ void main() {
     expect(image.files.single.value.contentType.toString(), 'image/png');
     expect(audio.files.single.value.contentType.toString(), 'audio/mp4');
   });
-  testWidgets('drug question uses backend chat privacy rules and shows grey speech pause',
+  testWidgets(
+      'drug question uses backend chat privacy rules and shows grey speech pause',
       (tester) async {
     final adapter = _Adapter();
     ApiService.dio.httpClientAdapter = adapter;
@@ -105,9 +116,9 @@ void main() {
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
+    expect(adapter.requests.any((r) => r.path == '/api/chat'), true);
     expect(
-        adapter.requests.any((r) => r.path == '/api/chat'), true);
-    expect(adapter.requests.any((r) => r.path == '/api/drugs/query-name'), false);
+        adapter.requests.any((r) => r.path == '/api/drugs/query-name'), false);
     expect(spoken.any((c) => c.method == 'speak'), true);
     expect(find.byTooltip('暂停语音'), findsOneWidget);
     await tester.tap(find.byTooltip('暂停语音'));
@@ -144,7 +155,8 @@ void main() {
 
   test('unavailable speech does not leave a false playing state', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async => call.method == 'speak' ? 0 : 1);
+        .setMockMethodCallHandler(
+            channel, (call) async => call.method == 'speak' ? 0 : 1);
     String? error;
     final speech = AnswerSpeech(onError: (text) => error = text);
     await speech.play(1, '测试回复');

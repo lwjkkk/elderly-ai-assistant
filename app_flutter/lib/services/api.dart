@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import 'medication_time.dart';
+import 'medication_name.dart';
 import 'vital_validation.dart';
 
 /// B 前端接口层：严格按 C v2.0《API接口文档》实现，以 backend 分支为准。
@@ -336,7 +337,16 @@ class ApiService {
   static Future<List> medsToday({String? date, bool mine = false}) async {
     final q = await withElder({if (date != null) 'date': date}, mine);
     final res = await _dio.get('/api/meds/today', queryParameters: q);
-    return res.data is List ? res.data : [];
+    return res.data is List
+        ? [
+            for (final row in res.data as List)
+              if (row is Map)
+                {
+                  ...row,
+                  'name': medicationChineseName((row['name'] ?? '').toString())
+                }
+          ]
+        : [];
   }
 
   static Future<Map<String, dynamic>> checkin(int medId, String slot,
@@ -360,7 +370,9 @@ class ApiService {
         data: {'image_base64': base64Encode(bytes)},
         queryParameters: await withElder({}, mine),
         options: Options(receiveTimeout: const Duration(minutes: 2)));
-    return Map<String, dynamic>.from(res.data as Map);
+    final result = Map<String, dynamic>.from(res.data as Map);
+    result['name'] = medicationChineseName((result['name'] ?? '').toString());
+    return result;
   }
 
   static Future<Map<String, dynamic>> queryDrugByName(String name,
@@ -534,7 +546,8 @@ class ApiService {
     });
     if (avatarBytes != null) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('avatar_removed_${await getRole()}_${await getUserId()}');
+      await prefs
+          .remove('avatar_removed_${await getRole()}_${await getUserId()}');
     }
     return Map<String, dynamic>.from(res.data);
   }
@@ -542,7 +555,8 @@ class ApiService {
   static Future<void> deleteAvatar() async {
     await _dio.delete('/api/users/avatar');
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('avatar_removed_${await getRole()}_${await getUserId()}', true);
+    await prefs.setBool(
+        'avatar_removed_${await getRole()}_${await getUserId()}', true);
     await prefs.setString('avatar', 'assets/avatars/avatar1.png');
     await prefs.remove('avatar_url');
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../services/medication_name.dart';
 
 /// 录入药品共享表单（长辈端提醒用药 / 家属端本人-长辈用药页共用，同排版同配色）。
 ///
@@ -13,7 +14,8 @@ Future<Map<String, dynamic>?> showMedFormDialog(BuildContext context,
     String? presetFreq,
     List<String>? presetTimes,
     String? autoNote}) async {
-  final nameC = TextEditingController(text: presetName ?? '');
+  final nameC =
+      TextEditingController(text: medicationChineseName(presetName ?? ''));
   final doseC = TextEditingController(text: presetDose ?? '');
   const freqOptions = ['每日一次', '每日两次', '每日三次', '隔日一次', '手动输入'];
   final freqManualC = TextEditingController(
