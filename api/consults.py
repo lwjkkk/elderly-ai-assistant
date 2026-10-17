@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Header
 from sqlalchemy.orm import Session
 
 from db.database import get_db
@@ -78,6 +78,7 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
 
 @router.post("/upload", response_model=ConsultOut)
 async def upload_consult(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="录音文件（mp3/wav/m4a）"),
     duration: int | None = Form(None, description="录音时长（秒）"),
     hospital: str | None = Form(None, description="医院名"),
@@ -115,6 +116,7 @@ async def upload_consult(
         duration=duration,
         hospital=hospital,
         doctor=doctor,
+        summary_status="pending",
     )
     try:
         db.add(record)
@@ -125,6 +127,8 @@ async def upload_consult(
         if os.path.exists(filepath):
             os.remove(filepath)
         raise
+    from core.consult_summary import generate_summary
+    background_tasks.add_task(generate_summary, record.id)
     out = ConsultOut.model_validate(record).model_dump()
     out["audio_url"] = _audio_url_for_user(record, current)
     return out
@@ -176,6 +180,41 @@ def list_consults(elder_id: int | None = None,
         out["audio_url"] = _audio_url_for_user(record, current)
         result.append(out)
     return result
+
+
+@router.post("/{consult_id}/summarize", response_model=ConsultOut)
+def summarize_consult(consult_id: int, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    record = db.get(ConsultRecord, consult_id)
+    if not record:
+        raise HTTPException(404, "咨询记录不存在")
+    if record.elder_id != current.id:
+        if current.role != "family":
+            raise HTTPException(403, "无权查看该录音")
+        resolve_elder_id(db, current, record.elder_id)
+    if not record.summary:
+        from core.consult_summary import generate_summary
+        background_tasks.add_task(generate_summary, record.id)
+    out = ConsultOut.model_validate(record).model_dump()
+    if not record.summary:
+        out["summary_status"] = "pending"
+    out["audio_url"] = _audio_url_for_user(record, current)
+    return out
+
+
+@router.get("/{consult_id}/summary", response_model=ConsultOut)
+def consult_summary(consult_id: int, db: Session = Depends(get_db),
+                    current: User = Depends(get_current_user)):
+    record = db.get(ConsultRecord, consult_id)
+    if not record:
+        raise HTTPException(404, "咨询记录不存在")
+    if record.elder_id != current.id:
+        if current.role != "family":
+            raise HTTPException(403, "无权查看该录音")
+        resolve_elder_id(db, current, record.elder_id)
+    out = ConsultOut.model_validate(record).model_dump()
+    out["audio_url"] = _audio_url_for_user(record, current)
+    return out
 
 
 @router.delete("/{consult_id}")

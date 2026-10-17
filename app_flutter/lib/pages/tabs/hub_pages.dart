@@ -1119,10 +1119,21 @@ class _FamEmptyPainter extends CustomPainter {
 }
 
 /// 单条消息的数据模型（本地持久化）。
+String _familyMessageTime(String value) {
+  // SQLite timestamps are UTC without a suffix; server timestamps take priority.
+  final raw =
+      value.contains(RegExp(r'(Z|[+-]\d{2}:\d{2})$')) ? value : '${value}Z';
+  final date = DateTime.tryParse(raw)?.toLocal();
+  if (date == null) return '';
+  String pad(int n) => n.toString().padLeft(2, '0');
+  return '${date.year}-${pad(date.month)}-${pad(date.day)} ${pad(date.hour)}:${pad(date.minute)}';
+}
+
 class _FamMsg {
   final int? serverId;
   final String clientId;
   final String transcript;
+  final String createdAt;
   final bool isMe;
   final String kind;
   final String text;
@@ -1134,6 +1145,7 @@ class _FamMsg {
     this.serverId,
     this.clientId = '',
     this.transcript = '',
+    this.createdAt = '',
     required this.isMe,
     this.kind = 'text',
     this.text = '',
@@ -1147,6 +1159,7 @@ class _FamMsg {
         'server_id': serverId,
         'client_id': clientId,
         'transcript': transcript,
+        'created_at': createdAt,
         'isMe': isMe,
         'kind': kind,
         'text': text,
@@ -1160,6 +1173,7 @@ class _FamMsg {
         serverId: (j['server_id'] as num?)?.toInt(),
         clientId: (j['client_id'] ?? '').toString(),
         transcript: (j['transcript'] ?? '').toString(),
+        createdAt: (j['created_at'] ?? '').toString(),
         isMe: j['isMe'] == true,
         kind: (j['kind'] ?? 'text').toString(),
         text: (j['text'] ?? '').toString(),
@@ -1251,6 +1265,7 @@ class _FamConversationState extends State<FamConversationPage> {
             content['isMe'] = (row['sender_id'] as num?)?.toInt() == userId;
             content['kind'] = row['kind'] ?? content['kind'] ?? 'text';
             content['server_id'] = row['id'];
+            content['created_at'] = row['created_at'];
             return _FamMsg.fromJson(content);
           })(),
       ];
@@ -1306,6 +1321,7 @@ class _FamConversationState extends State<FamConversationPage> {
   Future<void> _push(_FamMsg m) async {
     if (!mounted) return;
     final content = m.toJson();
+    content['created_at'] = DateTime.now().toUtc().toIso8601String();
     content['client_id'] = DateTime.now().microsecondsSinceEpoch.toString();
     m = _FamMsg.fromJson(content);
     ++_revision;
@@ -1342,8 +1358,12 @@ class _FamConversationState extends State<FamConversationPage> {
       }
       ++_revision;
       final content = Map<String, dynamic>.from(row['content'] as Map);
-      content
-          .addAll({'isMe': true, 'server_id': row['id'], 'kind': row['kind']});
+      content.addAll({
+        'isMe': true,
+        'server_id': row['id'],
+        'kind': row['kind'],
+        'created_at': row['created_at']
+      });
       final confirmed = _FamMsg.fromJson(content);
       _pending.remove(message.clientId);
       _failed.remove(message.clientId);
@@ -1375,8 +1395,10 @@ class _FamConversationState extends State<FamConversationPage> {
       ++_revision;
       _pending.remove(message.clientId);
       _failed.remove(message.clientId);
-      if (mounted) setState(() => _msgs.removeWhere((m) => message.serverId != null
-          ? m.serverId == message.serverId : m.clientId == message.clientId));
+      if (mounted)
+        setState(() => _msgs.removeWhere((m) => message.serverId != null
+            ? m.serverId == message.serverId
+            : m.clientId == message.clientId));
       await _saveHistory();
     } catch (e) {
       if (mounted)
@@ -1400,8 +1422,8 @@ class _FamConversationState extends State<FamConversationPage> {
       if (!await _rec.hasPermission()) throw Exception('no mic');
       if (!mounted) return;
       if (!_voiceRequested) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('麦克风已准备好，请再次长按话筒录音')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('麦克风已准备好，请再次长按话筒录音')));
         return;
       }
       final name =
@@ -1634,7 +1656,9 @@ class _FamConversationState extends State<FamConversationPage> {
                       final message = _msgs[i];
                       return GestureDetector(
                         key: ValueKey(message.serverId ??
-                            (message.clientId.isEmpty ? 'legacy_$i' : message.clientId)),
+                            (message.clientId.isEmpty
+                                ? 'legacy_$i'
+                                : message.clientId)),
                         onLongPress:
                             message.isMe ? () => _deleteMessage(message) : null,
                         child: Column(
@@ -1642,6 +1666,21 @@ class _FamConversationState extends State<FamConversationPage> {
                             children: [
                               _FamBubble(
                                   msg: message, bindingId: widget.bindingId),
+                              if (message.createdAt.isNotEmpty)
+                                Align(
+                                  alignment: message.isMe
+                                      ? Alignment.centerRight
+                                      : Alignment.centerLeft,
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(4, 2, 4, 10),
+                                    child: Text(
+                                        _familyMessageTime(message.createdAt),
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF6B7280))),
+                                  ),
+                                ),
                               if (_sending.contains(message.clientId))
                                 const Text('发送中…'),
                               if (_failed.contains(message.clientId))

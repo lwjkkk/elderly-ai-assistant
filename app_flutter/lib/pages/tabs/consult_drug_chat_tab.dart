@@ -9,6 +9,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
+import '../../widgets/consult_summary_cell.dart';
 import '../../services/answer_speech.dart';
 import '../../services/drug_question.dart';
 import '../../services/location_access.dart';
@@ -347,7 +348,7 @@ class _ConsultsTabState extends State<ConsultsTab> {
                   onPressed: () => _togglePlay(full)),
           ])),
       cell(date.length >= 10 ? date.substring(0, 10) : date),
-      cell((m['summary'] ?? '—').toString(), color: const Color(0xFF888888)),
+      ConsultSummaryCell(key: ValueKey('summary_${m['id']}'), record: m),
       cell((m['hospital'] ?? '').toString()),
     ];
     return TableRow(children: [
