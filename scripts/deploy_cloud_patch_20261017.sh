@@ -3,7 +3,8 @@ set -Eeuo pipefail
 
 APP=/root/silver_agent_backend
 SERVICE=elderly-ai-backend
-SOURCE=https://raw.githubusercontent.com/lwjkkk/elderly-ai-assistant/main
+PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+test -f "$PACKAGE_ROOT/api/medication_recognition.py"
 cd "$APP"
 test -x venv/bin/python
 BACKUP="$APP/deploy_backups/$(date +%Y%m%d_%H%M%S)"
@@ -30,8 +31,7 @@ rollback() {
 }
 trap rollback ERR
 
-curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 \
-  "$SOURCE/api/medication_recognition.py" -o "$BACKUP/medication_recognition.new.py"
+cp "$PACKAGE_ROOT/api/medication_recognition.py" "$BACKUP/medication_recognition.new.py"
 venv/bin/python - "$BACKUP/medication_recognition.new.py" <<'PY'
 import ast, pathlib, sys
 source = pathlib.Path(sys.argv[1]).read_text()

@@ -10,15 +10,15 @@
 
 不需要新增数据库表。OCR 环境沿用已有 `core.ocr`。
 
-云服务器当前部署目录为 `/root/silver_agent_backend`。推荐在已登录的 Workbench 终端执行本轮专用更新脚本：
+云服务器当前部署目录为 `/root/silver_agent_backend`。仓库 raw 下载地址匿名访问返回 404，使用本地生成的 `elderly_backend_patch_20261017.tar.gz` 部署包。上传部署包到云服务器 `/root` 后，在已登录的 Workbench 终端执行：
 
 ```bash
-curl -fL --retry 3 https://raw.githubusercontent.com/lwjkkk/elderly-ai-assistant/main/scripts/deploy_cloud_patch_20261017.sh -o /tmp/update_elderly_backend.sh && bash /tmp/update_elderly_backend.sh
+tar -xzf /root/elderly_backend_patch_20261017.tar.gz -C /root && bash /root/elderly_backend_patch_20261017/scripts/deploy_cloud_patch_20261017.sh
 ```
 
 脚本只添加新识别接口，并在原有 main.py 和绑定接口中增补对应代码，保留云端其他配置。修改前备份原文件，不操作数据库、.env 和上传目录。重启后验证 OpenAPI 中存在新增接口，失败自动恢复原文件。如果原部署仍使用 nohup，脚本会切换为 systemd 常驻服务。
 
-如果服务器无法连接 GitHub，可上传仓库中的脚本和 3 个后端文件后人工更新。源码推送成功不等于云端已部署，必须在服务器执行更新并完成公网验证。
+部署包内包含脚本及所需源码，执行过程无需下载 GitHub 文件。如果服务器已有 Git 工作目录并能正常拉取仓库，也可拉取后直接执行 `bash scripts/deploy_cloud_patch_20261017.sh`。源码推送成功不等于云端已部署，必须在服务器执行更新并完成公网验证。
 
 ## 手机后续实测
 
