@@ -162,43 +162,43 @@ class _MedsTabState extends State<MedsTab> {
     if (source == null || !mounted) return;
 
     try {
-      final f = await ImagePicker().pickImage(
-          source: source, maxWidth: 1600, imageQuality: 88);
+      final f = await ImagePicker()
+          .pickImage(source: source, maxWidth: 1600, imageQuality: 88);
       if (f == null) return;
       setState(() => _recognizingPhoto = true);
       _showRecognizingMessage();
       final bytes = await f.readAsBytes();
-      final r =
-          await ApiService.queryDrugByImage(bytes.toList(), mine: widget.mine);
+      final r = await ApiService.recognizeMedication(bytes.toList(),
+          mine: widget.mine);
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       final ocr = (r['ocr_text'] ?? '').toString();
-      var name = '';
-      var dose = '';
-      var freq = '';
+      var name = (r['name'] ?? '').toString();
+      var dose = (r['dosage'] ?? '').toString();
+      var freq = (r['frequency'] ?? '').toString();
       if (ocr.trim().isNotEmpty) {
         final lines = [
           for (final l in ocr.split('\n'))
             if (l.trim().isNotEmpty) l.trim(),
         ];
-        if (lines.isNotEmpty) name = lines.first;
-        final dm = RegExp(r'\d+\.?\d*\s*(mg|g|ml|片|粒|颗|袋|支)').firstMatch(ocr);
-        if (dm != null) dose = dm.group(0) ?? '';
-        final fm =
-            RegExp(r'(每日\d*次|每天\d*次|一日\d*次|一天\d*次|每\d+小时一次)').firstMatch(ocr);
-        if (fm != null) freq = fm.group(0) ?? '';
+        if (name.isEmpty && lines.isNotEmpty) name = lines.first;
+        final fm = RegExp(r'((?:每日|每天|一日|一天)[\d一二两三四五六七八九十]+次|每\d+小时一次)')
+            .firstMatch(ocr);
+        if (freq.isEmpty && fm != null) freq = fm.group(0) ?? '';
       }
       if (!mounted) return;
       final recognized = ocr.trim().isNotEmpty;
       if (!recognized) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('图片已处理，但没有识别到药品信息，请手动填写')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('图片已处理，但没有识别到药品信息，请手动填写')));
       }
       await _medFormDialog(
           presetName: name,
           presetDose: dose,
           presetFreq: freq,
-          autoNote: recognized ? '已自动识别填充，可手动修改' : '请核对药品包装并手动填写');
+          presetTimes:
+              r['times'] is List ? List<String>.from(r['times']) : null,
+          autoNote: recognized ? '已识别说明书，请核对剂量、频次和提醒时间后保存' : '请核对药品包装并手动填写');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -217,8 +217,8 @@ class _MedsTabState extends State<MedsTab> {
         SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: Colors.white)),
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
         SizedBox(width: 12),
         Expanded(child: Text('正在识别药品，请稍候…')),
       ]),
@@ -231,11 +231,13 @@ class _MedsTabState extends State<MedsTab> {
       {String? presetName,
       String? presetDose,
       String? presetFreq,
+      List<String>? presetTimes,
       String? autoNote}) async {
     final data = await showMedFormDialog(context,
         presetName: presetName,
         presetDose: presetDose,
         presetFreq: presetFreq,
+        presetTimes: presetTimes,
         autoNote: autoNote);
     if (data == null) return;
     try {
@@ -245,6 +247,7 @@ class _MedsTabState extends State<MedsTab> {
         frequency: data['frequency'] as String,
         times: List<String>.from(data['times'] as List),
         startDate: data['startDate'] as String?,
+        mine: widget.mine,
       );
       refresh();
     } catch (e) {

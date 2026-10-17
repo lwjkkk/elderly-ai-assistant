@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +11,9 @@ import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
 import '../../services/answer_speech.dart';
 import '../../services/drug_question.dart';
+import '../../services/location_access.dart';
+import '../../services/chat_archive.dart';
+import '../chat_history_page.dart';
 import '../../theme.dart';
 import '../../afu/afu_chat_page.dart';
 import '../../afu/delete_confirm.dart';
@@ -20,7 +22,6 @@ import 'vitals_tab.dart';
 import 'health_record_style.dart';
 import 'report_details.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
 class ConsultsTab extends StatefulWidget {
@@ -133,41 +134,7 @@ class _ConsultsTabState extends State<ConsultsTab> {
   }
 
   Future<String> _suggestAddress() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        return '请开启手机定位后获取推荐地址';
-      }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return '允许定位权限后自动推荐地址';
-      }
-      final p = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 8));
-      final places = await placemarkFromCoordinates(p.latitude, p.longitude);
-      if (places.isNotEmpty) {
-        final place = places.first;
-        final parts = <String>[
-          place.administrativeArea ?? '',
-          place.locality ?? '',
-          place.subLocality ?? '',
-          place.street ?? '',
-          place.name ?? '',
-        ].where((e) => e.trim().isNotEmpty).toList();
-        final unique = <String>[];
-        for (final part in parts) {
-          if (!unique.contains(part)) unique.add(part);
-        }
-        if (unique.isNotEmpty) return '推荐地址：${unique.join('')}';
-      }
-      return '当前位置 ${p.latitude.toStringAsFixed(4)}, ${p.longitude.toStringAsFixed(4)}';
-    } catch (_) {
-      return '定位暂不可用，请手动填写地址';
-    }
+    return LocationAccess.suggestAddress();
   }
 
   Widget _consultField(TextEditingController c, String label, String hint) =>
@@ -777,7 +744,7 @@ class ChatTab extends StatefulWidget {
 final re_step = RegExp('第[一二三四五六七八九十]+步|步骤');
 
 class _ChatTabState extends State<ChatTab> {
-  static final msgs = <Map<String, String>>[];
+  final msgs = <Map<String, String>>[];
   final inputC = TextEditingController();
   bool busy = false;
   bool listening = false;
@@ -785,10 +752,15 @@ class _ChatTabState extends State<ChatTab> {
   late final AnswerSpeech _speech;
   bool _voiceStarting = false;
   int _voiceGeneration = 0;
+  String _voiceHint = '点按话筒开始说话，再点停止';
+  String _voicePrefix = '';
   String? _historyKey;
+  final _sessionId = DateTime.now().toIso8601String();
+  late final Future<void> _historyReady;
   @override
   void initState() {
     super.initState();
+    ChatHistory.current = [];
     _speech = AnswerSpeech(onError: (text) {
       if (mounted)
         ScaffoldMessenger.of(context)
@@ -796,7 +768,7 @@ class _ChatTabState extends State<ChatTab> {
     })
       ..addListener(_speechChanged);
     _loadScale();
-    _loadHistory();
+    _historyReady = _loadHistory();
     chatScale.addListener(_applyScale);
   }
 
@@ -805,13 +777,7 @@ class _ChatTabState extends State<ChatTab> {
     final role = await ApiService.getRole() ?? 'unknown';
     _historyKey = 'ai_chat_${role}_${id ?? 'legacy'}';
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_historyKey!);
-      final decoded = raw == null ? <dynamic>[] : jsonDecode(raw) as List;
-      msgs
-        ..clear()
-        ..addAll(decoded.map((e) => Map<String, String>.from(e as Map)));
-      if (mounted) setState(() {});
+      await ChatArchive.migrate(_historyKey!);
     } catch (_) {
       msgs.clear();
     }
@@ -821,8 +787,8 @@ class _ChatTabState extends State<ChatTab> {
     final key = _historyKey;
     if (key == null) return;
     final stable = msgs.where((m) => m['role'] != 'thinking').toList();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(key, jsonEncode(stable));
+    ChatHistory.current = List<Map<String, String>>.from(stable);
+    await ChatArchive.save(key, _sessionId, stable);
   }
 
   Future<void> _loadScale() async {
@@ -923,6 +889,7 @@ class _ChatTabState extends State<ChatTab> {
   }
 
   Future<void> send(String text) async {
+    await _historyReady;
     final t = text.trim();
     if (t.isEmpty || busy || !mounted) return;
     setState(() => busy = true);
@@ -934,6 +901,7 @@ class _ChatTabState extends State<ChatTab> {
       msgs.add({'role': 'thinking', 'text': ''});
       busy = true;
     });
+    await _saveHistory();
     String answer;
     try {
       final drug = drugQueryName(t);
@@ -994,75 +962,108 @@ class _ChatTabState extends State<ChatTab> {
       final stt = _activeStt ??= SpeechToText();
       stt.errorListener = (e) {
         if (!mounted) return;
-        setState(() => listening = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(e.errorMsg.contains('permission')
-                ? '请在系统设置中允许麦克风权限后重试'
-                : '语音识别中断，请再次点击话筒')));
+        final permission = e.errorMsg.contains('permission');
+        final noSpeech = e.errorMsg.contains('no_match') ||
+            e.errorMsg.contains('speech_timeout');
+        final message = permission
+            ? '请在系统设置中允许麦克风权限'
+            : noSpeech
+                ? '没有听清，请点话筒后靠近手机说话'
+                : '系统语音识别不可用（${e.errorMsg}），请检查语音服务和网络';
+        setState(() {
+          listening = false;
+          _voiceHint = message;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       };
       stt.statusListener = (status) {
         if (mounted &&
             (status == SpeechToText.doneStatus ||
                 status == SpeechToText.notListeningStatus)) {
-          setState(() => listening = false);
+          setState(() {
+            listening = false;
+            _voiceHint = '点按话筒开始说话，再点停止';
+          });
         }
       };
-      return stt
-          .initialize(onError: stt.errorListener, onStatus: stt.statusListener)
-          .timeout(const Duration(seconds: 10), onTimeout: () => false);
+      return stt.initialize(
+          onError: stt.errorListener,
+          onStatus: stt.statusListener,
+          options: [
+            SpeechToText.androidIntentLookup,
+            SpeechToText.androidNoBluetooth
+          ]).timeout(const Duration(seconds: 10), onTimeout: () => false);
     }();
   }
 
   Future<void> startHoldToTalk({bool autoSend = false}) async {
     if (listening || _voiceStarting || busy) return;
     final generation = ++_voiceGeneration;
-    setState(() => _voiceStarting = true);
-    await _speech.stop();
+    setState(() {
+      _voiceStarting = true;
+      _voiceHint = '正在准备麦克风…';
+    });
     try {
+      await _speech.stop().timeout(const Duration(seconds: 2), onTimeout: () {});
       final stt = _activeStt ??= SpeechToText();
       final ok = await _ensureSpeechReady();
       if (!mounted || generation != _voiceGeneration) return;
       if (!ok) {
         _sttInitialization = null;
-        throw StateError('语音识别不可用');
+        throw StateError('请允许麦克风权限，并在手机设置中启用系统语音识别服务');
       }
-      String? locale;
-      final locales = await stt.locales();
+      String? locale = 'zh_CN';
+      final locales = await stt.locales().timeout(const Duration(seconds: 3), onTimeout: () => []);
       for (final l in locales) {
-        if (l.localeId.startsWith('zh')) {
+        final id = l.localeId.toLowerCase().replaceAll('-', '_');
+        if (id == 'zh_cn' || id.startsWith('zh_hans') || id.startsWith('cmn')) {
           locale = l.localeId;
           break;
         }
       }
       if (!mounted || generation != _voiceGeneration) return;
       _autoSend = autoSend;
-      setState(() => listening = true);
+      _voicePrefix = inputC.text.trim();
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() {
+        listening = true;
+        _voiceHint = '正在听，请讲话；再点话筒停止';
+      });
       await stt.listen(
         localeId: locale,
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 5),
         listenOptions: SpeechListenOptions(
             partialResults: true,
-            cancelOnError: true,
+            cancelOnError: false,
             listenMode: ListenMode.dictation),
         onResult: (res) {
           if (!mounted || generation != _voiceGeneration) return;
           final words = res.recognizedWords.trim();
           if (words.isEmpty) return;
-          inputC.value = TextEditingValue(
-              text: words,
-              selection: TextSelection.collapsed(offset: words.length));
+          final text = _voicePrefix.isEmpty ? words : '$_voicePrefix $words';
+          setState(() {
+            inputC.value = TextEditingValue(
+                text: text,
+                selection: TextSelection.collapsed(offset: text.length));
+          });
           if (_autoSend && res.finalResult) {
             _autoSend = false;
             unawaited(send(words));
           }
         },
       );
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        setState(() => listening = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('语音不可用，请检查麦克风权限和系统语音识别服务')));
+        final message =
+            e is StateError ? e.message : '语音启动失败，请检查麦克风权限和系统语音识别服务';
+        setState(() {
+          listening = false;
+          _voiceHint = message;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _voiceStarting = false);
@@ -1107,6 +1108,7 @@ class _ChatTabState extends State<ChatTab> {
       onVoiceStart: () => startHoldToTalk(),
       onVoiceEnd: stopHoldToTalk,
       voiceActive: listening || _voiceStarting,
+      voiceHint: _voiceHint,
       onToggleTextScale: () async {
         const steps = [1.0, 1.15, 1.3];
         var i = steps.indexWhere((s) => (s - chatScale.value).abs() < 0.01);
@@ -1117,11 +1119,32 @@ class _ChatTabState extends State<ChatTab> {
           await prefs.setDouble('chat_text_scale', next);
         } catch (_) {}
       },
-      header: ValueListenableBuilder<bool>(
-        valueListenable: tipIsWeather,
-        builder: (_, isWx, __) =>
-            isWx ? const SizedBox.shrink() : const WeatherCard(),
-      ),
+      header: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF345C87),
+                    backgroundColor: const Color(0xFFEDF4FB)),
+                icon: const Icon(Icons.history),
+                label: const Text('查看历史聊天记录'),
+                onPressed: () async {
+                  await _historyReady;
+                  await _saveHistory();
+                  if (!mounted || _historyKey == null) return;
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) =>
+                          ChatHistoryPage(accountKey: _historyKey!)));
+                },
+              )),
+        ),
+        ValueListenableBuilder<bool>(
+            valueListenable: tipIsWeather,
+            builder: (_, isWx, __) =>
+                isWx ? const SizedBox.shrink() : const WeatherCard()),
+      ]),
     );
   }
 }
@@ -1137,10 +1160,7 @@ class _WeatherCardState extends State<WeatherCard> {
 
   static Future<_Weather?> _load() async {
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
+      final perm = await LocationAccess.ensurePermission();
       if (perm == LocationPermission.whileInUse ||
           perm == LocationPermission.always) {
         final pos = await Geolocator.getCurrentPosition(
@@ -1203,9 +1223,10 @@ class _Weather {
 }
 
 class ChatHistory {
+  static List<Map<String, String>> current = [];
   static List<AfuMessage> get items {
     final out = <AfuMessage>[];
-    for (final m in _ChatTabState.msgs) {
+    for (final m in current) {
       if (m['role'] == 'thinking') continue;
       out.add(AfuMessage(text: m['text'] ?? '', isMe: m['role'] == 'me'));
     }

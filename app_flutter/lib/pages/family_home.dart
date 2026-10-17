@@ -70,7 +70,7 @@ class _FamilyHomeState extends State<FamilyHome> {
           unselectedFontSize: 14,
           selectedItemColor: accent ?? const Color(0xFF345C87),
           unselectedItemColor: const Color(0xFF6B7280),
-          onTap: (i) => setState(() => idx = (i == 1 && idx == 1) ? 0 : i),
+          onTap: (i) => setState(() => idx = i),
           items: const [
             BottomNavigationBarItem(
                 icon: Icon(Icons.dashboard_outlined, size: 30), label: '健康总览'),

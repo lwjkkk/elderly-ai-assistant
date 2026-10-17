@@ -858,9 +858,14 @@ class _FamilyTabState extends State<FamilyTab> {
                 '家人 $idx')
             .toString();
         final key = 'family_chat_${name}_$idx';
-        final avatar =
-            (m['avatar'] ?? m['avatar_url'] ?? m['other_avatar'] ?? '')
-                .toString();
+        final avatar = [
+          m['other_avatar'],
+          m['other_avatar_url'],
+          m['avatar_url'],
+          m['avatar']
+        ]
+            .map((v) => (v ?? '').toString().trim())
+            .firstWhere((v) => v.isNotEmpty, orElse: () => '');
         final bindingId = (m['id'] as num?)?.toInt() ?? 0;
         final item = _FamConvItem(
             name: name,
@@ -2052,8 +2057,7 @@ class _FamAvatar extends StatelessWidget {
     Widget inner;
     if (avatar.startsWith('http') || avatar.startsWith('/')) {
       inner = ClipOval(
-        child: Image.network(
-            '${ApiService.avatarFullUrl(avatar)}?v=${DateTime.now().millisecondsSinceEpoch}',
+        child: Image.network(ApiService.avatarFullUrl(avatar),
             width: 72,
             height: 72,
             fit: BoxFit.cover,
