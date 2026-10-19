@@ -67,7 +67,6 @@ app.include_router(chat_router)    # 原有 /api/chat
 app.include_router(auth_router)    # 鉴权 /api/auth
 app.include_router(bind_router)    # 绑定 /api/bind
 app.include_router(meds_router)    # 用药 /api/meds
-app.include_router(medication_recognition_router)
 app.include_router(drugs_router)   # 查药 /api/drugs
 app.include_router(vitals_router)  # 体征 /api/vitals
 app.include_router(consults_router)  # 问诊录音 /api/consults
@@ -87,3 +86,5 @@ def read_root():
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host=HOST, port=PORT, reload=True)
+
+app.include_router(medication_recognition_router)

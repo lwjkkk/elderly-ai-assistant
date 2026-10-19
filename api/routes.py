@@ -43,6 +43,34 @@ def chat(request: ChatRequest,
     return result
 
 
+class TieredRequest(BaseModel):
+    question: str
+
+
+@router.post("/api/chat/tiered")
+def chat_tiered(request: TieredRequest,
+                db: Session = Depends(get_db),
+                current: User | None = Depends(get_optional_user)):
+    """健康回答三段式：老人简版/家属详版双角色输出。
+
+    - 老人或无登录：返回老人简版（结论/建议一句要点 + 就医兜底）。
+    - 家属：返回家属详版（三段完整原文 + 关注点提示）。
+    输出含 source：llm=LLM 结构化生成；deterministic=LLM 失败时的确定性降级。
+    """
+    result = get_agent_answer(request.question)
+    from core.tiered_answer import build
+    role = current.role if current and current.role in ("elder", "family") else "elder"
+    tiered = build(request.question, result.get("answer", ""), role)
+    return {
+        "module": result.get("module", ""),
+        "sources": result.get("sources", []),
+        "role": role,
+        "source": tiered["source"],
+        "parts": tiered["parts"],
+        "view": tiered["view"],
+    }
+
+
 @router.get("/api/chat/summaries", response_model=list[ChatSummaryOut])
 def list_summaries(elder_id: int | None = None,
                    category: str | None = None,

@@ -15,6 +15,7 @@ from db.database import get_db
 from db.models import User
 from db.schemas import UserProfileUpdate, UserProfileOut
 from core.security import get_current_user
+from core import age as age_mod
 
 router = APIRouter(prefix="/api/users", tags=["用户资料"])
 
@@ -27,11 +28,20 @@ _VALID_GENDER = {"男", "女", ""}
 _BIRTH_YM_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
+def _fill_age(out: UserProfileOut, user: User, db: Session) -> UserProfileOut:
+    """计算年龄/分层并强制 senior 分享落库，填充返回字段。"""
+    age_mod.enforce_senior_share(db, user)
+    out.age = age_mod.compute_age(user.birth_ym)
+    out.age_tier = age_mod.age_tier(user.birth_ym)
+    out.forced_share = age_mod.forced_share(user.birth_ym)
+    return out
+
+
 @router.get("/profile", response_model=UserProfileOut)
 def get_profile(db: Session = Depends(get_db),
                 current: User = Depends(get_current_user)):
-    """读取本人资料。"""
-    return UserProfileOut.model_validate(current)
+    """读取本人资料（含年龄分层与强制分享状态）。"""
+    return _fill_age(UserProfileOut.model_validate(current), current, db)
 
 
 @router.put("/profile", response_model=UserProfileOut)
@@ -71,7 +81,7 @@ def update_profile(payload: UserProfileUpdate,
 
     db.commit()
     db.refresh(user)
-    return UserProfileOut.model_validate(user)
+    return _fill_age(UserProfileOut.model_validate(user), user, db)
 
 
 def _save_avatar(avatar_base64: str) -> str:

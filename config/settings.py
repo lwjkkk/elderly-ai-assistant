@@ -6,15 +6,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 通义千问 / 阿里云百炼云 API 配置
-# 当前使用阿里云百炼 OpenAI 兼容接口（qwen3.7-plus），数据走云端推理。
+# 当前默认走阿里云百炼 OpenAI 兼容接口（qwen3.7-plus），数据走云端推理。
+# 模型地址与模型名通过环境变量 LLM_BASE_URL / QWEN_MODEL_NAME 切换，
+# 如需切到本地 Ollama / vLLM，在 .env 覆盖即可，不改代码。
 # API Key 从 .env 的 DASHSCOPE_API_KEY 读取，不硬编码到代码。
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 
-# 模型服务地址：阿里云百炼 OpenAI 兼容接口
-LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# 模型服务地址：默认阿里云百炼 OpenAI 兼容接口；本地部署时覆盖为 http://localhost:11434/v1 等
+LLM_BASE_URL = os.getenv(
+    "LLM_BASE_URL",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+)
 
-# 文本模型（百炼控制台免费额度中的 qwen3.7-plus）
-QWEN_MODEL_NAME = "qwen3.7-plus"
+# 文本模型：默认百炼 qwen3.7-plus；本地切换时改为 qwen2.5:7b / qwen2.5:3b 等
+QWEN_MODEL_NAME = os.getenv("QWEN_MODEL_NAME", "qwen3.7-plus")
 
 # 模型调用参数
 QWEN_MAX_TOKENS = 1024        # 最大生成 token 数

@@ -1,7 +1,7 @@
 # ORM 表模型：用 Python 类描述数据库里的表
 # Day1 先建两张表：users（账号）和 family_bindings（老人/家属绑定关系）
 
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, Boolean, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, Boolean, Float, func
 from db.database import Base
 
 
@@ -94,6 +94,8 @@ class Vitals(Base):
     diastolic = Column(Integer, nullable=True)
     # 通用数值：血糖(mmol/L)、心率(bpm)、体重(kg)
     value = Column(String(20), nullable=True)
+    # 血糖测量场景：fasting/postprandial/random/unknown；其他体征为空。
+    measurement_context = Column(String(20), nullable=True)
     # 测量时间：用户填写的实际测量时间
     measured_at = Column(DateTime, server_default=func.now(), index=True)
     # 入库时间：记录创建时间，用于增量同步（补录历史数据时 measured_at 在过去但 created_at 是当前）
@@ -110,11 +112,11 @@ class ConsultRecord(Base):
     duration = Column(Integer, nullable=True)          # 录音时长（秒）
     hospital = Column(String(100), nullable=True)      # 医院名
     doctor = Column(String(50), nullable=True)         # 医生名
+    created_at = Column(DateTime, server_default=func.now())
     transcript = Column(String, nullable=True)
     summary = Column(String, nullable=True)
     summary_status = Column(String(20), nullable=True)
     summary_error = Column(String(200), nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
 
 
 class HealthReport(Base):
@@ -187,3 +189,55 @@ class FamilyMessage(Base):
     kind = Column(String(10), nullable=False)
     content = Column(JSON, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class VitalAlert(Base):
+    """体征异常事件（#9，10.27 新增）：血压/血糖超阈值时持久化记录，供老人/授权家属端可查、可追踪。
+
+    记录触发当次数值与阈值来源，配合 services/push 向 active 绑定家属发送提示（推送记录在内存列表，可追踪）。
+    事件仅供提示，不替代诊断；阈值口径由 C 主测复核。
+    """
+    __tablename__ = "vital_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    vital_type = Column(String(10), nullable=False)   # bp / bs
+    systolic = Column(Integer, nullable=True)
+    diastolic = Column(Integer, nullable=True)
+    value = Column(Float, nullable=True)
+    measurement_context = Column(String(20), nullable=True)
+    level = Column(String(10), nullable=False)        # high / low / mixed
+    message = Column(String, nullable=True)
+    source = Column(String, nullable=True)            # 阈值来源说明
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class VitalDraftConversation(Base):
+    """体征口述录入会话（#8 多轮追问状态，10.23 新增）。
+
+    从语音/口述文本逐轮收集体征草稿：缺字段时保存会话并追问，字段补充后合并，
+    status=collecting 时不写入 vitals；只有 confirm 才复用现有 POST /api/vitals 落库，
+    未确认一律不写库（cancel/超时/重进页面都可恢复或作废）。
+    status: collecting=收集中, ready=信息齐全待确认, confirmed=已确认入库, cancelled=已取消
+    """
+    __tablename__ = "vital_draft_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # 体征类型：bp/bs/hr/weight；未识别出时为 None
+    type = Column(String(10), nullable=True)
+    systolic = Column(Integer, nullable=True)
+    diastolic = Column(Integer, nullable=True)
+    value = Column(Float, nullable=True)
+    unit = Column(String(20), nullable=True)
+    measurement_context = Column(String(20), nullable=True, default="unknown")
+    measured_text = Column(String(50), nullable=True)
+    measured_at = Column(DateTime, nullable=True)
+    raw_text = Column(String, nullable=True)
+    # 缺失字段列表（JSON）：type/systolic/diastolic/value
+    missing = Column(JSON, nullable=True, default=list)
+    # 上一次追问文本
+    last_question = Column(String, nullable=True)
+    status = Column(String(20), nullable=False, default="collecting")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
