@@ -48,6 +48,10 @@ class UserProfileOut(BaseModel):
     gender: str | None = None
     birth_ym: str | None = None
     avatar_url: str | None = None
+    # 10.26 #5 年龄分层：周岁、分层、是否强制分享（供前端隐藏/显示隐私控件）
+    age: int | None = None
+    age_tier: str | None = None      # senior / younger / unknown
+    forced_share: bool = False       # True=满60周岁强制分享给子女
 
     class Config:
         from_attributes = True
@@ -88,8 +92,10 @@ class Token(BaseModel):
 # ---------- 隐私开关 ----------
 
 class PrivacyOut(BaseModel):
-    """隐私开关返回体：是否把对话摘要同步给家属"""
+    """隐私开关返回体：是否把对话摘要同步给家属；附年龄分层与强制分享状态。"""
     sync_summary_to_family: bool
+    age_tier: str | None = None      # senior / younger / unknown
+    forced_share: bool = False       # 满60周岁强制分享，前端隐藏关闭按钮
 
 
 class PrivacyUpdate(BaseModel):
@@ -168,12 +174,13 @@ class MedicationCreate(BaseModel):
 
 
 class MedicationUpdate(BaseModel):
-    """修改药品请求体（所有字段可选，只改传的）"""
+    """修改药品请求体（所有字段可选，只改传的）；clear_start_date=True 表示清除开始日期"""
     name: str | None = None
     dosage: str | None = None
     frequency: str | None = None
     times: list[str] | None = None
     start_date: str | None = None
+    clear_start_date: bool = False
 
 
 class MedicationOut(BaseModel):
@@ -248,6 +255,10 @@ class VitalsCreate(BaseModel):
     systolic: int | None = Field(None, description="收缩压（血压时必填）")
     diastolic: int | None = Field(None, description="舒张压（血压时必填）")
     value: float | None = Field(None, description="通用数值：血糖/心率/体重")
+    measurement_context: str | None = Field(
+        "unknown",
+        description="血糖测量场景：fasting=空腹、postprandial=餐后、random=随机、unknown=未注明；其他体征不适用",
+    )
     measured_at: str | None = Field(None, description="记录日期/时间，如 2026-10-05 或 2026-10-05T09:12:00，默认当前时间")
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
@@ -259,6 +270,7 @@ class VitalsOut(BaseModel):
     systolic: int | None = None
     diastolic: int | None = None
     value: float | None = None
+    measurement_context: str | None = None
     measured_at: datetime | None = None
     disclaimer: str = HEALTH_DISCLAIMER
 
@@ -266,22 +278,65 @@ class VitalsOut(BaseModel):
         from_attributes = True
 
 
-class VitalsRecognizeRequest(BaseModel):
-    """体征拍照识别请求体（仿拍照查药：图片 → 数值）"""
-    image_base64: str = Field(..., description="血压计/血糖仪/体重秤/心率表照片 base64")
-    elder_id: int | None = Field(None, description="家属代识别时指定老人id")
-    vital_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight，减少歧义")
+class VitalAlertOut(BaseModel):
+    """体征异常事件返回体（#9，10.27 新增）。"""
+    id: int
+    elder_id: int
+    vital_type: str
+    systolic: int | None = None
+    diastolic: int | None = None
+    value: float | None = None
+    measurement_context: str | None = None
+    level: str
+    message: str | None = None
+    source: str | None = None
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 
-class VitalsRecognizeOut(BaseModel):
-    """体征拍照识别返回体（不落库，前端确认后走 POST /api/vitals）"""
+class VitalsSpokenParseRequest(BaseModel):
+    """语音转写/口述体征草稿解析请求体（不落库）"""
+    text: str = Field(..., description="语音转写文本/口述文本")
+    hint_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight，减少歧义")
+    elder_id: int | None = Field(None, description="家属代录时指定老人id")
+
+
+class VitalsSpokenDraftOut(BaseModel):
+    """体征口述草稿返回体（不落库，前端编辑/确认后走 POST /api/vitals）"""
+    hit: bool = Field(..., description="是否命中体征口述")
     type: str | None = None
     systolic: int | None = None
     diastolic: int | None = None
     value: float | None = None
+    measurement_context: str | None = None
     unit: str | None = None
+    measured_text: str | None = None
+    measured_at: str | None = None
+    raw_text: str | None = None
     confidence: float | None = None
-    ocr_text: str
+    valid: bool | None = None
+    errors: list[str] = []
+    disclaimer: str = HEALTH_DISCLAIMER
+
+
+class VitalsSpokenTurnRequest(BaseModel):
+    """体征口述多轮会话：新一轮口述文本（#8，10.23）。"""
+    text: str = Field(..., description="语音转写/口述文本")
+    session_id: int | None = Field(None, description="体征会话id，续轮追问时传；新发起不传")
+    hint_type: str | None = Field(None, description="可选提示类型：bp/bs/hr/weight")
+    elder_id: int | None = Field(None, description="家属代录时指定老人id")
+
+
+class VitalsSpokenTurnOut(BaseModel):
+    """体征口述会话返回体：草稿 + 缺失字段 + 追问文本（确认前不写库）。"""
+    session_id: int
+    status: str = Field(..., description="collecting/ready/confirmed/cancelled")
+    missing: list[str] = Field(default_factory=list)
+    question: str = ""
+    can_confirm: bool = Field(..., description="信息齐全可确认")
+    draft: dict = Field(default_factory=dict)
     disclaimer: str = HEALTH_DISCLAIMER
 
 
@@ -302,14 +357,14 @@ class ConsultOut(BaseModel):
     duration: int | None = None
     hospital: str | None = None
     doctor: str | None = None
-    transcript: str | None = None
-    summary: str | None = None
-    summary_status: str | None = None
-    summary_error: str | None = None
     created_at: datetime | None = None
 
     class Config:
         from_attributes = True
+    transcript: str | None = None
+    summary: str | None = None
+    summary_status: str | None = None
+    summary_error: str | None = None
 
 
 # ---------- 症状自查 ----------

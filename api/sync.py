@@ -19,6 +19,7 @@ from db.schemas import (
 from core.security import get_current_user
 from api.meds import resolve_elder_id
 from core.report_parse import parse_metrics
+from core import age as age_mod
 
 router = APIRouter(prefix="/api", tags=["同步"])
 
@@ -44,6 +45,21 @@ def sync(since: str | None = None,
     """增量拉取某位老人自 since 以来变更的健康数据。"""
     target = resolve_elder_id(db, current, elder_id)
     ts = _parse_since(since)
+
+    # 10.26 统一年龄分享闸门：家属读取老人健康资料前，实时校验
+    # 绑定关系 + 出生年月完整性 + 年龄分层/隐私开关，不依赖数据库旧开关值。
+    target_user = db.query(User).filter(User.id == target).first()
+    is_owner = current.id == target
+    if not is_owner:
+        allowed, reason = age_mod.family_access_guard(db, current, target_user)
+        if not allowed:
+            detail = {
+                "birth_missing": "老人资料不完整（缺出生年月），请补全出生年月后再开放家属访问",
+                "privacy_off": "老人未开启健康资料分享，家属暂不可见",
+                "not_binding": "未绑定该老人",
+            }.get(reason, "无权访问该老人健康资料")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=403, detail=detail)
 
     # 药品：按更新时间（修改时 updated_at 自动刷新，确保增量同步不漏掉修改）
     q_med = db.query(Medication).filter(Medication.elder_id == target)
@@ -87,38 +103,13 @@ def sync(since: str | None = None,
         q_dq = q_dq.filter(DrugQuery.created_at >= ts)
     drug_queries = q_dq.all()
 
-    # 对话摘要和 kind=chat 的查药记录：受老人隐私开关约束。
-    # 若老人开启了隐私（privacy_enabled_at 不为空），家属只能看到开启时间之前的记录。
+    # 对话摘要：入口闸门已放行（本人或家属被允许），直接返回全部。
+    # senior 强制分享已在 family_access_guard 内实时纠正旧 sync_summary_to_family=False。
     chat_summaries: list[ChatSummary] = []
-    target_user = db.query(User).filter(User.id == target).first()
-    is_owner = current.id == target
-
-    privacy_enabled = bool(not is_owner and target_user
-                           and not target_user.sync_summary_to_family)
-    privacy_cutoff = target_user.privacy_enabled_at if privacy_enabled else None
-
-    if not privacy_enabled:
-        # 未开隐私，或本人看自己：全部返回
-        q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
-        if ts:
-            q_cs = q_cs.filter(ChatSummary.created_at >= ts)
-        chat_summaries = q_cs.all()
-    elif privacy_cutoff is not None:
-        # 开了隐私：只返回开启时间之前的摘要
-        q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
-        q_cs = q_cs.filter(ChatSummary.created_at <= privacy_cutoff)
-        if ts:
-            q_cs = q_cs.filter(ChatSummary.created_at >= ts)
-        chat_summaries = q_cs.all()
-        # 查药记录里 kind=chat 的，开启时间之后的过滤掉
-        drug_queries = [
-            r for r in drug_queries
-            if r.kind != "chat" or (r.created_at and r.created_at <= privacy_cutoff)
-        ]
-    else:
-        # 兼容旧数据：隐私已开启但缺少开启时刻时，不向家属返回任何对话派生记录。
-        chat_summaries = []
-        drug_queries = [r for r in drug_queries if r.kind != "chat"]
+    q_cs = db.query(ChatSummary).filter(ChatSummary.elder_id == target)
+    if ts:
+        q_cs = q_cs.filter(ChatSummary.created_at >= ts)
+    chat_summaries = q_cs.all()
 
     server_time = datetime.now(timezone.utc).replace(microsecond=0)
 

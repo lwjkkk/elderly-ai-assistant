@@ -10,13 +10,17 @@ torch>=2.4,<3.0
 openai>=1.50,<2.0
 
 # LangChain 与 RAG
-langchain>=0.3,<1.0
-langchain-community>=0.3,<1.0
-langchain-text-splitters>=0.3,<1.0
-langchain-openai>=0.2,<1.0
+# 10.26 核实：RAG 为自写（core/rag_hybrid.py 用本地 bge-small-zh + SQLite 向量库），
+# 未实际 import langchain / chromadb。以下依赖保留为可选/历史声明，代码未使用，
+# 披露材料中应标注「未实际集成，仅 requirements 残留」。
+# langchain>=0.3,<1.0
+# langchain-community>=0.3,<1.0
+# langchain-text-splitters>=0.3,<1.0
+# langchain-openai>=0.2,<1.0
 
 # 向量数据库
-chromadb>=0.5,<1.0
+# 10.26 核实：未使用 ChromaDB，向量检索走 SQLite + 自写 bge 嵌入。
+# chromadb>=0.5,<1.0
 
 # 文档与文本处理
 pypdf>=5.0,<6.0

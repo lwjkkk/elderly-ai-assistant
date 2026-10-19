@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from api import auth, consults, drugs, meds, messages, privacy, reports, routes, sync, vitals
-from core import chat_summary, health_llm, ocr
+from core import chat_summary, consult_summary, health_llm, ocr
 from core.report_parse import parse_metrics
 from core.security import create_access_token
 from db.database import Base, get_db
@@ -102,7 +102,8 @@ class BackendRegressions(unittest.TestCase):
         self.assertEqual(list(Path(self.temp.name).iterdir()), [])
 
     def test_ocr_error_status_all_routes(self):
-        for module, endpoint in [(drugs, '/api/drugs/query'), (vitals, '/api/vitals/recognize')]:
+        # 10.23 起 /api/vitals/recognize 拍照体征入口已删除，仅保留 drugs 体检报告识别
+        for module, endpoint in [(drugs, '/api/drugs/query')]:
             for exc, status in [(ocr.OcrUnavailableError('broken'), 500), (ocr.OcrNoTextError('no text'), 400)]:
                 with self.subTest(endpoint=endpoint, status=status), \
                      patch.object(module, 'recognize_image', side_effect=exc), \
@@ -111,12 +112,10 @@ class BackendRegressions(unittest.TestCase):
                     self.assertEqual(response.status_code, status)
                     llm.assert_not_called()
 
-    def test_bp_value_none_is_not_failure(self):
-        with patch.object(vitals, 'recognize_image', return_value='SYS 145 DIA 90'), \
-             patch.object(vitals, 'call_qwen', return_value='TYPE: bp\nSYSTOLIC: 145\nDIASTOLIC: 90\nVALUE: NONE'):
-            response = self.client.post('/api/vitals/recognize', json={'image_base64': 'dummy'}, headers=self.headers())
-        self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()['systolic'], 145)
+    def test_photo_vitals_route_removed(self):
+        # 拍照体征识别入口已删除，调用应返回 404；体检报告 OCR 仍正常
+        response = self.client.post('/api/vitals/recognize', json={'image_base64': 'dummy'}, headers=self.headers())
+        self.assertIn(response.status_code, (404, 405), response.text)
 
     def test_units_and_implausible_vitals(self):
         result = vitals._parse_vitals_llm('TYPE: bs\nVALUE: 126\nUNIT: mg/dL', None)
@@ -136,8 +135,13 @@ class BackendRegressions(unittest.TestCase):
         self.assertEqual(self.client.get('/api/vitals', headers=self.headers()).json(), [])
 
     def test_family_personal_audio(self):
-        response = self.client.post('/api/consults/upload', headers=self.headers(2),
-                                    files={'file': ('record.m4a', b'test audio', 'application/octet-stream')})
+        # generate_summary 使用独立的全局 SessionLocal；测试必须把它隔离到内存库，
+        # 并 mock 外部 ASR/LLM，避免连接到磁盘真实库或调用外部服务。
+        with patch.object(consult_summary, 'SessionLocal', self.sessions), \
+             patch('core.speech_transcription.transcribe_audio', return_value='测试转写'), \
+             patch('core.qwen_llm.call_qwen', return_value='测试摘要'):
+            response = self.client.post('/api/consults/upload', headers=self.headers(2),
+                                        files={'file': ('record.m4a', b'test audio', 'application/octet-stream')})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['elder_id'], 2)
 
@@ -270,7 +274,7 @@ class BackendRegressions(unittest.TestCase):
         self.assertEqual(response.json()['user_id'], 1)
 
     def test_vitals_ocr_fallback_extracts_blood_pressure(self):
-        parsed = vitals._parse_vitals_ocr('SYS 139 DIA 85 PUL 72', None)
+        parsed = vitals._fallback_parse_ocr('SYS 139 DIA 85 PUL 72', None)
         self.assertEqual((parsed['type'], parsed['systolic'], parsed['diastolic']), ('bp', 139, 85))
 
     def test_privacy_keeps_records_created_before_enabled_time(self):

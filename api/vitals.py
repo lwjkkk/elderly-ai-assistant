@@ -9,19 +9,27 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from db.models import User, FamilyBinding, Vitals
+from db.models import User, FamilyBinding, Vitals, VitalDraftConversation, VitalAlert, FamilyMessage
 from db.schemas import (
-    VitalsCreate, VitalsOut, VitalsRecognizeRequest, VitalsRecognizeOut, TrendPoint,
+    VitalsCreate, VitalsOut, TrendPoint,
+    VitalsSpokenParseRequest, VitalsSpokenDraftOut,
+    VitalsSpokenTurnRequest, VitalsSpokenTurnOut, VitalAlertOut,
 )
 from core.security import get_current_user
 from core.disclaimer import HEALTH_DISCLAIMER
 from core.ocr import recognize_image, OcrUnavailableError
 from core.qwen_llm import call_qwen
+from core.vitals_draft import parse_spoken_vitals
+from core.vitals_conversation import merge_turn, compute_missing, draft_payload, _revalidate
+from core import vital_thresholds as vth
+from core import age as age_mod
+from services import push as push_svc
 from services.pdf_export import generate_vitals_pdf
 
 router = APIRouter(prefix="/api/vitals", tags=["体征"])
 
 VALID_TYPES = {"bp", "bs", "hr", "weight"}
+BS_MEASUREMENT_CONTEXTS = {"fasting", "postprandial", "random", "unknown"}
 
 
 def _parse_measured_at(value: str | None):
@@ -43,6 +51,7 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     """解析目标数据归属：
     - 老人：总是操作自己的数据；
     - 家属：传 elder_id 则必须已绑定该老人；不传则操作自己的本人记录。
+    10.26 起：家属读长辈体征/异常事件前，统一走 age.family_access_guard。
     """
     if current.role == "elder":
         return current.id
@@ -57,7 +66,66 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     )
     if not binding:
         raise HTTPException(status_code=403, detail="未绑定该老人，无权操作")
+    target_user = db.query(User).filter(User.id == elder_id).first()
+    allowed, reason = age_mod.family_access_guard(db, current, target_user)
+    if not allowed:
+        detail = {
+            "birth_missing": "老人资料不完整（缺出生年月），请补全出生年月后再开放家属访问",
+            "privacy_off": "老人未开启健康资料分享，家属暂不可见",
+        }.get(reason, "无权访问该老人健康资料")
+        raise HTTPException(status_code=403, detail=detail)
     return elder_id
+
+
+def _maybe_create_alert(db: Session, vital: Vitals) -> None:
+    """血压/血糖超阈值时写入可追踪事件，并向 active 绑定家属发送提示（内存推送记录）。
+
+    10.26 起：家属推送前与读取端共用同一套年龄/隐私规则——
+      - 满 60 周岁（senior）：强制推给所有 active 绑定家属；
+      - 未满 60（younger）：仅当老人 sync_summary_to_family=True 时才推；
+      - 出生年月缺失（unknown）：不推家属（与读取端 birth_missing 拒绝一致）。
+    VitalAlert 记录始终写库供老人本人查看，不因隐私开关丢失。
+    """
+    ev = vth.evaluate(vital.type, vital.systolic, vital.diastolic, vital.value,
+                      measurement_context=vital.measurement_context)
+    if not ev or not ev["abnormal"]:
+        return
+    alert = VitalAlert(
+        elder_id=vital.elder_id, vital_type=vital.type,
+        systolic=vital.systolic, diastolic=vital.diastolic, value=vital.value,
+        measurement_context=vital.measurement_context,
+        level=ev["level"], message=ev["message"], source=ev["source"],
+    )
+    db.add(alert)
+    db.commit()
+
+    # 判断是否允许向家属推送（与 family_access_guard 读取规则一致）
+    elder_user = db.query(User).filter(User.id == vital.elder_id).first()
+    tier = age_mod.age_tier(elder_user.birth_ym if elder_user else None)
+    allow_family_push = (tier == age_mod.TIER_SENIOR) or (
+        tier == age_mod.TIER_YOUNGER and elder_user is not None
+        and elder_user.sync_summary_to_family is not False
+    )
+    if not allow_family_push:
+        return
+
+    bindings = (
+        db.query(FamilyBinding)
+        .filter(FamilyBinding.elder_id == vital.elder_id,
+                FamilyBinding.status == "active",
+                FamilyBinding.family_id.isnot(None))
+        .all()
+    )
+    for b in bindings:
+        push_svc.send_push(b.family_id, "体征异常提醒",
+                           f"老人体征异常提示（{ev['level']}）：{ev['message']}")
+        db.add(FamilyMessage(
+            binding_id=b.id, sender_id=vital.elder_id, kind="health",
+            content={"type": "vital_alert", "alert_id": alert.id,
+                     "vital_type": vital.type, "level": ev["level"],
+                     "message": ev["message"], "source": ev["source"]},
+        ))
+    db.commit()
 
 
 @router.post("", response_model=VitalsOut)
@@ -67,6 +135,15 @@ def create_vital(payload: VitalsCreate,
     """录入一条体征记录。"""
     if payload.type not in VALID_TYPES:
         raise HTTPException(status_code=400, detail=f"类型只能是 {VALID_TYPES}")
+
+    context = payload.measurement_context or "unknown"
+    if payload.type == "bs" and context not in BS_MEASUREMENT_CONTEXTS:
+        raise HTTPException(
+            status_code=400,
+            detail="血糖测量场景只能是 fasting、postprandial、random 或 unknown",
+        )
+    if payload.type != "bs" and context not in {"unknown"}:
+        raise HTTPException(status_code=400, detail="只有血糖记录可以填写测量场景")
 
     # 血压必须同时有收缩压和舒张压，并校验合理范围
     if payload.type == "bp":
@@ -108,12 +185,30 @@ def create_vital(payload: VitalsCreate,
         systolic=payload.systolic,
         diastolic=payload.diastolic,
         value=payload.value,
+        measurement_context=context if payload.type == "bs" else None,
         measured_at=_parse_measured_at(payload.measured_at),
     )
     db.add(vital)
     db.commit()
     db.refresh(vital)
+    _maybe_create_alert(db, vital)
     return vital
+
+
+@router.get("/alerts", response_model=list[VitalAlertOut])
+def list_vital_alerts(elder_id: int | None = None,
+                      days: int = 90,
+                      db: Session = Depends(get_db),
+                      current: User = Depends(get_current_user)):
+    """体征异常事件列表：老人本人看自己；绑定家属传 elder_id 看老人。仅提示，不替代诊断。"""
+    target = resolve_elder_id(db, current, elder_id)
+    cutoff = datetime.now() - timedelta(days=days)
+    return (
+        db.query(VitalAlert)
+        .filter(VitalAlert.elder_id == target, VitalAlert.created_at >= cutoff)
+        .order_by(VitalAlert.created_at.desc())
+        .all()
+    )
 
 
 @router.get("", response_model=list[VitalsOut])
@@ -136,21 +231,6 @@ def list_vitals(vital_type: str | None = None,
         query = query.filter(Vitals.type == vital_type)
 
     return query.order_by(Vitals.measured_at.desc()).all()
-
-
-@router.delete("/{vital_id}")
-def delete_vital(vital_id: int,
-                 db: Session = Depends(get_db),
-                 current: User = Depends(get_current_user)):
-    """删除本人录入的体征记录。"""
-    record = db.query(Vitals).filter(Vitals.id == vital_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="体征记录不存在")
-    if record.elder_id != current.id:
-        raise HTTPException(status_code=403, detail="只能删除本人录入的体征记录")
-    db.delete(record)
-    db.commit()
-    return {"ok": True}
 
 
 @router.get("/trend", response_model=dict[str, list[TrendPoint]])
@@ -241,55 +321,127 @@ def export_pdf(vital_type: str | None = None,
     )
 
 
-# 体征识别提示词：解析测量设备屏幕/照片上的数值，只输出固定结构
-VITALS_RECOGNIZE_PROMPT = (
-    "你是体征识别助手。根据测量设备（血压计/血糖仪/心率表/体重秤）照片识别到的文字，"
-    "提取体征数值。只输出以下格式，没有的字段省略，不要解释：\n"
-    "TYPE: bp 或 bs 或 hr 或 weight（血压/血糖/心率/体重）\n"
-    "SYSTOLIC: 收缩压（仅血压）\n"
-    "DIASTOLIC: 舒张压（仅血压）\n"
-    "VALUE: 数值（血糖/心率/体重）\n"
-    "UNIT: 原始单位（如 mmHg / mmol/L / mg/dL / bpm / kg）\n"
-    "CONFIDENCE: 识别置信度，0 到 1 之间的小数（如 0.92）\n"
-    "如果识别不出有效体征数值，只输出：NONE"
-)
+# 拍照体征识别入口已按 10.26 团队决定删除（统一改走口述体征草稿）。
+# 体检报告 OCR（core.ocr.recognize_image）仍被 reports.py / drugs.py 复用，保留。
 
 
-@router.post("/recognize", response_model=VitalsRecognizeOut)
-def recognize_vital(payload: VitalsRecognizeRequest,
-                    db: Session = Depends(get_db),
-                    current: User = Depends(get_current_user)):
-    """体征拍照识别：血压计/血糖仪/体重秤/心率表照片 → 数值。
-    识别结果不落库，前端展示给老人确认后，再调 POST /api/vitals 落库。"""
-    # 沿用老人/家属归属校验（家属需绑定，老人默认自己）
+@router.post("/parse-spoken", response_model=VitalsSpokenDraftOut)
+def parse_spoken_vitals_endpoint(payload: VitalsSpokenParseRequest,
+                                 db: Session = Depends(get_db),
+                                 current: User = Depends(get_current_user)):
+    """语音转写/口述体征草稿解析：从口述文本识别体征意图与字段，只产出草稿，不落库。
+    前端展示/编辑/确认后，再调 POST /api/vitals 落库（复用现有范围校验）。"""
+    # 沿用老人/家属归属校验（家属需绑定，老人默认自己），与拍照识别一致
     resolve_elder_id(db, current, payload.elder_id)
 
-    try:
-        ocr_text = recognize_image(payload.image_base64)
-    except OcrUnavailableError as e:
-        raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    draft = parse_spoken_vitals(payload.text, payload.hint_type)
+    if draft is None:
+        return VitalsSpokenDraftOut(hit=False, disclaimer=HEALTH_DISCLAIMER)
+    return VitalsSpokenDraftOut(hit=True, **draft, disclaimer=HEALTH_DISCLAIMER)
 
-    llm_out = call_qwen(
-        VITALS_RECOGNIZE_PROMPT,
-        f"识别到的文字如下：\n{ocr_text}",
+
+def _conv_access_check(db: Session, current: User, conv: VitalDraftConversation):
+    """体征会话归属校验：老人只能操作自己的；家属需绑定该老人。"""
+    if current.role == "elder":
+        if conv.elder_id != current.id:
+            raise HTTPException(status_code=403, detail="无权访问该体征会话")
+    else:
+        resolve_elder_id(db, current, conv.elder_id)
+
+
+@router.post("/draft-conversations", response_model=VitalsSpokenTurnOut)
+def spoken_vital_turn(payload: VitalsSpokenTurnRequest,
+                      db: Session = Depends(get_db),
+                      current: User = Depends(get_current_user)):
+    """体征口述多轮会话：新一轮口述文本 → 合并草稿 + 判定缺字段 + 返回追问。
+    不写 vitals 表；只有 confirm 端点才复用现有 POST /api/vitals 落库。"""
+    elder_id = resolve_elder_id(db, current, payload.elder_id)
+
+    if payload.session_id:
+        conv = db.get(VitalDraftConversation, payload.session_id)
+        if not conv or conv.elder_id != elder_id:
+            raise HTTPException(status_code=404, detail="体征会话不存在或无权访问")
+        if conv.status in ("confirmed", "cancelled"):
+            raise HTTPException(status_code=400, detail="该体征会话已结束，请重新发起")
+    else:
+        conv = VitalDraftConversation(elder_id=elder_id, status="collecting")
+        db.add(conv)
+
+    merge_turn(conv, payload.text, payload.hint_type)
+    # measured_at 归一为 datetime（草稿解析器返回 ISO 字符串）
+    if isinstance(conv.measured_at, str) and conv.measured_at:
+        conv.measured_at = _parse_measured_at(conv.measured_at) or None
+    db.commit()
+    db.refresh(conv)
+
+    return VitalsSpokenTurnOut(
+        session_id=conv.id,
+        status=conv.status,
+        missing=list(conv.missing or []),
+        question=conv.last_question or "",
+        can_confirm=(conv.status == "ready"),
+        draft=draft_payload(conv),
+        disclaimer=HEALTH_DISCLAIMER,
     )
-    # 只有整段输出就是 NONE（识别失败）才算失败；
-    # 血压场景下 LLM 会写 VALUE: NONE（该字段不适用），不能被子串误判。
-    parsed = None
-    if llm_out.strip().upper() != "NONE":
-        parsed = _parse_vitals_llm(llm_out, payload.vital_type)
 
-    # 兜底：LLM 返回 NONE 或格式异常时，直接从 OCR 文本正则解析
-    if parsed is None:
-        parsed = _fallback_parse_ocr(ocr_text, payload.vital_type)
 
-    if parsed is None:
-        raise HTTPException(status_code=400, detail="照片中未识别到体征数值，请重拍一张清晰的")
+@router.post("/draft-conversations/{conv_id}/confirm", response_model=VitalsOut)
+def confirm_vital_draft(conv_id: int,
+                        db: Session = Depends(get_db),
+                        current: User = Depends(get_current_user)):
+    """确认体征会话：信息齐全且范围合法后，复用现有 POST /api/vitals 落库，并标记 confirmed。
+    未确认（collecting）或字段缺失时拒绝写入。"""
+    conv = db.get(VitalDraftConversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="体征会话不存在")
+    _conv_access_check(db, current, conv)
+    if conv.status == "confirmed":
+        raise HTTPException(status_code=400, detail="该体征会话已确认入库，不能重复确认")
+    if conv.status == "cancelled":
+        raise HTTPException(status_code=400, detail="该体征会话已取消，无法确认")
+    if conv.status != "ready":
+        raise HTTPException(status_code=400, detail="信息尚未齐全，无法确认")
 
-    parsed["ocr_text"] = ocr_text
-    return VitalsRecognizeOut(**parsed)
+    missing = compute_missing(conv)
+    if missing:
+        raise HTTPException(status_code=400, detail=f"仍有缺失字段：{missing}，请先补齐")
+    errors = _revalidate(conv)
+    if errors:
+        raise HTTPException(status_code=400, detail=errors[0])
+
+    measured_at = conv.measured_at
+    if isinstance(measured_at, datetime):
+        measured_at = measured_at.strftime("%Y-%m-%d %H:%M:%S")
+    payload = VitalsCreate(
+        type=conv.type,
+        systolic=conv.systolic,
+        diastolic=conv.diastolic,
+        value=conv.value,
+        measurement_context=conv.measurement_context or "unknown",
+        measured_at=measured_at or None,
+        elder_id=conv.elder_id,
+    )
+    # 复用现有 create_vital：范围校验、老人/家属归属、measured_at 解析、落库全部一致
+    out = create_vital(payload, db, current)
+    conv.status = "confirmed"
+    db.commit()
+    return out
+
+
+@router.delete("/draft-conversations/{conv_id}")
+def cancel_vital_draft(conv_id: int,
+                       db: Session = Depends(get_db),
+                       current: User = Depends(get_current_user)):
+    """取消体征会话：标记 cancelled，不写 vitals 表。"""
+    conv = db.get(VitalDraftConversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="体征会话不存在")
+    _conv_access_check(db, current, conv)
+    if conv.status == "confirmed":
+        raise HTTPException(status_code=400, detail="该会话已确认入库，不能取消")
+    conv.status = "cancelled"
+    db.commit()
+    return {"ok": True}
 
 
 # 各体征类型对应的固定单位
@@ -462,3 +614,18 @@ def _fallback_parse_ocr(ocr_text: str, hint_type: str | None) -> dict | None:
                     "value": value, "unit": spec["unit"], "confidence": 0.6}
 
     return None
+
+
+@router.delete("/{vital_id}")
+def delete_vital(vital_id: int,
+                 db: Session = Depends(get_db),
+                 current: User = Depends(get_current_user)):
+    """删除本人录入的体征记录。"""
+    record = db.query(Vitals).filter(Vitals.id == vital_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="体征记录不存在")
+    if record.elder_id != current.id:
+        raise HTTPException(status_code=403, detail="只能删除本人录入的体征记录")
+    db.delete(record)
+    db.commit()
+    return {"ok": True}

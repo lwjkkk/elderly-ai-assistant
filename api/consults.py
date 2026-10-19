@@ -14,6 +14,7 @@ from db.schemas import ConsultOut
 from core.security import get_current_user
 from core.security import SECRET_KEY, ALGORITHM
 from config.settings import HOST, PORT
+from core import age as age_mod
 
 router = APIRouter(prefix="/api/consults", tags=["问诊录音"])
 
@@ -59,6 +60,8 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     """解析目标数据归属：
     - 老人：总是操作自己的数据；
     - 家属：传 elder_id 则必须已绑定该老人；不传则操作自己的本人记录。
+    10.26 起：家属读长辈录音资料前，统一走 age.family_access_guard
+    （绑定 + birth_ym 完整性 + senior 强制分享 / younger 按开关）。
     """
     if current.role == "elder":
         return current.id
@@ -73,6 +76,14 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     )
     if not binding:
         raise HTTPException(status_code=403, detail="未绑定该老人，无权操作")
+    target_user = db.query(User).filter(User.id == elder_id).first()
+    allowed, reason = age_mod.family_access_guard(db, current, target_user)
+    if not allowed:
+        detail = {
+            "birth_missing": "老人资料不完整（缺出生年月），请补全出生年月后再开放家属访问",
+            "privacy_off": "老人未开启健康资料分享，家属暂不可见",
+        }.get(reason, "无权访问该老人健康资料")
+        raise HTTPException(status_code=403, detail=detail)
     return elder_id
 
 
@@ -141,24 +152,17 @@ def list_consults(elder_id: int | None = None,
     """查询问诊录音列表。
 
     - 老人：返回自己的录音；
-    - 家属：传 elder_id 则查指定老人；不传则返回自己的录音 + 所有已绑定老人的录音。
+    - 家属：传 elder_id 则查指定老人（走统一权限闸门）；
+            不传则返回自己的录音 + 所有通过年龄/隐私闸门的绑定老人录音。
     """
     if current.role == "elder":
         targets = [current.id]
     elif elder_id is not None:
-        # 显式指定老人：校验绑定
-        binding = (
-            db.query(FamilyBinding)
-            .filter(FamilyBinding.elder_id == elder_id)
-            .filter(FamilyBinding.family_id == current.id)
-            .filter(FamilyBinding.status == "active")
-            .first()
-        )
-        if not binding:
-            raise HTTPException(status_code=403, detail="未绑定该老人，无权查看")
-        targets = [elder_id]
+        # 显式指定老人：绑定 + 年龄/隐私闸门
+        targets = [resolve_elder_id(db, current, elder_id)]
     else:
-        # 家属不传 elder_id：自己的录音 + 所有绑定老人的录音
+        # 家属不传 elder_id：本人录音始终返回；绑定老人逐个过闸门，
+        # 未满 60 关闭分享 / 出生年月缺失的老人录音不返回。
         targets = [current.id]
         bindings = (
             db.query(FamilyBinding)
@@ -166,7 +170,13 @@ def list_consults(elder_id: int | None = None,
             .filter(FamilyBinding.status == "active")
             .all()
         )
-        targets += [b.elder_id for b in bindings]
+        for b in bindings:
+            target_user = db.query(User).filter(User.id == b.elder_id).first()
+            if not target_user:
+                continue
+            allowed, _reason = age_mod.family_access_guard(db, current, target_user)
+            if allowed:
+                targets.append(b.elder_id)
 
     records = (
         db.query(ConsultRecord)
@@ -296,6 +306,16 @@ def get_audio(filename: str,
         )
         if not binding:
             raise HTTPException(status_code=403, detail="无权播放该录音")
+        # 10.26 起：音频直链也要过统一年龄/隐私闸门，
+        # 未满 60 关闭分享 / 出生年月缺失的老人录音不能被家属播放。
+        elder_user = db.query(User).filter(User.id == record.elder_id).first()
+        allowed, reason = age_mod.family_access_guard(db, current, elder_user)
+        if not allowed:
+            detail = {
+                "birth_missing": "老人资料不完整（缺出生年月），暂不可访问",
+                "privacy_off": "老人未开启健康资料分享，家属暂不可访问",
+            }.get(reason, "无权播放该录音")
+            raise HTTPException(status_code=403, detail=detail)
     else:
         raise HTTPException(status_code=403, detail="无权播放该录音")
 

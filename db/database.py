@@ -81,10 +81,21 @@ def init_db():
         "created_at",
         "ALTER TABLE vitals ADD COLUMN created_at DATETIME",
     )
-    for column, sql_type in [('transcript', 'TEXT'), ('summary', 'TEXT'),
-                             ('summary_status', 'VARCHAR(20)'), ('summary_error', 'VARCHAR(200)')]:
-        _add_column_if_missing('consult_records', column,
-                              f'ALTER TABLE consult_records ADD COLUMN {column} {sql_type}')
+    _add_column_if_missing(
+        "vitals",
+        "measurement_context",
+        "ALTER TABLE vitals ADD COLUMN measurement_context VARCHAR(20)",
+    )
+    _add_column_if_missing(
+        "vital_alerts",
+        "measurement_context",
+        "ALTER TABLE vital_alerts ADD COLUMN measurement_context VARCHAR(20)",
+    )
+    _add_column_if_missing(
+        "vital_draft_conversations",
+        "measurement_context",
+        "ALTER TABLE vital_draft_conversations ADD COLUMN measurement_context VARCHAR(20) DEFAULT 'unknown'",
+    )
     # 回填历史数据：把已有记录的 updated_at/created_at 设为其 created_at/measured_at
     _backfill_column(
         "medications", "updated_at",
@@ -98,6 +109,8 @@ def init_db():
     for table in Base.metadata.tables.values():
         for idx in table.indexes:
             idx.create(bind=engine, checkfirst=True)
+    for column, sql_type in [('transcript', 'TEXT'), ('summary', 'TEXT'), ('summary_status', 'VARCHAR(20)'), ('summary_error', 'VARCHAR(200)')]:
+        _add_column_if_missing('consult_records', column, f'ALTER TABLE consult_records ADD COLUMN {column} {sql_type}')
 
 
 def _add_column_if_missing(table: str, column: str, ddl: str):

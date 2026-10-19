@@ -1,6 +1,15 @@
 # 体检指标解析与判定：从 OCR 逐行文本里提取 代号/结果/参考范围，用代码精确判断
 # 正常/偏高/偏低，不依赖 LLM 做数值比较（LLM 对范围内数值容易误报）。
 #
+# 【10.21 增强】在原有 范围解析 + unparsed 兜底 基础上补齐：
+#   1) 单位解析：每条指标输出 unit（mmol/L、mg/dL、U/L、10^9/L、mmHg 等）
+#   2) 表格行列处理：跳过表头行；把“只有指标名/代号、无数字”的折行与后续数值行合并
+#   3) OCR 原文证据字段：每条指标带 ocr_text（来源行原文）、source_line（行号）、
+#      range_text（识别的范围原文），供前端展示“原文证据”
+#   4) 二次规则校验：生理学合理值范围，明显超出生理范围的数值判为 OCR 小数点/单位错值，
+#      降级为 unparsed（保留证据，不当作异常交给 LLM）
+# 保持向后兼容：原 code/result/lo/hi/status 判定结果不变，新增字段供前端可选展示。
+#
 # 支持的参考范围格式（覆盖真实体检单常见写法与 OCR 误差）：
 #   0--5.2、3. 9--6.11、3.9-6.1、2.8~5.2、3.9～6.1、3.9至6.1、3,9-6,1（逗号小数点）
 # 未匹配到范围但行里有代号+数字的指标，标记为 unparsed（"未能核对"），
@@ -31,6 +40,34 @@ _UNIT_WITH_NUM = re.compile(
     r"|\d+\s*/\s*(?:HPF|dl|dL|UL|ul)"
 )
 
+# 【增强1】常见测量单位（体检单）：优先匹配 10^9/L 类，再匹配 数值/单位，最后独立单位
+# (?<!\d) 防止把结果数字（如 5.8 中的 8）误并入 "10^9/L"
+_UNIT = re.compile(
+    r"(?<!\d)(?:[×x]\s*)?10\s*[\^eE]?\s*[+-]?\s*\d+\s*/\s*[A-Za-z%]+"
+    r"|(?:mmol|[µμ]?mol|umol|mg|ng|pg|[µμ]?g|ug|g|U|IU)\s*/\s*(?:dL|dl|L|l|mL|ml|HPF|hpf)"
+    r"|mm\s*Hg|mmHg|mm/Hg"
+    r"|[fF][lL]|[pP][gG]|[gG]\s*/\s*[lL]|%"
+)
+
+# 【增强2】表头行特征词：行内含这些词且无数字时判定为表头，跳过不解析
+_HEADER_WORDS = ("参考范围", "正常范围", "参考值", "结果", "单位",
+                 "项目", "检查项目", "测定项目", "指标")
+
+# 【增强4】二次校验：生理学合理值范围（宽松，只拦明显 OCR 小数点/单位错值）
+_PLAUSIBLE = {
+    "GLU": (0.5, 40), "血糖": (0.5, 40), "空腹血糖": (0.5, 40),
+    "TC": (0.5, 20), "总胆固醇": (0.5, 20),
+    "TG": (0.2, 30), "甘油三酯": (0.2, 30),
+    "HDL": (0.1, 5), "LDL": (0.1, 10),
+    "高密度脂蛋白": (0.1, 5), "低密度脂蛋白": (0.1, 10),
+    "ALT": (1, 600), "AST": (1, 600),
+    "谷丙转氨酶": (1, 600), "谷草转氨酶": (1, 600),
+    "Hb": (30, 300), "血红蛋白": (30, 300),
+    "WBC": (0.1, 200), "白细胞": (0.1, 200),
+    "肌酐": (10, 1500), "尿酸": (50, 1000), "尿素": (0.5, 40),
+    "血压": (30, 300), "收缩压": (60, 260), "舒张压": (30, 160),
+}
+
 
 def _to_num(s: str) -> float:
     """把 OCR 数字字符串转 float，兼容空格、逗号小数点。"""
@@ -43,11 +80,27 @@ def _strip_units(text: str) -> str:
     return _UNIT_WITH_NUM.sub(" ", text)
 
 
+# 单位前的 OCR 噪声：↑↓ 箭头被识别成 ↑/↓/I/1，μmol/L 的 μ 可能被识别成 1。
+# 这些符号不是结果值，统一剥离（只剥离"紧跟单位"的单个噪声字符，不误伤 10^9/L 类真数字单位）。
+_UNIT_NOISE = re.compile(
+    r"[↑↓↑↓Ii1](?=[µμ]?\s*mol\s*/\s*[lL]|[µμ]?\s*g\s*/\s*[lL]|"
+    r"[mM]?\s*g\s*/\s*[lL]|U\s*/\s*[lL]|[fF][lL]|[pP][gG]|%$)"
+)
+
+
+def _normalize_unit_noise(line: str) -> str:
+    """剥离单位前的 ↑↓/I/1 噪声并统一 μ 码位，避免它们被当成结果值或污染单位解析。"""
+    line = _UNIT_NOISE.sub("", line)
+    line = line.replace("\u00b5", "μ")
+    return line
+
+
 def _extract_result(line: str, range_start: int) -> float | None:
     """从范围之前的文本里取结果数字：去掉行首序号和单位中的数字后取最后一个数字。"""
     before = line[:range_start]
-    # 去掉行首序号（如 "1 ALT ..." 里的 "1"）
-    before = re.sub(r"^\s*\d+[\.\、\)]?\s*", "", before)
+    # 去掉行首序号（如 "1 ALT 50" 里的 "1"），仅当序号后紧跟名称/代号（非数值/单位）。
+    # 避免误删真正的首列结果值（如 "14.4 U/L 9.0-50.0" 的 14.4、"0.31 g/L ..." 的 0.31）。
+    before = re.sub(r"^\d{1,2}\s+(?=[A-Z]{2,}|[\u4e00-\u9fff])", "", before)
     # 移除含数字的单位模式（如 10^9/L、×10^12/L），避免误取单位数字
     before = _strip_units(before)
     nums = re.findall(_NUM, before)
@@ -90,13 +143,85 @@ def _extract_code(line: str) -> str | None:
     return None
 
 
+def _extract_unit(line: str) -> str | None:
+    """【增强1】提取该行出现的测量单位；未识别返回 None。"""
+    m = _UNIT.search(line)
+    return m.group(0) if m else None
+
+
+def _is_header(line: str) -> bool:
+    """【增强2】表头行判定：含表头特征词且行内无数字（真实指标数据行一般带数字）。"""
+    return any(w in line for w in _HEADER_WORDS) and not re.search(r"\d", line)
+
+
+def _merge_lines(raw_lines: list[str]) -> list[tuple[str, list[int], str]]:
+    """【增强2】表格行列初版：
+    - 跳过表头行；
+    - 把“只有指标名/代号、无数字”的折行与后续数值行合并。
+    返回 [(合并后行, 源行号列表, 合并前原文拼接)]，源行号列表覆盖参与合并的每一行，
+    供证据字段返回完整原文，避免 OCR 拆行后只看到第一行。"""
+    merged: list[tuple[str, list[int], str]] = []
+    n = len(raw_lines)
+    i = 0
+    while i < n:
+        line = raw_lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if _is_header(line):
+            i += 1
+            continue
+        # 错行合并：有指标名/代号但本行无数字，且后续存在数值行 → 拼接
+        if _extract_code(line) and not re.search(r"\d", line):
+            buf_text = [line]
+            buf_lines = [i]
+            j = i + 1
+            while j < n:
+                nxt = raw_lines[j].strip()
+                if not nxt:
+                    j += 1
+                    continue
+                if _is_header(nxt):
+                    break
+                buf_text.append(nxt)
+                buf_lines.append(j)
+                if re.search(r"\d", nxt):
+                    break
+                j += 1
+            merged.append((" ".join(buf_text), buf_lines, "\n".join(buf_text)))
+            i = j + 1
+            continue
+        merged.append((line, [i], line))
+        i += 1
+    return merged
+
+
+def _second_pass(metrics: list[dict]) -> list[dict]:
+    """【增强4】二次规则校验：
+    对已判定 high/low 的指标，若数值超出该指标生理学合理范围，判定为 OCR 小数点/单位错值，
+    降级为 unparsed（保留证据，不当作异常交给 LLM）。不影响生理范围内的正常判定。"""
+    out = []
+    for m in metrics:
+        code = (m.get("code") or "").upper()
+        bounds = _PLAUSIBLE.get(code) or _PLAUSIBLE.get(m.get("code") or "")
+        if (bounds and m["status"] in ("high", "low")
+                and m.get("result") is not None
+                and not (bounds[0] <= m["result"] <= bounds[1])):
+            m["status"] = "unparsed"
+        out.append(m)
+    return out
+
+
 def parse_metrics(ocr_text: str) -> list[dict]:
-    """返回 [{code, result, lo, hi, status}]。
+    """返回 [{code, result, lo, hi, status, unit, ocr_text, source_line, range_text}]。
     status ∈ normal/high/low/unparsed。
-    unparsed 表示这一行有指标代号+数字但没识别出参考范围，不能当作正常。"""
+    unparsed 表示这一行有指标代号+数字但没识别出参考范围（或二次校验判定为 OCR 错值），
+    不能当作正常。
+    ocr_text/source_line/range_text 为 OCR 原文证据字段，供前端展示“原始证据”。"""
+    raw_lines = ocr_text.split("\n")
     metrics = []
-    for line in ocr_text.split("\n"):
-        line = line.strip()
+    for line, src_lines, merged_evidence in _merge_lines(raw_lines):
+        line = _normalize_unit_noise(line.strip())
         if not line:
             continue
 
@@ -117,14 +242,30 @@ def parse_metrics(ocr_text: str) -> list[dict]:
                 status = "high"
             else:
                 status = "normal"
-            metrics.append({"code": code, "result": result,
-                            "lo": lo, "hi": hi, "status": status})
+            metrics.append({
+                "code": code, "result": result,
+                "lo": lo, "hi": hi, "status": status,
+                "unit": _extract_unit(line),
+                "ocr_text": merged_evidence,
+                "source_line": src_lines[0],
+                "source_lines": src_lines,
+                "range_text": m.group(0),
+            })
         else:
             # 没匹配到范围，但行里有名称/代号+数字 → 标记为未能核对
             code = _extract_code(line)
             if code and re.search(r"\d", line):
-                metrics.append({"code": code, "result": _extract_unparsed_result(line, code),
-                                "lo": None, "hi": None, "status": "unparsed"})
+                metrics.append({
+                    "code": code, "result": _extract_unparsed_result(line, code),
+                    "lo": None, "hi": None, "status": "unparsed",
+                    "unit": _extract_unit(line),
+                    "ocr_text": merged_evidence,
+                    "source_line": src_lines[0],
+                    "source_lines": src_lines,
+                    "range_text": None,
+                })
+
+    metrics = _second_pass(metrics)
 
     # 同一代号可能因错行出现多条：优先保留能判定为 high/low 的，其次 normal，最后 unparsed
     rank = {"high": 3, "low": 3, "normal": 2, "unparsed": 1}
@@ -141,11 +282,12 @@ def format_metrics(metrics: list[dict]) -> str:
     labels = {"normal": "正常", "high": "偏高", "low": "偏低", "unparsed": "未能核对"}
     rows = []
     for it in metrics:
+        unit = f" {it['unit']}" if it.get("unit") else ""
         if it["status"] == "unparsed":
-            rows.append(f"{it['code']}：结果{it.get('result')}，未能识别参考范围，程序判定为【未能核对】")
+            rows.append(f"{it['code']}：结果{it.get('result')}{unit}，未能识别参考范围，程序判定为【未能核对】")
         else:
             rows.append(
-                f"{it['code']}：结果{it['result']}，参考{it['lo']}~{it['hi']}，"
+                f"{it['code']}：结果{it['result']}{unit}，参考{it['lo']}~{it['hi']}，"
                 f"程序判定为【{labels[it['status']]}】"
             )
     return "\n".join(rows)
