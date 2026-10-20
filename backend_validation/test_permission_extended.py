@@ -70,7 +70,7 @@ AFTER = datetime(2026, 10, 10, 8, 0, 0)  # > T → 家属不可见
 def seed():
     db = _TS()
     elder = User(phone="13800000005", nickname="老人Y", password_hash="x", role="elder",
-                 birth_ym="1966-11", sync_summary_to_family=False, privacy_enabled_at=T)  # younger + 开隐私
+                 birth_ym="1966-11", sync_summary_to_family=True, privacy_enabled_at=T)  # younger + 开放分享（闸门放行）
     free = User(phone="13800000006", nickname="未绑家属", password_hash="x", role="family")
     bound = User(phone="13800000007", nickname="已绑家属", password_hash="x", role="family")
     db.add_all([elder, free, bound]); db.commit()
@@ -120,25 +120,18 @@ def main():
         r = client.get(path, params={"elder_id": elder.id})
         ok(f"已绑家属-{name} 200", r.status_code == 200, f"status={r.status_code}")
 
-    # ---- 隐私跨时断言（摘要）：已绑家属只见 BEFORE，本人见全部 ----
+    # ---- 隐私跨时断言：新闸门为二值（sync=True 全放行 / False 全 403），不再做跨时筛选 ----
     set_cur(bound)
     r = client.get("/api/chat/summaries", params={"elder_id": elder.id})
-    ids = [x["id"] for x in r.json()]
-    s_before = [x for x in r.json() if x["summary"] == "S1"]
-    s_after = [x for x in r.json() if x["summary"] == "S2"]
-    ok("隐私-摘要: 已绑家属只见开启前记录", len(s_before) == 1 and len(s_after) == 0,
-       f"n={len(r.json())}")
+    ok("隐私-摘要: 开放分享时家属见全部记录", len(r.json()) == 2, f"n={len(r.json())}")
     set_cur(elder)
     r = client.get("/api/chat/summaries")
     ok("隐私-摘要: 老人本人见全部(含开启后)", len(r.json()) == 2, f"n={len(r.json())}")
 
-    # ---- 隐私跨时断言（查药 chat）：已绑家属只见 BEFORE，本人见全部 ----
+    # ---- 查药：开放分享时家属见全部 ----
     set_cur(bound)
     r = client.get("/api/drugs/records", params={"elder_id": elder.id})
-    d_before = [x for x in r.json() if x.get("input_text") == "D1"]
-    d_after = [x for x in r.json() if x.get("input_text") == "D2"]
-    ok("隐私-查药: 已绑家属只见开启前记录", len(d_before) == 1 and len(d_after) == 0,
-       f"n={len(r.json())}")
+    ok("隐私-查药: 开放分享时家属见全部记录", len(r.json()) == 2, f"n={len(r.json())}")
     set_cur(elder)
     r = client.get("/api/drugs/records")
     ok("隐私-查药: 老人本人见全部(含开启后)", len(r.json()) == 2, f"n={len(r.json())}")

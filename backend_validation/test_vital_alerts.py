@@ -63,7 +63,8 @@ push_svc.clear_sent()
 
 def seed():
     db = _TS()
-    elder = User(phone="13800000008", nickname="老人", password_hash="x", role="elder")
+    elder = User(phone="13800000008", nickname="老人", password_hash="x", role="elder",
+                 birth_ym="1955-01", sync_summary_to_family=True)
     free = User(phone="13800000009", nickname="未绑家属", password_hash="x", role="family")
     bound = User(phone="13800000010", nickname="已绑家属", password_hash="x", role="family")
     db.add_all([elder, free, bound]); db.commit()
