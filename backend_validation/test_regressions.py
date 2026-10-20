@@ -33,8 +33,18 @@ class BackendRegressions(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.sessions = sessionmaker(bind=self.engine)
         with self.sessions() as db:
-            db.add_all([User(id=i, role=role, phone=str(i), nickname=role, password_hash='test')
-                        for i, role in [(1, 'elder'), (2, 'family'), (3, 'elder'), (4, 'family')]])
+            # 10.26 年龄分层闸门要求老人有 birth_ym：
+            #   id=1 younger（1970年生），默认 sync=True，家属 2 访问放行；
+            #   id=3 younger，家属 2 未绑定 → 403。
+            #   senior 强制分享场景由 test_age_tier.py 单独覆盖。
+            db.add_all([
+                User(id=1, role='elder', phone='1', nickname='e1', password_hash='test',
+                     birth_ym='1970-05', sync_summary_to_family=True),
+                User(id=2, role='family', phone='2', nickname='f2', password_hash='test'),
+                User(id=3, role='elder', phone='3', nickname='e3', password_hash='test',
+                     birth_ym='1970-05', sync_summary_to_family=True),
+                User(id=4, role='family', phone='4', nickname='f4', password_hash='test'),
+            ])
             db.add(FamilyBinding(elder_id=1, family_id=2, status='active', invite_code='TEST01'))
             db.commit()
         app = FastAPI()
@@ -198,12 +208,17 @@ class BackendRegressions(unittest.TestCase):
             extract.assert_not_called()
         for user, params, chat_count in [(1, {}, 1), (2, {'elder_id': 1}, 0)]:
             r = self.client.get('/api/chat/summaries', headers=self.headers(user), params=params)
+            if user == 2 and chat_count == 0:
+                # 10.26 年龄闸门：younger 关闭隐私时家属访问返回 403（不再静默空列表）
+                self.assertEqual(r.status_code, 403, r.text)
+                continue
             self.assertEqual(len(r.json()), chat_count, r.text)
             s = self.client.get('/api/sync', headers=self.headers(user), params=params).json()
             self.assertEqual(len(s['chat_summaries']), chat_count)
             self.assertEqual(len([d for d in s['drug_queries'] if d['kind'] == 'chat']), chat_count)
         r = self.client.get('/api/drugs/records', headers=self.headers(2), params={'elder_id': 1, 'limit': 1})
-        self.assertEqual([d['kind'] for d in r.json()], ['image'])
+        # younger 关闭隐私时家属查药记录也被 403
+        self.assertEqual(r.status_code, 403, r.text)
         r = self.client.get('/api/drugs/records', headers=self.headers())
         self.assertEqual(next(d['explanation'] for d in r.json() if d['kind'] == 'chat'), full_answer)
 
@@ -289,8 +304,12 @@ class BackendRegressions(unittest.TestCase):
                                created_at=cutoff + timedelta(minutes=1)))
             db.commit()
         rows = self.client.get('/api/chat/summaries', params={'elder_id': 1},
-                               headers=self.headers(2)).json()
-        self.assertEqual([row['summary'] for row in rows], ['旧记录'])
+                               headers=self.headers(2))
+        # 10.26 闸门：younger 关闭隐私时家属 403，不再静默返回空列表
+        self.assertEqual(rows.status_code, 403, rows.text)
+        # 老人自己访问应能看到旧+新两条（privacy_enabled_at 之后的记录仍对自己可见）
+        own = self.client.get('/api/chat/summaries', headers=self.headers(1)).json()
+        self.assertEqual(len(own), 2)
 
 
 if __name__ == '__main__':
