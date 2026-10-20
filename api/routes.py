@@ -27,8 +27,18 @@ def chat(request: ChatRequest,
          db: Session = Depends(get_db),
          current: User | None = Depends(get_optional_user)):
     """日常问答。老人登录时，对属于 drug/med/selfcheck/consult 的问答后台提炼摘要落库。
-    未登录也能用（可选鉴权），此时不落库。"""
+    未登录也能用（可选鉴权），此时不落库。
+    10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警。"""
     result = get_agent_answer(request.question)
+
+    # 仅老人登录时，检测紧急症状并后台推家属
+    emergency_types: list[str] = []
+    if current is not None and current.role == "elder":
+        from core.emergency_alert import detect_emergency, notify_family_async
+        emergency_types = detect_emergency(request.question)
+        if emergency_types:
+            from db.database import SessionLocal
+            notify_family_async(SessionLocal, current, request.question, emergency_types)
 
     # 仅老人登录且问题属于需同步的 4 类时，异步落库（不阻塞回答返回）
     if (current is not None and current.role == "elder"
@@ -40,6 +50,8 @@ def chat(request: ChatRequest,
             daemon=True,
         ).start()
 
+    result["emergency"] = bool(emergency_types)
+    result["emergency_types"] = emergency_types
     return result
 
 
@@ -56,11 +68,22 @@ def chat_tiered(request: TieredRequest,
     - 老人或无登录：返回老人简版（结论/建议一句要点 + 就医兜底）。
     - 家属：返回家属详版（三段完整原文 + 关注点提示）。
     输出含 source：llm=LLM 结构化生成；deterministic=LLM 失败时的确定性降级。
+    10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警，
+    响应里带 emergency=true 供老人端显示红色横幅。
     """
     result = get_agent_answer(request.question)
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
     tiered = build(request.question, result.get("answer", ""), role)
+
+    emergency_types: list[str] = []
+    if current is not None and current.role == "elder":
+        from core.emergency_alert import detect_emergency, notify_family_async
+        emergency_types = detect_emergency(request.question)
+        if emergency_types:
+            from db.database import SessionLocal
+            notify_family_async(SessionLocal, current, request.question, emergency_types)
+
     return {
         "module": result.get("module", ""),
         "sources": result.get("sources", []),
@@ -68,6 +91,8 @@ def chat_tiered(request: TieredRequest,
         "source": tiered["source"],
         "parts": tiered["parts"],
         "view": tiered["view"],
+        "emergency": bool(emergency_types),
+        "emergency_types": emergency_types,
     }
 
 
