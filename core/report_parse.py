@@ -235,6 +235,17 @@ def parse_metrics(ocr_text: str) -> list[dict]:
             result = _extract_result(line, m.start())
             code = _extract_code(line)
             if result is None:
+                # 范围行前无数字（如 "U/L 0.0-40.0"）：保留为孤儿范围行，
+                # 后续与第一堆 unparsed 指标按顺序配对
+                metrics.append({
+                    "code": None, "result": None,
+                    "lo": lo, "hi": hi, "status": "unparsed",
+                    "unit": _extract_unit(line),
+                    "ocr_text": merged_evidence,
+                    "source_line": src_lines[0],
+                    "source_lines": src_lines,
+                    "range_text": m.group(0),
+                })
                 continue
             if result < lo:
                 status = "low"
@@ -266,6 +277,32 @@ def parse_metrics(ocr_text: str) -> list[dict]:
                 })
 
     metrics = _second_pass(metrics)
+
+    # 【增强5】单栏表格 OCR 拆堆配对：
+    # 真实体检单常被 OCR 拍平成两堆——第一堆"代号 中文名 值"，第二堆"单位 参考范围"。
+    # 第一堆行无范围 → unparsed；第二堆行有范围但无代号。按出现顺序把第二堆范围行
+    # 配对到前面未判定的指标，重算 lo/hi/status/unit/range_text。
+    pending_ranges = [m for m in metrics
+                      if not m.get("code") and m.get("lo") is not None]
+    if pending_ranges:
+        unparsed = [m for m in metrics if m["status"] == "unparsed" and m.get("result") is not None]
+        for um, rm in zip(unparsed, pending_ranges):
+            um["lo"] = rm["lo"]
+            um["hi"] = rm["hi"]
+            um["unit"] = rm.get("unit") or um.get("unit")
+            um["range_text"] = rm.get("range_text")
+            um["ocr_text"] = (um.get("ocr_text", "") + "\n" + rm.get("ocr_text", "")).strip()
+            um["source_lines"] = list({*(um.get("source_lines") or []),
+                                       *(rm.get("source_lines") or [])})
+            r = um["result"]
+            if r < rm["lo"]:
+                um["status"] = "low"
+            elif r > rm["hi"]:
+                um["status"] = "high"
+            else:
+                um["status"] = "normal"
+        # 移除被配对掉的孤儿范围行
+        metrics = [m for m in metrics if m.get("code") or m not in pending_ranges]
 
     # 同一代号可能因错行出现多条：优先保留能判定为 high/low 的，其次 normal，最后 unparsed
     rank = {"high": 3, "low": 3, "normal": 2, "unparsed": 1}

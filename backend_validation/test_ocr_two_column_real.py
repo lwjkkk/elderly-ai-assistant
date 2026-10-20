@@ -15,20 +15,17 @@ sys.path.insert(0, os.path.dirname(HERE))
 IMG = os.path.join(HERE, "sample_report_real.png")
 
 # 期望命中：{中文名: (真实值, 判定)}。判定取值 normal/high/low。
-# 依据原图人工核对；仅断言"值在正确指标上被解析出且判定正确"。
+# 按用户提供的 sample_report_real.png（单栏生化报告，送检 2025/12/26）人工核对。
 EXPECT = {
-    "钾离子": (4.60, "normal"), "钠离子": (140, "normal"), "氯离子": (108, "normal"),
-    "碳酸氢根": (31.4, "high"), "钙离子": (2.39, "normal"), "血清磷": (1.39, "normal"),
-    "血清镁": (0.84, "normal"), "葡萄糖": (4.92, "normal"), "尿素氮": (2.84, "normal"),
-    "肌酐": (75.4, "normal"), "尿酸": (301.6, "normal"), "甘油三酯": (0.53, "normal"),
-    "总胆固醇": (2.64, "low"), "高密度脂蛋白胆固醇": (1.33, "normal"),
-    "低密度脂蛋白胆固醇": (1.21, "normal"), "载脂蛋白A1": (1.11, "normal"),
-    "谷丙转氨酶": (14.4, "normal"), "谷草转氨酶": (19.5, "normal"),
-    "碱性磷酸酶": (53.8, "normal"), "谷氨酰转肽酶": (16.0, "normal"),
-    "乳酸脱氢酶": (132.9, "normal"), "总胆红素": (22.7, "high"),
-    "直接胆红素": (8.8, "high"), "间接胆红素": (13.9, "normal"),
-    "总蛋白": (70.5, "normal"), "白蛋白": (48.9, "normal"), "球蛋白": (21.6, "normal"),
-    "白球比": (2.26, "normal"), "淀粉酶": (53.0, "normal"), "前白蛋白": (192.5, "low"),
+    "谷丙转氨酶": (21.4, "normal"), "谷草转氨酶": (16.6, "normal"),
+    "总蛋白": (76.2, "normal"), "白蛋白": (46.3, "normal"),
+    "总胆红素": (7.93, "normal"), "直接胆红素": (1.43, "normal"),
+    "总胆汁酸": (3.4, "normal"), "尿酸": (199.3, "normal"),
+    "肌酐": (45.0, "normal"), "尿素": (3.47, "normal"),
+    "甘油三酯": (1.84, "high"), "总胆固醇": (5.44, "high"),
+    "高密度脂蛋白胆固醇": (1.42, "normal"),
+    "低密度脂蛋白胆固醇": (3.78, "high"),
+    "葡萄糖": (5.85, "normal"),
 }
 
 # 名称可能被 OCR 截断（如"高密度脂蛋白胆固"），做前缀匹配
@@ -54,9 +51,10 @@ class TestTwoColumnReal(unittest.TestCase):
         aliases = NAME_ALIAS.get(name, (name,))
         best = None
         for m in self.metrics:
-            code = (m.get("code") or "").replace(" ", "")
+            # 在 ocr_text 里匹配中文名（code 是英文代号 ALT/AST 等）
+            hay = (m.get("ocr_text") or "") + " " + (m.get("code") or "")
             for a in aliases:
-                if a in code:
+                if a in hay:
                     if best is None or abs((m.get("result") or 0) - EXPECT[name][0]) < abs(
                             (best.get("result") or 0) - EXPECT[name][0]):
                         best = m
@@ -74,9 +72,9 @@ class TestTwoColumnReal(unittest.TestCase):
             if m["status"] != status:
                 continue
             hits += 1
-        # 值+判定双命中 >= 22（允许少量名称/拆分未配对的指标）
-        self.assertGreaterEqual(hits, 22,
-                                "真实双栏单值+判定命中不足：%d/%d" % (hits, len(EXPECT)))
+        # 值+判定双命中 >= 12（允许少量名称截断/拆分未配对）
+        self.assertGreaterEqual(hits, 12,
+                                "真实单栏报告值+判定命中不足：%d/%d" % (hits, len(EXPECT)))
 
 
 if __name__ == "__main__":
