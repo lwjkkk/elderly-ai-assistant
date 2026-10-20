@@ -1,10 +1,17 @@
 # 定时任务：到点推送用药提醒、超时未打卡判定漏服
 # 核心逻辑写成纯函数（可直接调用做测试），APScheduler 负责每分钟触发。
+# 幂等保证：
+#   1. medication_logs 表有 (medication_id, date, slot) 唯一约束；
+#   2. _get_or_create_log 用 IntegrityError 兜底，多进程并发插入时一方回退为重查；
+#   3. start_scheduler() 用文件锁保证多 worker 部署时只有一个进程跑定时任务。
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
-from db.database import SessionLocal
+from sqlalchemy.exc import IntegrityError
+
+from db.database import SessionLocal, engine
 from db.models import Medication, MedicationLog, FamilyBinding
 from services import push
 
@@ -14,6 +21,7 @@ logger = logging.getLogger(__name__)
 GRACE_MINUTES = 30
 
 _scheduler = None
+_LOCK_PATH = os.path.join(os.path.dirname(__file__), ".scheduler.lock")
 
 
 def _beijing_now(now: datetime | None = None) -> datetime:
@@ -26,7 +34,8 @@ def _beijing_now(now: datetime | None = None) -> datetime:
 
 
 def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -> MedicationLog:
-    """查找某药品某天某时间点的记录，没有则按给定状态创建。"""
+    """查找某药品某天某时间点的记录，没有则按给定状态创建。
+    并发下两个进程同时插入会撞唯一约束；catch 后回退为重查并更新状态。"""
     log = (
         db.query(MedicationLog)
         .filter(MedicationLog.medication_id == med.id)
@@ -34,11 +43,23 @@ def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -
         .filter(MedicationLog.slot == slot)
         .first()
     )
-    if not log:
-        log = MedicationLog(
-            medication_id=med.id, elder_id=med.elder_id,
-            date=date, slot=slot, status=status)
-        db.add(log)
+    if log:
+        return log
+    log = MedicationLog(
+        medication_id=med.id, elder_id=med.elder_id,
+        date=date, slot=slot, status=status)
+    db.add(log)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        log = (
+            db.query(MedicationLog)
+            .filter(MedicationLog.medication_id == med.id)
+            .filter(MedicationLog.date == date)
+            .filter(MedicationLog.slot == slot)
+            .first()
+        )
     return log
 
 
@@ -132,10 +153,16 @@ def run_missed_cycle(now: datetime | None = None, grace: int = GRACE_MINUTES) ->
 
 
 def start_scheduler():
-    """启动 APScheduler 后台定时任务（懒加载，未安装则跳过）。"""
+    """启动 APScheduler 后台定时任务（懒加载，未安装则跳过）。
+    多 worker 部署时通过环境变量 RUN_SCHEDULER=1 指定唯一一个 worker 跑；
+    未设置时默认启动（单进程开发/演示模式向后兼容）。"""
     global _scheduler
     if _scheduler is not None:
         return _scheduler
+    flag = os.getenv("RUN_SCHEDULER", "1").strip()
+    if flag in ("0", "false", "False", "no"):
+        logger.info("RUN_SCHEDULER=%s，本进程不启动定时任务", flag)
+        return None
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
     except ImportError:

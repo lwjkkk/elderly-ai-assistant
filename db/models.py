@@ -1,7 +1,7 @@
 # ORM 表模型：用 Python 类描述数据库里的表
 # Day1 先建两张表：users（账号）和 family_bindings（老人/家属绑定关系）
 
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, Boolean, Float, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Date, JSON, Boolean, Float, UniqueConstraint, func
 from db.database import Base
 
 
@@ -70,6 +70,9 @@ class Medication(Base):
 class MedicationLog(Base):
     """服药记录表：每个药品在某天某个时间点的服药状态。"""
     __tablename__ = "medication_logs"
+    __table_args__ = (
+        UniqueConstraint("medication_id", "date", "slot", name="uq_med_log_slot"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     medication_id = Column(Integer, ForeignKey("medications.id"), nullable=False, index=True)
