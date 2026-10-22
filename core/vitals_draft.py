@@ -9,6 +9,7 @@
 """
 import re
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 VALID_TYPES = {"bp", "bs", "hr", "weight"}
 
@@ -47,6 +48,19 @@ def _extract_time(text: str, now: datetime):
     """从口述文本提取测量时间。返回 (measured_text, measured_at_datetime或None)。
     相对时间基于 now 计算；没有显式时间时返回 (None, None)，由前端按默认当前时间处理。"""
     measured_text = None
+    if now.tzinfo is not None:
+        now = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    if any(word in text for word in ("现在", "刚刚", "刚才", "此刻")):
+        return "按现在记录", now.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    # Explicit ISO/local timestamp, including a space separator accepted by Flutter.
+    iso_match = re.search(r"\b(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)\b", text)
+    if iso_match:
+        raw = iso_match.group(1)
+        try:
+            at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return raw, at
+        except ValueError:
+            return raw, None
     base_date = now.date()
     hour = None
     minute = None
@@ -74,12 +88,17 @@ def _extract_time(text: str, now: datetime):
     m_hour = re.search(r"(?:([01]?\d|2[0-3])\s*点|(?:凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|晚间|夜里)([01]?\d)\s*点?)", text)
     if m_hour:
         hour = int(m_hour.group(1) or m_hour.group(2))
+        if seg_word in ("下午", "傍晚", "晚上", "晚间", "夜里") and hour < 12:
+            hour += 12
+        elif seg_word in ("凌晨", "早上", "早晨", "上午") and hour == 12:
+            hour = 0
         measured_text = f"{day_word or ''}{seg_word or ''}{hour}点".strip() if (day_word or seg_word) else f"{hour}点"
-    m_min = re.search(r"([0-5]\d)\s*(?:分|半)?(?:[，。；,;]|$)", text)
-    if m_min:
-        minute = int(m_min.group(1))
+        tail = text[m_hour.end():]
+        m_min = re.match(r"\s*(半|[0-5]?\d\s*分)", tail)
+        if m_min:
+            minute = 30 if m_min.group(1) == "半" else int(m_min.group(1).replace("分", "").strip())
 
-    if measured_text is None:
+    if measured_text is None or hour is None:
         # 无任何时间词，给不出测量时间
         return None, None
     if hour is None:
@@ -87,7 +106,8 @@ def _extract_time(text: str, now: datetime):
     if minute is None:
         minute = 0
     try:
-        at = datetime(base_date.year, base_date.month, base_date.day, hour, minute)
+        at = datetime(base_date.year, base_date.month, base_date.day, hour, minute,
+                      tzinfo=ZoneInfo("Asia/Shanghai"))
     except ValueError:
         at = now
     return measured_text, at
@@ -268,7 +288,7 @@ def parse_spoken_vitals(text: str, hint_type: str | None = None, now: datetime |
     text = (text or "").strip()
     if not text:
         return None
-    now = now or datetime.now()
+    now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     hint = (hint_type or "").lower()
     order = [hint] if hint in VALID_TYPES else list(VALID_TYPES)
     if hint not in VALID_TYPES and hint:
@@ -320,7 +340,7 @@ def parse_spoken_vitals(text: str, hint_type: str | None = None, now: datetime |
             draft["value"] = values
         m_text, m_at = _extract_time(text, now)
         draft["measured_text"] = m_text
-        draft["measured_at"] = m_at.strftime("%Y-%m-%d %H:%M:%S") if m_at else None
+        draft["measured_at"] = m_at.isoformat() if m_at else None
         draft["errors"] = validate_draft(draft)
         draft["valid"] = len(draft["errors"]) == 0
         return draft

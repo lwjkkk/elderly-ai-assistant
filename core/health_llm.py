@@ -65,7 +65,9 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
 
     def _line(m):
         if m["status"] == "unparsed":
-            return f"{m['code']}：结果{m.get('result')}，参考范围未能识别，判定【未能核对】"
+            result = m.get('result_text') or m.get('result')
+            reason = m.get('verification_reason') or '参考范围未能识别'
+            return f"{m['code']}：结果{result}，{reason}，判定【未能核对】"
         return (f"{m['code']} 结果{m['result']}，参考{m['lo']}~{m['hi']}，"
                 f"判定【{labels[m['status']]}】")
 

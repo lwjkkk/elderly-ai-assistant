@@ -152,6 +152,12 @@ def run_missed_cycle(now: datetime | None = None, grace: int = GRACE_MINUTES) ->
     return missed
 
 
+def run_notification_outbox_cycle() -> dict:
+    """Retry durable health notification attempts independently from health writes."""
+    from services.notification_outbox import process_pending
+    return process_pending(SessionLocal)
+
+
 def start_scheduler():
     """启动 APScheduler 后台定时任务（懒加载，未安装则跳过）。
     多 worker 部署时通过环境变量 RUN_SCHEDULER=1 指定唯一一个 worker 跑；
@@ -172,6 +178,8 @@ def start_scheduler():
     s = BackgroundScheduler()
     s.add_job(run_reminder_cycle, "cron", minute="*")          # 每分钟检查提醒
     s.add_job(run_missed_cycle, "cron", minute="*/5")          # 每5分钟检查漏服
+    s.add_job(run_notification_outbox_cycle, "interval", minutes=1,
+              id="notification_outbox", replace_existing=True)
     s.start()
     _scheduler = s
     logger.info("用药定时任务已启动")

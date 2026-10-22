@@ -1,9 +1,9 @@
 # Pydantic 校验模型：负责校验请求体长什么样、返回体长什么样
 # 注意和 models.py 的区别：models 对应数据库表，schemas 对应接口的输入输出
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from core.disclaimer import HEALTH_DISCLAIMER
 
@@ -272,7 +272,14 @@ class VitalsOut(BaseModel):
     value: float | None = None
     measurement_context: str | None = None
     measured_at: datetime | None = None
+    notification_status: str | None = None
     disclaimer: str = HEALTH_DISCLAIMER
+
+    @field_serializer("measured_at")
+    def serialize_measured_at(self, value: datetime | None):
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat() if value else None
 
     class Config:
         from_attributes = True
@@ -290,7 +297,16 @@ class VitalAlertOut(BaseModel):
     level: str
     message: str | None = None
     source: str | None = None
+    vital_id: int | None = None
+    threshold_version: str | None = None
+    measured_at: datetime | None = None
     created_at: datetime | None = None
+
+    @field_serializer("measured_at", "created_at")
+    def serialize_utc_timestamps(self, value: datetime | None):
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat() if value else None
 
     class Config:
         from_attributes = True
@@ -329,6 +345,25 @@ class VitalsSpokenTurnRequest(BaseModel):
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
 
+class VitalsSpokenEditRequest(BaseModel):
+    version: int = Field(..., ge=1, description="读取草稿时返回的版本号，用于并发编辑保护")
+    type: str | None = None
+    systolic: int | None = None
+    diastolic: int | None = None
+    value: float | None = Field(None, allow_inf_nan=False)
+    measurement_context: str | None = None
+    measured_at: str | None = None
+    timezone: str | None = Field(None, description="输入时间的 IANA 时区；默认 Asia/Shanghai")
+    subject_label: str | None = None
+    subject_confirmed: bool | None = None
+
+
+class VitalDraftConfirmOut(VitalsOut):
+    session_id: int
+    status: str = "confirmed"
+    confirmed_vital_id: int
+
+
 class VitalsSpokenTurnOut(BaseModel):
     """体征口述会话返回体：草稿 + 缺失字段 + 追问文本（确认前不写库）。"""
     session_id: int
@@ -337,6 +372,11 @@ class VitalsSpokenTurnOut(BaseModel):
     question: str = ""
     can_confirm: bool = Field(..., description="信息齐全可确认")
     draft: dict = Field(default_factory=dict)
+    elder_id: int | None = None
+    subject_label: str | None = None
+    subject_confirmed: bool = True
+    version: int = 1
+    confirmed_vital_id: int | None = None
     disclaimer: str = HEALTH_DISCLAIMER
 
 
@@ -396,8 +436,22 @@ class HealthReportOut(BaseModel):
     image_url: str | None = None
     ocr_text: str | None = None
     advice_text: str | None = None
-    # 程序逐项核对结果：[{code, result, lo, hi, status}]，status ∈ normal/high/low/unparsed
-    metrics: list[dict] = Field(default_factory=list)
+    # 上传、历史与同步共用该字段。歧义项保留原文并标为 unparsed。
+    metrics: list[dict] = Field(
+        default_factory=list,
+        description="报告指标及 OCR 证据；status 为 normal/high/low/unparsed",
+        examples=[[
+            {
+                "code": "GLU", "result": 6.2, "unit": "mmol/L",
+                "lo": 3.9, "hi": 6.1, "status": "high",
+                "ocr_text": "GLU 6.2 mmol/L 3.9-6.1",
+                "source_line": 12, "source_lines": [12],
+                "range_text": "3.9-6.1",
+                "verification_reason": "同一 OCR 行识别到结果值及参考范围",
+                "parser_version": "2.2.0",
+            }
+        ]],
+    )
     created_at: datetime | None = None
     disclaimer: str = HEALTH_DISCLAIMER
 

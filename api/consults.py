@@ -64,8 +64,10 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     （绑定 + birth_ym 完整性 + senior 强制分享 / younger 按开关）。
     """
     if current.role == "elder":
+        if elder_id is not None and elder_id != current.id:
+            raise HTTPException(status_code=403, detail="老人账号只能访问本人数据")
         return current.id
-    if elder_id is None:
+    if elder_id is None or elder_id == current.id:
         return current.id
     binding = (
         db.query(FamilyBinding)
@@ -77,6 +79,8 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     if not binding:
         raise HTTPException(status_code=403, detail="未绑定该老人，无权操作")
     target_user = db.query(User).filter(User.id == elder_id).first()
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="老人账号不存在")
     allowed, reason = age_mod.family_access_guard(db, current, target_user)
     if not allowed:
         detail = {

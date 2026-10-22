@@ -12,7 +12,8 @@
 满 60 岁判定取“出生月 ≤ 当前月”为已过生日（60 岁整即算 senior）。
 """
 import re
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 _BIRTH_YM_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 SENIOR_AGE = 60
@@ -28,7 +29,11 @@ def parse_birth_ym(birth_ym: str | None) -> tuple[int, int] | None:
     m = _BIRTH_YM_RE.match(str(birth_ym).strip())
     if not m:
         return None
-    return int(m.group(1)), int(m.group(2))
+    year, month = int(m.group(1)), int(m.group(2))
+    if year < 1900 or (year, month) > (datetime.now(ZoneInfo("Asia/Shanghai")).year,
+                                        datetime.now(ZoneInfo("Asia/Shanghai")).month):
+        return None
+    return year, month
 
 
 def compute_age(birth_ym: str | None, ref_date: date | None = None) -> int | None:
@@ -39,7 +44,7 @@ def compute_age(birth_ym: str | None, ref_date: date | None = None) -> int | Non
     ym = parse_birth_ym(birth_ym)
     if not ym:
         return None
-    ref = ref_date or date.today()
+    ref = ref_date or datetime.now(ZoneInfo("Asia/Shanghai")).date()
     by, bm = ym
     if (by, bm) > (ref.year, ref.month):
         return None  # 出生年月在未来，资料异常
@@ -112,12 +117,22 @@ def forced_share(birth_ym: str | None) -> bool:
 def family_access_guard(db, family_user, elder_user) -> tuple[bool, str]:
     """
     返回 (allowed, reason)。
-    reason: ok / not_binding / birth_missing / privacy_off / not_elder
+    reason: ok / not_binding / birth_missing / privacy_off / not_elder / elder_not_found
     """
+    if elder_user is None:
+        return False, "elder_not_found"
     if family_user.id == elder_user.id:
         return True, "ok"
-    if family_user.role != "family":
+    if family_user.role != "family" or elder_user.role != "elder":
         return False, "not_elder"
+    from db.models import FamilyBinding
+    binding = (db.query(FamilyBinding)
+               .filter(FamilyBinding.elder_id == elder_user.id,
+                       FamilyBinding.family_id == family_user.id,
+                       FamilyBinding.status == "active")
+               .first())
+    if not binding:
+        return False, "not_binding"
     # 实时落库 senior 强制分享（旧库 sync_summary_to_family=False 被纠正）
     enforce_senior_share(db, elder_user)
     tier = age_tier(elder_user.birth_ym)

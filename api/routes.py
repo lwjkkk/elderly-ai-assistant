@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from core.agent import get_agent_answer
 from core.chat_summary import save_summary_sync
@@ -16,6 +16,29 @@ from db.schemas import ChatSummaryOut
 from api.meds import resolve_elder_id
 
 router = APIRouter()
+
+
+def _run_chat_side_effects(question: str, result: dict, current: User | None, db: Session) -> list[str]:
+    """共享普通问答与三段式接口的摘要和紧急事件副作用，单次请求只调用一次。"""
+    emergency_types: list[str] = []
+    factory = sessionmaker(bind=db.get_bind())
+    if current is not None and current.role == "elder":
+        from core.emergency_alert import detect_emergency, notify_family_async
+        emergency_types = detect_emergency(question)
+        if emergency_types:
+            notify_family_async(factory, current, question, emergency_types)
+
+    from core.age import is_senior
+    if (current is not None and current.role == "elder"
+            and (current.sync_summary_to_family or is_senior(current.birth_ym))):
+        module = result.get("module", "")
+        threading.Thread(
+            target=save_summary_sync,
+            args=(current.id, question, result.get("answer", ""), module),
+            kwargs={"session_factory": factory},
+            daemon=True,
+        ).start()
+    return emergency_types
 
 
 class ChatRequest(BaseModel):
@@ -31,25 +54,7 @@ def chat(request: ChatRequest,
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警。"""
     result = get_agent_answer(request.question)
 
-    # 仅老人登录时，检测紧急症状并后台推家属
-    emergency_types: list[str] = []
-    if current is not None and current.role == "elder":
-        from core.emergency_alert import detect_emergency, notify_family_async
-        emergency_types = detect_emergency(request.question)
-        if emergency_types:
-            from db.database import SessionLocal
-            notify_family_async(SessionLocal, current, request.question, emergency_types)
-
-    # 仅老人登录且问题属于需同步的 4 类时，异步落库（不阻塞回答返回）
-    if (current is not None and current.role == "elder"
-            and current.sync_summary_to_family):
-        module = result.get("module", "")
-        threading.Thread(
-            target=save_summary_sync,
-            args=(current.id, request.question, result.get("answer", ""), module),
-            daemon=True,
-        ).start()
-
+    emergency_types = _run_chat_side_effects(request.question, result, current, db)
     result["emergency"] = bool(emergency_types)
     result["emergency_types"] = emergency_types
     return result
@@ -63,10 +68,9 @@ class TieredRequest(BaseModel):
 def chat_tiered(request: TieredRequest,
                 db: Session = Depends(get_db),
                 current: User | None = Depends(get_optional_user)):
-    """健康回答三段式：老人简版/家属详版双角色输出。
+    """同一份回答同时返回关注点/解释/下一步/就医提醒及老人、家属双视图。
 
-    - 老人或无登录：返回老人简版（结论/建议一句要点 + 就医兜底）。
-    - 家属：返回家属详版（三段完整原文 + 关注点提示）。
+    ``view`` 根据当前角色选默认视图，双视图都来自同一次结构化生成。
     输出含 source：llm=LLM 结构化生成；deterministic=LLM 失败时的确定性降级。
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警，
     响应里带 emergency=true 供老人端显示红色横幅。
@@ -74,22 +78,35 @@ def chat_tiered(request: TieredRequest,
     result = get_agent_answer(request.question)
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
-    tiered = build(request.question, result.get("answer", ""), role)
+    if result.get("module") == "health":
+        tiered = build(request.question, result.get("answer", ""), role)
+    else:
+        # 操作教程等保留原回答和步骤，避免强加医疗解释与就医提醒。
+        view = {"concern": result.get("answer", ""), "meaning": "",
+                "next_step": "\n".join(result.get("steps", [])), "seek": "",
+                "conclusion": result.get("answer", ""),
+                "advice": "\n".join(result.get("steps", []))}
+        tiered = {"schema_version": 2, "source": "deterministic", "parts": view,
+                  "elder_view": dict(view), "family_view": dict(view), "view": dict(view)}
 
-    emergency_types: list[str] = []
-    if current is not None and current.role == "elder":
-        from core.emergency_alert import detect_emergency, notify_family_async
-        emergency_types = detect_emergency(request.question)
-        if emergency_types:
-            from db.database import SessionLocal
-            notify_family_async(SessionLocal, current, request.question, emergency_types)
+    emergency_types = _run_chat_side_effects(request.question, result, current, db)
 
     return {
+        "schema_version": tiered["schema_version"],
+        "answer": result.get("answer", ""),
         "module": result.get("module", ""),
+        "steps": result.get("steps", []),
+        "disclaimer": result.get("disclaimer", "仅供健康信息参考"),
         "sources": result.get("sources", []),
+        "evidence_status": result.get("evidence_status", "none"),
+        "retrieval_channel": result.get("retrieval_channel", "none"),
+        "fallback_reason": result.get("fallback_reason"),
+        "index_version": result.get("index_version"),
         "role": role,
         "source": tiered["source"],
         "parts": tiered["parts"],
+        "elder_view": tiered["elder_view"],
+        "family_view": tiered["family_view"],
         "view": tiered["view"],
         "emergency": bool(emergency_types),
         "emergency_types": emergency_types,

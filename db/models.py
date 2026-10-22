@@ -103,6 +103,8 @@ class Vitals(Base):
     measured_at = Column(DateTime, server_default=func.now(), index=True)
     # 入库时间：记录创建时间，用于增量同步（补录历史数据时 measured_at 在过去但 created_at 是当前）
     created_at = Column(DateTime, server_default=func.now(), index=True)
+    # A draft session can commit at most one official vital record.
+    draft_session_id = Column(Integer, ForeignKey("vital_draft_conversations.id"), nullable=True, unique=True)
 
 
 class ConsultRecord(Base):
@@ -212,6 +214,9 @@ class VitalAlert(Base):
     level = Column(String(10), nullable=False)        # high / low / mixed
     message = Column(String, nullable=True)
     source = Column(String, nullable=True)            # 阈值来源说明
+    vital_id = Column(Integer, ForeignKey("vitals.id"), nullable=True, unique=True, index=True)
+    threshold_version = Column(String(40), nullable=True)
+    measured_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
 
@@ -242,5 +247,43 @@ class VitalDraftConversation(Base):
     # 上一次追问文本
     last_question = Column(String, nullable=True)
     status = Column(String(20), nullable=False, default="collecting")
+    confirmed_vital_id = Column(Integer, ForeignKey("vitals.id"), nullable=True, unique=True)
+    version = Column(Integer, nullable=False, default=1)
+    subject_label = Column(String(80), nullable=True)
+    subject_confirmed = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class IdempotencyRecord(Base):
+    """Stores confirmation replay keys and canonical request/result fingerprints."""
+    __tablename__ = "idempotency_records"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_idempotency_user_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    key = Column(String(120), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_json = Column(JSON, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+
+class NotificationOutbox(Base):
+    """Durable notification delivery queue; delivery failures never undo saved health data."""
+    __tablename__ = "notification_outbox"
+    __table_args__ = (UniqueConstraint("dedupe_key", name="uq_notification_dedupe_key"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    alert_id = Column(Integer, ForeignKey("vital_alerts.id"), nullable=True, index=True)
+    channel = Column(String(30), nullable=False, default="in_app")
+    status = Column(String(20), nullable=False, default="pending")
+    retry_count = Column(Integer, nullable=False, default=0)
+    claimed_at = Column(DateTime, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    title = Column(String(120), nullable=False)
+    content = Column(String, nullable=False)
+    dedupe_key = Column(String(160), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    delivered_at = Column(DateTime, nullable=True)

@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import hashlib
 from datetime import datetime, timedelta
 
 from core.tiered_answer import _EMERGENCY_PATTERNS, _EMERGENCY_SEEK_PREFIX
@@ -25,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 # 类别 → 中文标签（用于消息内容和前端分类）
 _EMERGENCY_LABELS = [
-    ("chest_pain", re.compile(r"胸痛|胸口压(榨|抑)|心口痛|胸口闷(痛)?|胸闷"), "胸痛胸闷"),
-    ("breath", re.compile(r"呼吸困难|喘不上气|喘不过气|窒息感"), "呼吸困难"),
+    ("chest_pain", re.compile(r"胸痛|胸口压(榨|抑)|心口痛|胸口闷(痛)?|胸闷|胸口疼|心口疼|胸口痛|胸口难受"), "胸痛胸闷"),
+    ("breath", re.compile(r"呼吸困难|喘不上气|喘不过气|窒息感|喘不上来|喘不上"), "呼吸困难"),
     ("consciousness", re.compile(r"意识(模糊|不清|丧失)|昏迷|叫不醒|突然晕倒"), "意识不清"),
     ("stroke", re.compile(r"口角歪斜|嘴歪|一侧(肢体|手|脚)(麻木|无力|不能动)|说话(不清|含糊)|吐字不清"), "中风征象"),
     ("bleeding", re.compile(r"大?出血|呕血|咯血|便血|黑便"), "出血"),
@@ -38,28 +39,83 @@ _DEDUP_WINDOW = timedelta(minutes=5)
 
 
 def detect_emergency(text: str) -> list[str]:
-    """返回命中的紧急类别 key 列表（chest_pain/breath/consciousness/stroke/bleeding）。"""
+    """返回命中的紧急类别 key 列表（chest_pain/breath/consciousness/stroke/bleeding）。
+
+    两级判断：
+    1. 正则关键词命中 → 直接返回（确定急症词，快）；
+    2. 正则未命中 → 调 Qwen LLM 二次判断语义，识别"心脏不舒服""喘得厉害"等口语化急症。
+    LLM 判断失败时保守返回空（不误报）。
+    """
     if not text:
         return []
     hits = []
     for key, pat, _label in _EMERGENCY_LABELS:
         if pat.search(text):
             hits.append(key)
-    return hits
+    if hits:
+        return hits
+    # 正则未命中，走 LLM 语义判断
+    try:
+        return _llm_judge_emergency(text)
+    except Exception as e:
+        logger.warning(f"紧急告警 LLM 判断失败，保守不告警：{e}")
+        return []
+
+
+def _llm_judge_emergency(text: str) -> list[str]:
+    """用 Qwen 判断用户这句话是否描述了需要立即就医/拨打120的急症症状。
+
+    返回紧急类别 key 列表；无法判断时返回空。
+    """
+    import json
+    from core.qwen_llm import call_qwen
+
+    system = (
+        "你是急症分诊助手。判断用户的这句话是否描述了需要立即就医或拨打120的急症症状。"
+        "只输出 JSON，不要多余文字。格式："
+        '{"emergency": true/false, "types": ["chest_pain"|"breath"|"consciousness"|"stroke"|"bleeding"], "reason": "简短原因"}\n'
+        "类别说明：\n"
+        "- chest_pain：胸痛、胸闷、心口压迫感、心脏不舒服伴疼痛/压榨感\n"
+        "- breath：呼吸困难、喘不上气、上不来气、窒息感\n"
+        "- consciousness：意识模糊、昏迷、叫不醒、晕倒\n"
+        "- stroke：口角歪斜、一侧肢体麻木无力、说话不清\n"
+        "- bleeding：呕血、咯血、便血、大量出血\n"
+        "普通咨询（如'高血压怎么控制''感冒吃什么药'）emergency=false。"
+    )
+    out = call_qwen(system, f"用户说：{text}")
+    # 提取 JSON
+    m = re.search(r"\{.*\}", out, re.S)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(0))
+    except Exception:
+        return []
+    if not data.get("emergency"):
+        return []
+    types = data.get("types") or []
+    valid = {"chest_pain", "breath", "consciousness", "stroke", "bleeding"}
+    return [t for t in types if t in valid]
 
 
 def _labels_for(keys: list[str]) -> list[str]:
     return [label for k, _, label in _EMERGENCY_LABELS if k in keys]
 
 
-def notify_family_async(db_session_factory, elder_user, question: str, types: list[str]) -> None:
+def notify_family_async(db_session_factory, elder_user, question: str, types: list[str]) -> threading.Thread:
     """后台线程：给授权绑定家属写紧急告警消息。
     db_session_factory 是 SessionLocal，在线程内新建 session（不能跨线程复用请求 session）。
     """
+    elder_id = elder_user.id
     def _run():
         try:
             db = db_session_factory()
             try:
+                # 请求结束后 ORM 对象可能已失效，且用户可能已撤回共享；在线程内重新读取。
+                from db.models import User
+                elder_user = db.get(User, elder_id)
+                if elder_user is None:
+                    return
                 # 去重
                 now = datetime.now()
                 last = _last_notify.get(elder_user.id)
@@ -91,6 +147,8 @@ def notify_family_async(db_session_factory, elder_user, question: str, types: li
                 labels = "、".join(_labels_for(types))
                 content = {
                     "type": "emergency_chat",
+                    "origin": "system",
+                    "elder_id": elder_user.id,
                     "emergency_types": types,
                     "emergency_labels": labels,
                     "question": question[:200],
@@ -98,23 +156,33 @@ def notify_family_async(db_session_factory, elder_user, question: str, types: li
                     "seek_prefix": _EMERGENCY_SEEK_PREFIX,
                 }
                 for b in bindings:
-                    push_svc.send_push(
-                        b.family_id,
-                        "紧急情况提醒",
-                        f"老人提到{labels}，请立即联系老人或拨打120。",
-                    )
-                    from db.models import FamilyMessage
+                    from db.models import FamilyMessage, NotificationOutbox
                     db.add(FamilyMessage(
                         binding_id=b.id,
                         sender_id=elder_user.id,
                         kind="emergency_alert",
                         content=content,
                     ))
+                    time_bucket = int(now.timestamp() // 300)
+                    fingerprint = hashlib.sha256(
+                        f"{elder_user.id}|{time_bucket}|{','.join(types)}|{question[:200]}".encode("utf-8")
+                    ).hexdigest()[:24]
+                    db.add(NotificationOutbox(
+                        elder_id=elder_user.id, receiver_id=b.family_id,
+                        channel="in_app" if push_svc.adapter_name() == "memory" else "push",
+                        status="pending", title="紧急情况提醒",
+                        content=f"老人提到{labels}，请立即联系老人或拨打120。",
+                        dedupe_key=f"emergency:{fingerprint}:family:{b.family_id}",
+                    ))
                 db.commit()
+                from services.notification_outbox import process_pending
+                process_pending(db_session_factory)
                 logger.info(f"紧急告警已推送给 {len(bindings)} 位家属：elder={elder_user.id} types={types}")
             finally:
                 db.close()
         except Exception:
             logger.exception("紧急告警后台推送失败")
 
-    threading.Thread(target=_run, daemon=True).start()
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+    return worker

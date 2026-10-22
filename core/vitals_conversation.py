@@ -11,10 +11,11 @@
 """
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from core.vitals_draft import (
     parse_spoken_vitals, validate_draft, extract_measurement_context,
-    _UNIT, _TYPE_ALIAS,
+    _UNIT, _TYPE_ALIAS, _extract_time,
 )
 
 VALID_TYPES = {"bp", "bs", "hr", "weight"}
@@ -50,7 +51,7 @@ def extract_single_bp(text: str):
 
 def extract_value(text: str) -> float | None:
     """从“纯数字 + 可选单位”的口述补充中取数值，按单位换算。"""
-    m = re.search(r"(\d+(?:\.\d+)?)\s*(次/分|次|每分钟|mmol/l|mmol/L|mg/dl|mg/dL|毫克每分升|毫摩尔每升|公斤|千克|kg|斤)?", text)
+    m = re.fullmatch(r"\s*(?:改成|改为|是|为)?\s*(\d+(?:\.\d+)?)\s*(次/分|次|每分钟|mmol/l|mmol/L|mg/dl|mg/dL|毫克每分升|毫摩尔每升|公斤|千克|kg|斤)?[。！!\s]*", text)
     if not m:
         return None
     val = float(m.group(1))
@@ -64,16 +65,21 @@ def extract_value(text: str) -> float | None:
 
 def compute_missing(conv) -> list[str]:
     """依据当前会话内容判定缺失字段。"""
+    missing = []
     if not conv.type:
-        return ["type"]
-    if conv.type == "bp":
-        m = []
+        missing.append("type")
+    elif conv.type == "bp":
         if conv.systolic is None:
-            m.append("systolic")
+            missing.append("systolic")
         if conv.diastolic is None:
-            m.append("diastolic")
-        return m
-    return ["value"] if conv.value is None else []
+            missing.append("diastolic")
+    elif conv.value is None:
+        missing.append("value")
+    if conv.measured_at is None:
+        missing.append("measured_at")
+    if getattr(conv, "subject_confirmed", True) is False:
+        missing.append("subject_confirmation")
+    return missing
 
 
 def build_question(conv, missing: list[str], errors: list[str]) -> str:
@@ -83,6 +89,10 @@ def build_question(conv, missing: list[str], errors: list[str]) -> str:
         return "信息已齐全，请确认保存。"
     if "type" in missing:
         return "您想记录哪一项体征？血压、血糖、心率还是体重？"
+    if "subject_confirmation" in missing:
+        return f"这句话提到“{getattr(conv, 'subject_label', None) or '其他对象'}”，当前记录对象是所选账号。请先确认记录对象，避免记到错误的人名下。"
+    if "measured_at" in missing:
+        return "请补充测量日期和时间，或在草稿中明确选择“按现在记录”。"
     if conv.type == "bp":
         if "systolic" in missing and "diastolic" in missing:
             return "血压需要收缩压和舒张压两个值，请告诉我，比如“140/90”或“高压150低压95”。"
@@ -107,7 +117,7 @@ def merge_turn(conv, text: str, hint_type: str | None = None, now: datetime | No
     """把新一轮口述文本合并进会话 conv（就地修改），并更新 missing/last_question/status。
     每一轮用户原话按顺序追加到 conv.raw_text，不被解析后的结构化字段覆盖，
     供老人和家属核对口述过程。"""
-    now = now or datetime.now()
+    now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     text = (text or "").strip()
 
     # 0) 保留每轮原话：按换行追加累计原文，空轮次不写入
@@ -115,6 +125,12 @@ def merge_turn(conv, text: str, hint_type: str | None = None, now: datetime | No
         conv.raw_text = f"{conv.raw_text}\n{text}" if conv.raw_text else text
 
     # 1) 定性：会话还没有 type 时，优先从文本/hint 判断
+    explicit_type = detect_type_word(text)
+    if explicit_type and conv.type and explicit_type != conv.type:
+        conv.type = explicit_type
+        conv.systolic = conv.diastolic = conv.value = None
+        conv.unit = _UNIT[explicit_type]
+        conv.measurement_context = "unknown"
     if conv.type is None:
         conv.type = detect_type_word(text) or ((hint_type or "").lower() if (hint_type or "").lower() in VALID_TYPES else None)
 
@@ -130,9 +146,9 @@ def merge_turn(conv, text: str, hint_type: str | None = None, now: datetime | No
     # 3) 血压单值补充（“高压150”这种只补一个值）
     if conv.type == "bp":
         sys, dia = extract_single_bp(text)
-        if sys is not None and conv.systolic is None:
+        if sys is not None:
             conv.systolic = sys
-        if dia is not None and conv.diastolic is None:
+        if dia is not None:
             conv.diastolic = dia
 
     # 4) 采纳草稿解析出的字段（类型一致时）
@@ -156,10 +172,16 @@ def merge_turn(conv, text: str, hint_type: str | None = None, now: datetime | No
             conv.measured_at = parsed["measured_at"]
 
     # 5) 非血压且仍缺数值：接受纯数字补充并换算
-    if conv.type and conv.type != "bp" and conv.value is None:
+    if conv.type and conv.type != "bp":
         v = extract_value(text)
         if v is not None:
             conv.value = v
+
+    # 时间是独立字段：只补时间的续轮也必须更新，不能依赖本轮再次出现体征数值。
+    measured_text, measured_at = _extract_time(text, now)
+    if measured_at is not None:
+        conv.measured_text = measured_text
+        conv.measured_at = measured_at.isoformat()
 
     conv.unit = conv.unit or _UNIT.get(conv.type)
 
@@ -179,11 +201,17 @@ def merge_turn(conv, text: str, hint_type: str | None = None, now: datetime | No
         conv.missing = []
         conv.last_question = "信息已齐全，请确认保存。"
         conv.status = "ready"
+    conv.version = (getattr(conv, "version", 0) or 0) + 1
     return conv
 
 
 def draft_payload(conv) -> dict:
     """把会话转成草稿 dict（供前端展示）。"""
+    measured_at = conv.measured_at
+    if isinstance(measured_at, datetime):
+        if measured_at.tzinfo is None:
+            measured_at = measured_at.replace(tzinfo=ZoneInfo("UTC"))
+        measured_at = measured_at.isoformat()
     return {
         "type": conv.type,
         "systolic": conv.systolic,
@@ -192,6 +220,7 @@ def draft_payload(conv) -> dict:
         "measurement_context": conv.measurement_context or "unknown",
         "unit": conv.unit,
         "measured_text": conv.measured_text,
-        "measured_at": conv.measured_at,
+        "measured_at": measured_at,
         "raw_text": conv.raw_text,
+        "subject_confirmed": getattr(conv, "subject_confirmed", True),
     }

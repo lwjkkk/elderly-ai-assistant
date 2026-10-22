@@ -278,40 +278,59 @@ def parse_metrics(ocr_text: str) -> list[dict]:
 
     metrics = _second_pass(metrics)
 
-    # 【增强5】单栏表格 OCR 拆堆配对：
-    # 真实体检单常被 OCR 拍平成两堆——第一堆"代号 中文名 值"，第二堆"单位 参考范围"。
-    # 第一堆行无范围 → unparsed；第二堆行有范围但无代号。按出现顺序把第二堆范围行
-    # 配对到前面未判定的指标，重算 lo/hi/status/unit/range_text。
+    # 【增强5】保守处理拆堆 OCR：只有恰好一个待核对指标和一个孤立范围，
+    # 且单位明确兼容时才配对。多项/错序等情形无法证明对应关系，必须保留 unparsed。
     pending_ranges = [m for m in metrics
                       if not m.get("code") and m.get("lo") is not None]
     if pending_ranges:
         unparsed = [m for m in metrics if m["status"] == "unparsed" and m.get("result") is not None]
-        for um, rm in zip(unparsed, pending_ranges):
-            um["lo"] = rm["lo"]
-            um["hi"] = rm["hi"]
-            um["unit"] = rm.get("unit") or um.get("unit")
+        result_metrics = [m for m in metrics if m.get("result") is not None]
+        def unit_key(value):
+            return re.sub(r"\s+", "", (value or "")).lower()
+
+        left_unit = unit_key(unparsed[0].get("unit")) if len(unparsed) == 1 else ""
+        right_unit = unit_key(pending_ranges[0].get("unit")) if len(pending_ranges) == 1 else ""
+        can_pair = (len(unparsed) == 1 and len(result_metrics) == 1
+                    and len(pending_ranges) == 1
+                    and bool(left_unit) and left_unit == right_unit)
+        if can_pair:
+            um, rm = unparsed[0], pending_ranges[0]
+            um["lo"], um["hi"] = rm["lo"], rm["hi"]
             um["range_text"] = rm.get("range_text")
             um["ocr_text"] = (um.get("ocr_text", "") + "\n" + rm.get("ocr_text", "")).strip()
-            um["source_lines"] = list({*(um.get("source_lines") or []),
-                                       *(rm.get("source_lines") or [])})
+            um["source_lines"] = sorted(set(um.get("source_lines", []) + rm.get("source_lines", [])))
+            um["verification_reason"] = "唯一待核对指标与孤立范围数量匹配且单位相同"
             r = um["result"]
-            if r < rm["lo"]:
-                um["status"] = "low"
-            elif r > rm["hi"]:
-                um["status"] = "high"
-            else:
-                um["status"] = "normal"
-        # 移除被配对掉的孤儿范围行
-        metrics = [m for m in metrics if m.get("code") or m not in pending_ranges]
+            um["status"] = "low" if r < rm["lo"] else ("high" if r > rm["hi"] else "normal")
+            metrics.remove(rm)
 
-    # 同一代号可能因错行出现多条：优先保留能判定为 high/low 的，其次 normal，最后 unparsed
-    rank = {"high": 3, "low": 3, "normal": 2, "unparsed": 1}
-    dedup: dict[str, dict] = {}
+    # 配对后再次校验；多栏挤在同一行或范围/单位有歧义时保留证据，不强作结论。
+    metrics = _second_pass(metrics)
     for item in metrics:
-        key = item["code"] or f"_line_{len(dedup)}"
-        if key not in dedup or rank[item["status"]] > rank[dedup[key]["status"]]:
-            dedup[key] = item
-    return list(dedup.values())
+        item["parser_version"] = "2.2.0"
+        reason = None
+        if len(_RANGE.findall(item.get("ocr_text") or "")) > 1:
+            reason = "同一 OCR 证据行包含多个参考范围，指标对应关系不明确"
+        elif item.get("lo") is not None and item.get("hi") is not None and item["lo"] > item["hi"]:
+            reason = "参考范围上下限顺序异常，需人工核对"
+        elif item.get("result") is not None and not item.get("unit"):
+            reason = "未识别到计量单位，需人工核对"
+        if reason:
+            item["status"] = "unparsed"
+            item["verification_reason"] = reason
+        bp_pair = re.search(r"\b\d{2,3}\s*[/／]\s*\d{2,3}\b", item.get("ocr_text") or "")
+        if item.get("code") in ("血压", "BP") and bp_pair:
+            item.update(result=None, result_text=bp_pair.group(0), lo=None, hi=None,
+                        status="unparsed", verification_reason="血压包含高低压两值，需分项人工核对")
+        if item.get("verification_reason"):
+            continue
+        if item.get("status") == "unparsed":
+            item["verification_reason"] = "未能可靠识别指标、单位或参考范围对应关系"
+        elif item.get("status") in ("normal", "high", "low"):
+            item["verification_reason"] = "同一 OCR 行识别到结果值及参考范围"
+        else:
+            item["verification_reason"] = "缺少足够证据完成核对"
+    return metrics
 
 
 def format_metrics(metrics: list[dict]) -> str:
@@ -321,7 +340,8 @@ def format_metrics(metrics: list[dict]) -> str:
     for it in metrics:
         unit = f" {it['unit']}" if it.get("unit") else ""
         if it["status"] == "unparsed":
-            rows.append(f"{it['code']}：结果{it.get('result')}{unit}，未能识别参考范围，程序判定为【未能核对】")
+            result = it.get('result_text') or it.get('result')
+            rows.append(f"{it['code']}：结果{result}{unit}，未能识别参考范围，程序判定为【未能核对】")
         else:
             rows.append(
                 f"{it['code']}：结果{it['result']}{unit}，参考{it['lo']}~{it['hi']}，"

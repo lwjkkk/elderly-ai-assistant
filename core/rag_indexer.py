@@ -17,12 +17,13 @@ import sqlite3
 import json
 import glob
 import time
+import hashlib
 
 import numpy as np
 
 # ---------- 配置 ----------
 MODEL_NAME = "BAAI/bge-small-zh-v1.5"
-MODEL_DIR = r"D:\models"                      # 模型缓存目录（D 盘）
+MODEL_DIR = os.environ.get("BGE_MODEL_DIR", r"D:\models")  # 模型缓存目录，可用环境变量覆盖（Linux 服务器用 /root/models）
 EMBED_DIM = 512                               # bge-small-zh-v1.5 输出维度
 MAX_CHUNK = 300                               # 单块最大字符数（超过再细分）
 TABLE = "knowledge_chunks"
@@ -56,7 +57,11 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
         "category": "",
         "keywords": "",
         "questions": [],
+        "source_url": None, "updated_at": None, "region": None,
     }
+    rel_path = os.path.relpath(path, kb_dir).replace("\\", "/")
+    meta["document_id"] = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:24]
+    meta["document_version"] = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
     lines = content.splitlines()
     in_body = False
     body_lines = []
@@ -66,17 +71,23 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
             in_body = True
             continue
         if not in_body:
-            m = re.match(r"^(标题|关键词|分类|问题)\s*[：:]\s*(.*)$", s)
+            m = re.match(r"^(标题|关键词|分类|问题|来源网址|来源URL|source_url|更新时间|地区)\s*[：:]\s*(.*)$", s, re.I)
             if m:
-                k, v = m.group(1), m.group(2).strip()
+                k, v = m.group(1).lower(), m.group(2).strip()
                 if k == "问题":
                     meta["questions"].append(v)
-                elif k == "标题":
+                elif k == "标题".lower():
                     meta["title"] = v
-                elif k == "关键词":
+                elif k == "关键词".lower():
                     meta["keywords"] = v
-                elif k == "分类":
+                elif k == "分类".lower():
                     meta["category"] = v
+                elif k in ("来源网址", "来源url", "source_url"):
+                    meta["source_url"] = v or None
+                elif k == "更新时间":
+                    meta["updated_at"] = v or None
+                elif k == "地区":
+                    meta["region"] = v or None
             continue
         body_lines.append(ln)
     meta["body"] = "\n".join(body_lines).strip()
@@ -190,6 +201,13 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
                 "category": meta["category"], "keywords": meta["keywords"],
                 "questions": json.dumps(meta["questions"], ensure_ascii=False),
                 "dir": meta["dir"], "chunk_index": i, "text": text,
+                "document_id": meta["document_id"],
+                "document_version": meta["document_version"],
+                "chunk_id": hashlib.sha256(
+                    f"{meta['document_id']}:{meta['document_version']}:{i}:{text}".encode("utf-8")
+                ).hexdigest()[:32],
+                "source_url": meta["source_url"], "updated_at": meta["updated_at"],
+                "region": meta["region"],
             })
         stats["chunks"] += len(chunks)
 
@@ -203,7 +221,12 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
                  r["dir"], r["chunk_index"], r["text"],
                  json.dumps({"title": r["title"], "category": r["category"],
                              "keywords": r["keywords"], "questions": json.loads(r["questions"]),
-                             "dir": r["dir"], "chunk_index": r["chunk_index"]}, ensure_ascii=False),
+                             "dir": r["dir"], "chunk_index": r["chunk_index"],
+                             "document_id": r["document_id"],
+                             "chunk_id": r["chunk_id"],
+                             "document_version": r["document_version"],
+                             "source_url": r["source_url"], "updated_at": r["updated_at"],
+                             "region": r["region"]}, ensure_ascii=False),
                  vec.astype(np.float32).tobytes()))
     con.commit()
     con.close()
@@ -265,6 +288,22 @@ def get_kb_dir():
 
 def get_default_db_path():
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "knowledge_vectors.db"))
+
+
+def index_version() -> str | None:
+    """Return the knowledge fingerprint from the current hybrid index metadata."""
+    path = get_default_db_path()
+    if not os.path.isfile(path):
+        return None
+    try:
+        con = _conn(path)
+        row = con.execute(
+            "SELECT value FROM knowledge_index_meta WHERE key='kb_fingerprint'"
+        ).fetchone()
+        con.close()
+        return row[0] if row else None
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":

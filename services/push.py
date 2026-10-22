@@ -88,6 +88,11 @@ def get_sent() -> list[dict]:
     return []
 
 
+def adapter_name() -> str:
+    """Return the active adapter name for truthful persistent delivery status."""
+    return _active.name
+
+
 def clear_sent() -> None:
     """清空内存记录（测试用）。"""
     if isinstance(_active, MemoryPushAdapter):

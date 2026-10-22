@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import User, FamilyBinding, FamilyMessage
 from core.security import get_current_user
+from core import age as age_mod
 
 router = APIRouter(prefix="/api/messages", tags=["家人消息"])
 logger = logging.getLogger(__name__)
@@ -29,11 +30,12 @@ def _out(message: FamilyMessage) -> dict:
 
 
 def _message(db: Session, binding_id: int, message_id: int, current: User) -> FamilyMessage:
-    _assert_binding_member(db, binding_id, current)
+    binding = _assert_binding_member(db, binding_id, current)
     message = db.query(FamilyMessage).filter(
         FamilyMessage.id == message_id, FamilyMessage.binding_id == binding_id).first()
     if not message:
         raise HTTPException(status_code=404, detail='消息不存在')
+    _assert_system_health_visible(db, binding, message, current)
     return message
 
 
@@ -57,18 +59,49 @@ def _assert_binding_member(db: Session, binding_id: int, current: User) -> Famil
     return binding
 
 
+def _is_system_health_message(message: FamilyMessage) -> bool:
+    content = message.content or {}
+    return (message.kind in ("health", "emergency_alert") and
+            (content.get("origin") == "system" or content.get("type") in
+             ("vital_alert", "emergency_chat", "emergency_alert")))
+
+
+def _assert_system_health_visible(db: Session, binding: FamilyBinding,
+                                  message: FamilyMessage, current: User) -> None:
+    """Recheck sharing when opening a previously persisted system health alert."""
+    if current.role != "family" or not _is_system_health_message(message):
+        return
+    elder = db.query(User).filter(User.id == binding.elder_id).first()
+    allowed, reason = age_mod.family_access_guard(db, current, elder)
+    if not allowed:
+        detail = {
+            "birth_missing": "老人资料不完整，暂不可访问系统健康消息",
+            "privacy_off": "老人未开启健康资料分享，暂不可访问系统健康消息",
+        }.get(reason, "无权访问该系统健康消息")
+        raise HTTPException(status_code=403, detail=detail)
+
+
 @router.get("/{binding_id}")
 def list_messages(binding_id: int,
                   db: Session = Depends(get_db),
                   current: User = Depends(get_current_user)):
     """获取该绑定双方的历史消息，按创建顺序排列。"""
-    _assert_binding_member(db, binding_id, current)
+    binding = _assert_binding_member(db, binding_id, current)
     msgs = (
         db.query(FamilyMessage)
         .filter(FamilyMessage.binding_id == binding_id)
         .order_by(FamilyMessage.created_at.asc(), FamilyMessage.id.asc())
         .all()
     )
+    visible = []
+    for m in msgs:
+        try:
+            _assert_system_health_visible(db, binding, m, current)
+        except HTTPException as exc:
+            if exc.status_code == 403:
+                continue
+            raise
+        visible.append(m)
     return [
         {
             "id": m.id,
@@ -78,7 +111,7 @@ def list_messages(binding_id: int,
             "content": m.content,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
-        for m in msgs
+        for m in visible
     ]
 
 
