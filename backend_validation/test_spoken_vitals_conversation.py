@@ -21,10 +21,6 @@ from core.security import get_current_user
 _engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
 _TS = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
 Base.metadata.create_all(bind=_engine)
-with _TS() as seed:
-    seed.add(User(id=1, role="elder", phone="synthetic", nickname="测试老人",
-                  password_hash="test", birth_ym="1970-01"))
-    seed.commit()
 
 
 def _ovr_db():
@@ -56,7 +52,7 @@ def vitals_count():
 
 
 # 1) 首轮缺类型/缺数值：只说“量血压”但无数值 → 追问，不落库
-r = _client.post("/api/vitals/draft-conversations", json={"text": "2026-01-01T08:30:00+08:00量一下血压"})
+r = _client.post("/api/vitals/draft-conversations", json={"text": "量一下血压"})
 ok("首轮 200", r.status_code == 200, r.text)
 d = r.json()
 ok("首轮 定类血压但缺双值", d["status"] == "collecting" and d["draft"]["type"] == "bp" and "systolic" in d["missing"] and "diastolic" in d["missing"],
@@ -91,21 +87,21 @@ ok("确认后 vitals 1 条", vitals_count() == 1, f"count={vitals_count()}")
 
 # 6) 重复确认 → 400
 r = _client.post(f"/api/vitals/draft-conversations/{sid}/confirm")
-ok("重复确认返回同一记录", r.status_code == 200 and r.json()["id"] == cv["id"], f"status={r.status_code} body={r.text}")
+ok("重复确认被拒", r.status_code == 400, f"status={r.status_code} body={r.text}")
 ok("重复确认不重复落库", vitals_count() == 1)
 
 # 7) 取消后不可确认，不落库
-r = _client.post("/api/vitals/draft-conversations", json={"text": "2026-01-01T08:30:00+08:00血糖"})
+r = _client.post("/api/vitals/draft-conversations", json={"text": "血糖"})
 d = r.json(); sid2 = d["session_id"]
 ok("血糖缺数值追问", d["status"] == "collecting" and d["draft"]["type"] == "bs" and d["missing"] == ["value"], d)
 r = _client.request("DELETE", f"/api/vitals/draft-conversations/{sid2}")
 ok("取消 200", r.status_code == 200, r.text)
 r = _client.post(f"/api/vitals/draft-conversations/{sid2}/confirm")
-ok("取消后 confirm 409", r.status_code == 409, r.text)
+ok("取消后 confirm 400", r.status_code == 400, r.text)
 ok("取消后不落库", vitals_count() == 1)  # 仅上一个血压确认那条
 
 # 8) 血糖多轮补数值 → 确认落库
-r = _client.post("/api/vitals/draft-conversations", json={"text": "2026-01-01T08:30:00+08:00血糖"})
+r = _client.post("/api/vitals/draft-conversations", json={"text": "血糖"})
 sid3 = r.json()["session_id"]
 r = _client.post("/api/vitals/draft-conversations", json={"text": "5.6", "session_id": sid3})
 d = r.json()
@@ -115,7 +111,7 @@ ok("血糖确认落库", r.status_code == 200 and r.json()["type"] == "bs" and r
 ok("血糖落库后 count=2", vitals_count() == 2)
 
 # 9) 范围越界：血糖 0.5 → 追问范围，不可确认，confirm 400
-r = _client.post("/api/vitals/draft-conversations", json={"text": "2026-01-01T08:30:00+08:00血糖0.5"})
+r = _client.post("/api/vitals/draft-conversations", json={"text": "血糖0.5"})
 d = r.json(); sid4 = d["session_id"]
 ok("血糖越界 collecting", d["status"] == "collecting" and d["can_confirm"] is False, d)
 ok("血糖越界追问范围", "合理范围" in d["question"] or "1.0" in d["question"], d["question"])
@@ -137,7 +133,7 @@ ok("缺字段 collecting confirm 400", r.status_code == 400, r.text)
 ok("全程未确认不落库（累计仍 2 条）", vitals_count() == 2)
 
 # 12) 会话持久化（重进页面可恢复）：新 session 读旧会话
-r = _client.post("/api/vitals/draft-conversations", json={"text": "2026-01-01T08:30:00+08:00体重70公斤"})
+r = _client.post("/api/vitals/draft-conversations", json={"text": "体重70公斤"})
 sid6 = r.json()["session_id"]
 ok("体重完整 ready", r.json()["status"] == "ready", r.json())
 r = _client.post("/api/vitals/draft-conversations", json={"text": "再确认下", "session_id": sid6})

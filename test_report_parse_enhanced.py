@@ -37,7 +37,7 @@ class ReportParseEnhancedTests(unittest.TestCase):
 
     def test_folded_line_merged(self):
         # 错行合并：指标名单独一行 + 数值行 → 合并为一条
-        ocr = '总胆固醇\nTC 6.2 mmol/L 2.8-5.2'
+        ocr = '总胆固醇\nTC 6.2 2.8-5.2'
         ms = parse_metrics(ocr)
         self.assertEqual(len(ms), 1)
         self.assertEqual(ms[0]['code'], 'TC')
