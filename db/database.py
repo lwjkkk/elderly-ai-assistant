@@ -87,15 +87,33 @@ def init_db():
         "ALTER TABLE vitals ADD COLUMN measurement_context VARCHAR(20)",
     )
     _add_column_if_missing(
+        "vitals", "draft_session_id",
+        "ALTER TABLE vitals ADD COLUMN draft_session_id INTEGER",
+    )
+    _add_column_if_missing(
         "vital_alerts",
         "measurement_context",
         "ALTER TABLE vital_alerts ADD COLUMN measurement_context VARCHAR(20)",
     )
+    _add_column_if_missing("vital_alerts", "vital_id", "ALTER TABLE vital_alerts ADD COLUMN vital_id INTEGER")
+    _add_column_if_missing("vital_alerts", "threshold_version", "ALTER TABLE vital_alerts ADD COLUMN threshold_version VARCHAR(40)")
+    _add_column_if_missing("vital_alerts", "measured_at", "ALTER TABLE vital_alerts ADD COLUMN measured_at DATETIME")
     _add_column_if_missing(
         "vital_draft_conversations",
         "measurement_context",
         "ALTER TABLE vital_draft_conversations ADD COLUMN measurement_context VARCHAR(20) DEFAULT 'unknown'",
     )
+    _add_column_if_missing("vital_draft_conversations", "confirmed_vital_id", "ALTER TABLE vital_draft_conversations ADD COLUMN confirmed_vital_id INTEGER")
+    _add_column_if_missing("vital_draft_conversations", "version", "ALTER TABLE vital_draft_conversations ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+    _add_column_if_missing("vital_draft_conversations", "subject_label", "ALTER TABLE vital_draft_conversations ADD COLUMN subject_label VARCHAR(80)")
+    _add_column_if_missing("vital_draft_conversations", "subject_confirmed", "ALTER TABLE vital_draft_conversations ADD COLUMN subject_confirmed BOOLEAN NOT NULL DEFAULT 1")
+    _add_column_if_missing("notification_outbox", "claimed_at", "ALTER TABLE notification_outbox ADD COLUMN claimed_at DATETIME")
+    # Partial unique indexes safely upgrade existing SQLite databases and allow NULL for legacy/manual records.
+    with engine.begin() as conn:
+        if "vitals" in inspect(engine).get_table_names():
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_vitals_draft_session ON vitals(draft_session_id) WHERE draft_session_id IS NOT NULL"))
+        if "vital_alerts" in inspect(engine).get_table_names():
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_vital_alert_vital ON vital_alerts(vital_id) WHERE vital_id IS NOT NULL"))
     # 回填历史数据：把已有记录的 updated_at/created_at 设为其 created_at/measured_at
     _backfill_column(
         "medications", "updated_at",

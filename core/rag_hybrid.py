@@ -66,9 +66,10 @@ def compute_fingerprint(kb_dir: str) -> str:
     files = [f for f in files if not (f in seen or seen.add(f))]
     entries = []
     for f in files:
-        st = os.stat(f)
         rel = os.path.relpath(f, kb_dir)
-        entries.append((rel, st.st_mtime_ns, st.st_size))
+        with open(f, "rb") as stream:
+            digest = hashlib.sha256(stream.read()).hexdigest()
+        entries.append((rel, digest))
     blob = json.dumps(entries, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
@@ -76,6 +77,39 @@ def compute_fingerprint(kb_dir: str) -> str:
 def _read_meta(con, key):
     row = con.execute(f"SELECT value FROM {META_TABLE} WHERE key=?", (key,)).fetchone()
     return row[0] if row else None
+
+
+def _metadata_fields(raw: str | None) -> dict:
+    try:
+        return json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
+def _matches_query_focus(question: str, title: str, body: str) -> bool:
+    """显式疾病/子主题必须在候选中落地，不能只凭文章总标题给无关段落加分。"""
+    combined = (title or "") + "\n" + (body or "")
+    for query_pattern, candidate_pattern in (
+        (r"高血压|降压", r"血压|降压"),
+        (r"糖尿病|控糖", r"糖尿病|血糖|控糖"),
+    ):
+        if re.search(query_pattern, question) and not re.search(candidate_pattern, combined):
+            return False
+    if re.search(r"12306|火车票|高铁票|动车票", question):
+        if not re.search(r"12306|火车|高铁|(?<!机)动车|铁路", combined):
+            return False
+    if re.search(r"校准|保养", question) and not re.search(r"校准|保养|校验|维修|校正", body or ""):
+        return False
+    # 特定疾病咨询不应把另一种疾病的专用饮食限制当作通用建议。
+    if "糖尿病" in question and re.search(r"肾脏病|肾病|透析", title or "") and "糖尿病" not in (title or ""):
+        return False
+    dietary = re.search(r"饮食|食物|吃什么|吃饭|少盐|膳食", question)
+    if dietary and not re.search(r"吃什么药|药怎么吃|药物", question):
+        if not re.search(r"饮食|食物|膳食|盐|蔬菜|青菜|水果|主食|油脂|油腻|吃饭", body or ""):
+            return False
+    if "红包" in question and "转账" not in question and "红包" not in combined:
+        return False
+    return True
 
 
 def ensure_index(db_path=None, embedder=None, force=False, kb_dir=None) -> dict:
@@ -117,24 +151,29 @@ def _vector_chunk_scores(db_path: str, question: str, embedder,
     qv = _ri.embed_texts(embedder, [question])[0].reshape(1, -1)
     cur = con.cursor()
     cur.execute(
-        f"SELECT id,source,title,category,keywords,questions,chunk_index,text,dir,embedding "
+        f"SELECT id,source,title,category,keywords,questions,chunk_index,text,dir,metadata_json,embedding "
         f"FROM {_ri.TABLE}"
     )
     rows = cur.fetchall()
     con.close()
     if not rows:
         return []
-    mat = np.vstack([np.frombuffer(r[9], dtype=np.float32) for r in rows]).astype(np.float32)
+    mat = np.vstack([np.frombuffer(r[10], dtype=np.float32) for r in rows]).astype(np.float32)
     scores = (mat @ qv.T).ravel()
     out = []
     for row, sc in zip(rows, scores):
         s = float(sc)
         if s < threshold:
             continue
+        if not _matches_query_focus(question, row[2], row[7]):
+            continue
+        meta = _metadata_fields(row[9])
         out.append({
             "id": row[0], "source": row[1], "title": row[2], "category": row[3],
             "keywords": row[4], "questions": row[5], "chunk_index": row[6],
             "text": row[7], "dir": row[8], "vector_score": s,
+            **{key: meta.get(key) for key in ("document_id", "chunk_id", "document_version",
+                                               "source_url", "updated_at", "region")},
         })
     out.sort(key=lambda x: -x["vector_score"])
     return out[:limit]
@@ -145,7 +184,7 @@ def _iter_chunks(db_path: str) -> list:
     con = _ri._conn(db_path)
     cur = con.cursor()
     cur.execute(
-        f"SELECT id,source,title,category,keywords,questions,chunk_index,text,dir FROM {_ri.TABLE}"
+        f"SELECT id,source,title,category,keywords,questions,chunk_index,text,dir,metadata_json FROM {_ri.TABLE}"
     )
     rows = cur.fetchall()
     con.close()
@@ -193,7 +232,10 @@ def _keyword_chunk_scores(question: str, db_path: str,
     kws = _kw._build_keywords(question) or [question[:6]]
     rows = _iter_chunks(db_path)
     out = []
-    for rid, source, title, category, keywords, questions, cidx, text, dr in rows:
+    for rid, source, title, category, keywords, questions, cidx, text, dr, raw_meta in rows:
+        if not _matches_query_focus(question, title, text):
+            continue
+        extra = _metadata_fields(raw_meta)
         meta = {"source": source, "title": title, "keywords": keywords,
                 "category": category, "questions": questions, "dir": dr}
         s = _score_chunk(text, meta, kws)
@@ -203,6 +245,8 @@ def _keyword_chunk_scores(question: str, db_path: str,
             "id": rid, "source": source, "title": title, "category": category,
             "keywords": keywords, "questions": questions, "chunk_index": cidx,
             "text": text, "dir": dr, "keyword_score": s,
+            **{key: extra.get(key) for key in ("document_id", "chunk_id", "document_version",
+                                                "source_url", "updated_at", "region")},
         })
     out.sort(key=lambda x: -x["keyword_score"])
     return out[:limit]
@@ -275,6 +319,12 @@ def hybrid_retrieve(question: str, top_k: int = 3,
             "questions": c.get("questions") or "",
             "dir": c.get("dir") or "",
             "chunk_index": c.get("chunk_index"),
+                    "document_id": c.get("document_id"),
+                    "chunk_id": c.get("chunk_id"),
+                    "document_version": c.get("document_version"),
+                    "source_url": c.get("source_url"),
+                    "updated_at": c.get("updated_at"),
+                    "region": c.get("region"),
             "best_chunk": c.get("text") or "",
             "score": round(rrf, 5),
             "keyword_score": round(c["keyword_score"], 3) if c.get("keyword_score") is not None else None,

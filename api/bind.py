@@ -11,6 +11,7 @@ from db.database import get_db
 from db.models import User, FamilyBinding
 from db.schemas import InviteOut, BindAccept, BindingOut
 from core.security import get_current_user
+from core import age as age_mod
 
 router = APIRouter(prefix="/api/bind", tags=["绑定"])
 
@@ -111,6 +112,13 @@ def list_bindings(
         # 附带对方昵称，方便前端"我的"页直接展示
         other_id = b.family_id if current.role == "elder" else b.elder_id
         other = db.query(User).filter(User.id == other_id).first() if other_id else None
+        elder = current if current.role == "elder" else other
+        family = other if current.role == "elder" else current
+        if elder is not None and family is not None and b.status == "active":
+            allowed, reason = age_mod.family_access_guard(db, family, elder)
+            tier = age_mod.age_tier(elder.birth_ym)
+        else:
+            allowed, reason, tier = False, "not_bound", None
         result.append({
             "id": b.id,
             "elder_id": b.elder_id,
@@ -119,5 +127,13 @@ def list_bindings(
             "invite_code": b.invite_code,
             "other_nickname": other.nickname if other else None,
             "other_avatar": other.avatar_url if other else None,
+            "age": age_mod.compute_age(elder.birth_ym) if elder and b.status == "active" else None,
+            "age_tier": tier,
+            "readable_scopes": (["health_records", "reports", "consults", "vitals",
+                                 "summaries", "drug_queries", "system_health_messages"]
+                                if allowed else []),
+            "writable_scopes": (["vitals", "medications", "reports", "consults", "symptoms"]
+                                if allowed and current.role == "family" else []),
+            "access_reason": "ok" if allowed else reason,
         })
     return result

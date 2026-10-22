@@ -25,7 +25,8 @@ class FamilyMediaTests(unittest.TestCase):
         self.db = sessionmaker(bind=self.engine)()
         for i, role in [(1, 'elder'), (2, 'family'), (3, 'family')]:
             self.db.add(User(id=i, role=role, phone=f'1380000000{i}',
-                             nickname=f'user{i}', password_hash='unused'))
+                             nickname=f'user{i}', password_hash='unused',
+                             birth_ym='1970-01' if role == 'elder' else None))
         self.db.add(FamilyBinding(id=1, elder_id=1, family_id=2,
                                   status='active', invite_code='test'))
         self.db.commit()

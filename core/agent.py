@@ -8,6 +8,7 @@ from core.prompt import SYSTEM_PROMPT, MODULE_PROMPTS
 from core.qwen_llm import call_qwen
 from core.rag import retrieve_from_knowledge_base
 from core import rag_hybrid, rag_indexer
+from core.disclaimer import HEALTH_DISCLAIMER
 
 logger = logging.getLogger(__name__)
 _RAG_LOCK = threading.Lock()
@@ -88,7 +89,9 @@ def get_agent_answer(question: str) -> dict:
         module = _detect_module(search_question)
         if rag_results:
             dir_module = _module_from_dir(rag_results[0].get("dir", ""))
-            if dir_module:
+            # 明确健康问题不应因首条知识放在 daily_life 目录而降为生活问答，
+            # 否则双视图健康结构与医疗免责声明会被跳过。
+            if dir_module and module != "health":
                 module = dir_module
 
         # 4. 生成回答（统一走文本模型）
@@ -105,7 +108,13 @@ def get_agent_answer(question: str) -> dict:
             "module": module,
             "steps": steps,
             "sources": _source_payload(rag_results, rag_channel),
-            "disclaimer": "以上内容仅供参考，具体操作请以实际界面为准。如有疑问请咨询子女或社区工作人员。"
+            "retrieval_channel": rag_channel,
+            "evidence_status": "sufficient" if rag_results and rag_channel != "keyword_fallback" else ("insufficient" if rag_results else "none"),
+            "fallback_reason": ("vector_index_unavailable" if rag_channel == "keyword_fallback"
+                                else ("no_relevant_chunks" if not rag_results else None)),
+            "index_version": rag_indexer.index_version() if hasattr(rag_indexer, "index_version") else None,
+            "disclaimer": (HEALTH_DISCLAIMER if module == "health" else
+                           "以上内容仅供参考，具体操作请以实际界面为准。如有疑问请咨询子女或社区工作人员。")
         }
 
     except ValueError as e:
@@ -154,6 +163,13 @@ def _retrieve_references(question: str) -> tuple[list[dict], str]:
                     "keyword_score": item.get("keyword_score"),
                     "dir": item.get("dir", ""),
                     "category": item.get("category", ""),
+                    "document_id": item.get("document_id"),
+                    "chunk_id": item.get("chunk_id"),
+                    "chunk_index": item.get("chunk_index"),
+                    "document_version": item.get("document_version"),
+                    "source_url": item.get("source_url"),
+                    "updated_at": item.get("updated_at"),
+                    "region": item.get("region"),
                 })
         return normalized, result.get("channel", "none")
     except Exception as e:
@@ -169,6 +185,13 @@ def _retrieve_references(question: str) -> tuple[list[dict], str]:
                     "score": None,
                     "dir": item.get("dir", ""),
                     "category": "",
+                    "document_id": None,
+                    "chunk_id": None,
+                    "chunk_index": None,
+                    "document_version": None,
+                    "source_url": None,
+                    "updated_at": None,
+                    "region": None,
                 }
                 for item in legacy if item.get("content")
             ], "keyword_fallback"
@@ -192,6 +215,13 @@ def _source_payload(results: list[dict], channel: str) -> list[dict]:
             "vector_score": item.get("vector_score"),
             "keyword_score": item.get("keyword_score"),
             "category": item.get("category", ""),
+            "document_id": item.get("document_id"),
+            "chunk_id": item.get("chunk_id"),
+            "chunk_index": item.get("chunk_index"),
+            "document_version": item.get("document_version"),
+            "source_url": item.get("source_url"),
+            "updated_at": item.get("updated_at"),
+            "region": item.get("region"),
         }
         for item in results if item.get("content")
     ]
@@ -263,6 +293,9 @@ def _parse_steps(answer: str, max_steps: int = 6) -> list:
 
 def _detect_module(question: str) -> str:
     """根据问题内容简单判断属于哪个模块（RAG 目录命中会覆盖此结果）"""
+    from core.tiered_answer import _has_emergency
+    if _has_emergency(question):
+        return "health"
     phone_keywords = ["微信", "手机", "APP", "app", "软件", "怎么操作", "怎么打开", "怎么设置", "字体", "声音", "WiFi", "wifi", "蓝牙", "截屏", "拍照"]
     services_keywords = ["医保", "挂号", "社保", "公积金", "水电", "缴费", "养老金", "失业保险", "驾驶证", "年检", "退税", "报销", "备案"]
     health_keywords = ["血压", "血糖", "糖尿病", "高血压", "吃药", "用药", "药品", "症状", "头疼", "头痛",
@@ -288,5 +321,9 @@ def _error_response(tip: str) -> dict:
         "module": "daily_life",
         "steps": [tip],
         "sources": [],
+        "retrieval_channel": "none",
+        "evidence_status": "none",
+        "fallback_reason": "answer_generation_error",
+        "index_version": None,
         "disclaimer": "以上内容仅供参考，具体操作请以实际界面为准。如有疑问请咨询子女或社区工作人员。"
     }

@@ -69,9 +69,9 @@ def update_profile(payload: UserProfileUpdate,
 
     # 出生年月：YYYY-MM 格式校验
     if payload.birth_ym is not None:
-        if not _BIRTH_YM_PATTERN.match(payload.birth_ym):
+        if not _BIRTH_YM_PATTERN.match(payload.birth_ym) or age_mod.parse_birth_ym(payload.birth_ym) is None:
             raise HTTPException(status_code=400,
-                                detail="出生年月格式应为 YYYY-MM，例如 1955-08")
+                                detail="出生年月须为真实且不晚于当前月份的 YYYY-MM，例如 1955-08")
         user.birth_ym = payload.birth_ym
 
     # 头像：base64 存文件，返回相对 URL

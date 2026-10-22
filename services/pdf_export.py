@@ -116,6 +116,7 @@ def _register_chinese_font() -> str:
         "C:/Windows/Fonts/simhei.ttf",       # 黑体
         "C:/Windows/Fonts/simsun.ttc",       # 宋体
         "C:/Windows/Fonts/msyh.ttc",         # 微软雅黑
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",  # Linux 文泉驿正黑
     ]
     for path in font_paths:
         if os.path.exists(path):
@@ -158,7 +159,8 @@ def _draw_bp_chart(records: list[Vitals]) -> str | None:
 
         # 尝试加载中文字体
         font_path = None
-        for p in ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc"]:
+        for p in ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc",
+                  "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"]:
             if os.path.exists(p):
                 font_path = p
                 break

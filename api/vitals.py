@@ -1,19 +1,28 @@
 # 体征接口：录入血压/血糖/心率/体重，按天聚合趋势查询，导出 PDF
 
 import re
-from datetime import datetime, timedelta
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from collections import defaultdict
+from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 
 from db.database import get_db
-from db.models import User, FamilyBinding, Vitals, VitalDraftConversation, VitalAlert, FamilyMessage
+from db.models import (User, FamilyBinding, Vitals, VitalDraftConversation,
+                       VitalAlert, FamilyMessage, IdempotencyRecord,
+                       NotificationOutbox)
 from db.schemas import (
     VitalsCreate, VitalsOut, TrendPoint,
     VitalsSpokenParseRequest, VitalsSpokenDraftOut,
     VitalsSpokenTurnRequest, VitalsSpokenTurnOut, VitalAlertOut,
+    VitalsSpokenEditRequest, VitalDraftConfirmOut,
 )
 from core.security import get_current_user
 from core.disclaimer import HEALTH_DISCLAIMER
@@ -30,21 +39,45 @@ router = APIRouter(prefix="/api/vitals", tags=["体征"])
 
 VALID_TYPES = {"bp", "bs", "hr", "weight"}
 BS_MEASUREMENT_CONTEXTS = {"fasting", "postprandial", "random", "unknown"}
+_SUBJECT_LABELS = ("妈妈", "母亲", "爸爸", "父亲", "奶奶", "爷爷", "外婆", "外公", "本人", "自己", "我")
 
 
-def _parse_measured_at(value: str | None):
-    """把前端传来的日期/时间解析为 datetime；解析失败或为空时返回 None（用默认当前时间）。
-    支持 'YYYY-MM-DD'、'YYYY-MM-DD HH:MM'、ISO 'YYYY-MM-DDTHH:MM:SS' 等格式。"""
+def _spoken_subject(db: Session, current: User, elder_id: int, text: str) -> tuple[str | None, bool]:
+    """Resolve only explicit account names; family-role words require confirmation."""
+    text = text or ""
+    target = db.query(User).filter(User.id == elder_id).first()
+    if target and target.nickname and target.nickname in text:
+        return target.nickname, True
+    for label in _SUBJECT_LABELS:
+        if label not in text:
+            continue
+        if label in ("本人", "自己", "我"):
+            return label, current.id == elder_id
+        # The app does not store trusted kinship labels, so do not guess which
+        # bound account “妈妈/爸爸” refers to.
+        return label, False
+    return (target.nickname if target else None), True
+
+
+def _parse_measured_at(value: str | None, tz_name: str = "Asia/Shanghai"):
+    """解析 ISO 日期时间并统一持久化为 UTC naive datetime。
+    无偏移输入默认按 Asia/Shanghai；空值由调用方决定是否采用当前时间。"""
     if not value:
         return None
-    v = value.strip().replace("Z", "+00:00")
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+    raw = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d") if len(raw) == 10 else datetime.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="测量时间格式无效，请使用 ISO 8601 日期时间")
+    if parsed.tzinfo is None:
         try:
-            return datetime.strptime(v, fmt)
-        except ValueError:
-            continue
-    # 无法解析则忽略该字段，走默认时间
-    return None
+            parsed = parsed.replace(tzinfo=ZoneInfo(tz_name))
+        except Exception:
+            raise HTTPException(status_code=400, detail="未知时区，请提供有效 IANA 时区")
+    utc_value = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    if utc_value > datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="测量时间不能明显晚于当前时间")
+    return utc_value
 
 
 def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
@@ -54,8 +87,10 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     10.26 起：家属读长辈体征/异常事件前，统一走 age.family_access_guard。
     """
     if current.role == "elder":
+        if elder_id is not None and elder_id != current.id:
+            raise HTTPException(status_code=403, detail="老人账号只能访问本人数据")
         return current.id
-    if elder_id is None:
+    if elder_id is None or elder_id == current.id:
         return current.id
     binding = (
         db.query(FamilyBinding)
@@ -67,6 +102,8 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     if not binding:
         raise HTTPException(status_code=403, detail="未绑定该老人，无权操作")
     target_user = db.query(User).filter(User.id == elder_id).first()
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="老人账号不存在")
     allowed, reason = age_mod.family_access_guard(db, current, target_user)
     if not allowed:
         detail = {
@@ -77,55 +114,65 @@ def resolve_elder_id(db: Session, current: User, elder_id: int | None) -> int:
     return elder_id
 
 
-def _maybe_create_alert(db: Session, vital: Vitals) -> None:
-    """血压/血糖超阈值时写入可追踪事件，并向 active 绑定家属发送提示（内存推送记录）。
-
-    10.26 起：家属推送前与读取端共用同一套年龄/隐私规则——
-      - 满 60 周岁（senior）：强制推给所有 active 绑定家属；
-      - 未满 60（younger）：仅当老人 sync_summary_to_family=True 时才推；
-      - 出生年月缺失（unknown）：不推家属（与读取端 birth_missing 拒绝一致）。
-    VitalAlert 记录始终写库供老人本人查看，不因隐私开关丢失。
-    """
+def _maybe_create_alert(db: Session, vital: Vitals) -> VitalAlert | None:
+    """Stage an alert, family message and persistent notification outbox in the caller's transaction."""
     ev = vth.evaluate(vital.type, vital.systolic, vital.diastolic, vital.value,
                       measurement_context=vital.measurement_context)
     if not ev or not ev["abnormal"]:
-        return
+        return None
     alert = VitalAlert(
-        elder_id=vital.elder_id, vital_type=vital.type,
+        elder_id=vital.elder_id, vital_id=vital.id, threshold_version="v1",
+        measured_at=vital.measured_at, vital_type=vital.type,
         systolic=vital.systolic, diastolic=vital.diastolic, value=vital.value,
         measurement_context=vital.measurement_context,
         level=ev["level"], message=ev["message"], source=ev["source"],
     )
     db.add(alert)
-    db.commit()
+    db.flush()
 
-    # 判断是否允许向家属推送（与 family_access_guard 读取规则一致）
-    elder_user = db.query(User).filter(User.id == vital.elder_id).first()
-    tier = age_mod.age_tier(elder_user.birth_ym if elder_user else None)
-    allow_family_push = (tier == age_mod.TIER_SENIOR) or (
-        tier == age_mod.TIER_YOUNGER and elder_user is not None
-        and elder_user.sync_summary_to_family is not False
+    elder = db.query(User).filter(User.id == vital.elder_id).first()
+    tier = age_mod.age_tier(elder.birth_ym if elder else None)
+    allow_push = tier == age_mod.TIER_SENIOR or (
+        tier == age_mod.TIER_YOUNGER and elder is not None
+        and elder.sync_summary_to_family is not False
     )
-    if not allow_family_push:
-        return
+    if tier == age_mod.TIER_SENIOR and elder is not None:
+        elder.sync_summary_to_family = True
+        elder.privacy_enabled_at = None
+    if not allow_push:
+        return alert
 
-    bindings = (
-        db.query(FamilyBinding)
-        .filter(FamilyBinding.elder_id == vital.elder_id,
-                FamilyBinding.status == "active",
-                FamilyBinding.family_id.isnot(None))
-        .all()
-    )
-    for b in bindings:
-        push_svc.send_push(b.family_id, "体征异常提醒",
-                           f"老人体征异常提示（{ev['level']}）：{ev['message']}")
+    bindings = (db.query(FamilyBinding)
+                .filter(FamilyBinding.elder_id == vital.elder_id,
+                        FamilyBinding.status == "active",
+                        FamilyBinding.family_id.isnot(None)).all())
+    content = f"老人体征异常提示（{ev['level']}）：{ev['message']}"
+    channel = "in_app" if push_svc.adapter_name() == "memory" else "push"
+    for binding in bindings:
         db.add(FamilyMessage(
-            binding_id=b.id, sender_id=vital.elder_id, kind="health",
-            content={"type": "vital_alert", "alert_id": alert.id,
-                     "vital_type": vital.type, "level": ev["level"],
-                     "message": ev["message"], "source": ev["source"]},
+            binding_id=binding.id, sender_id=vital.elder_id, kind="health",
+            content={"type": "vital_alert", "origin": "system",
+                     "elder_id": vital.elder_id, "vital_id": vital.id,
+                     "alert_id": alert.id, "vital_type": vital.type,
+                     "level": ev["level"], "message": ev["message"],
+                     "source": ev["source"]},
         ))
-    db.commit()
+        db.add(NotificationOutbox(
+            elder_id=vital.elder_id, receiver_id=binding.family_id,
+            alert_id=alert.id, channel=channel, status="pending",
+            title="体征异常提醒", content=content,
+            dedupe_key=f"vital-alert:{vital.id}:family:{binding.family_id}",
+        ))
+    db.flush()
+    return alert
+
+
+def _notification_status(db: Session, vital_id: int) -> str:
+    alert = db.query(VitalAlert).filter_by(vital_id=vital_id).first()
+    if alert is None:
+        return "no_alert"
+    from services.notification_outbox import status_for_alert
+    return status_for_alert(db, alert.id)
 
 
 @router.post("", response_model=VitalsOut)
@@ -186,27 +233,43 @@ def create_vital(payload: VitalsCreate,
         diastolic=payload.diastolic,
         value=payload.value,
         measurement_context=context if payload.type == "bs" else None,
-        measured_at=_parse_measured_at(payload.measured_at),
+        measured_at=_parse_measured_at(payload.measured_at) or datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(vital)
+    db.flush()
+    alert = _maybe_create_alert(db, vital)
     db.commit()
     db.refresh(vital)
-    _maybe_create_alert(db, vital)
+    if alert is not None:
+        from services.notification_outbox import process_pending, status_for_alert
+        try:
+            process_pending(sessionmaker(bind=db.get_bind()), alert_id=alert.id)
+            notification_status = status_for_alert(db, alert.id)
+        except Exception:
+            notification_status = "pending"
+        return VitalsOut.model_validate(vital).model_copy(update={"notification_status": notification_status})
     return vital
 
 
 @router.get("/alerts", response_model=list[VitalAlertOut])
 def list_vital_alerts(elder_id: int | None = None,
                       days: int = 90,
+                      limit: int = 100,
+                      offset: int = 0,
                       db: Session = Depends(get_db),
                       current: User = Depends(get_current_user)):
     """体征异常事件列表：老人本人看自己；绑定家属传 elder_id 看老人。仅提示，不替代诊断。"""
     target = resolve_elder_id(db, current, elder_id)
-    cutoff = datetime.now() - timedelta(days=days)
+    if not 1 <= days <= 3650:
+        raise HTTPException(status_code=400, detail="days 必须在 1 到 3650 之间")
+    if not 1 <= limit <= 200 or offset < 0:
+        raise HTTPException(status_code=400, detail="limit 必须在 1 到 200 之间，offset 不能为负数")
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     return (
         db.query(VitalAlert)
         .filter(VitalAlert.elder_id == target, VitalAlert.created_at >= cutoff)
         .order_by(VitalAlert.created_at.desc())
+        .offset(offset).limit(limit)
         .all()
     )
 
@@ -219,7 +282,7 @@ def list_vitals(vital_type: str | None = None,
                 current: User = Depends(get_current_user)):
     """查询体征记录，默认最近 30 天，可按类型筛选。"""
     target = resolve_elder_id(db, current, elder_id)
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     query = db.query(Vitals).filter(
         Vitals.elder_id == target,
@@ -241,7 +304,7 @@ def trend(vital_type: str | None = None,
           current: User = Depends(get_current_user)):
     """按天聚合趋势数据，前端直接用来画曲线图。"""
     target = resolve_elder_id(db, current, elder_id)
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     query = db.query(Vitals).filter(
         Vitals.elder_id == target,
@@ -257,7 +320,8 @@ def trend(vital_type: str | None = None,
     # 按日期分组
     grouped: dict[str, list] = defaultdict(list)
     for r in records:
-        day = r.measured_at.strftime("%Y-%m-%d") if r.measured_at else "unknown"
+        day = (r.measured_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Asia/Shanghai"))
+               .strftime("%Y-%m-%d")) if r.measured_at else "unknown"
         grouped[day].append(r)
 
     result: dict[str, list[TrendPoint]] = {}
@@ -286,7 +350,7 @@ def export_pdf(vital_type: str | None = None,
                current: User = Depends(get_current_user)):
     """导出体征 PDF（含趋势图 + 数据表 + 免责声明）。"""
     target = resolve_elder_id(db, current, elder_id)
-    cutoff = datetime.now() - timedelta(days=days)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
 
     query = db.query(Vitals).filter(
         Vitals.elder_id == target,
@@ -342,6 +406,8 @@ def parse_spoken_vitals_endpoint(payload: VitalsSpokenParseRequest,
 
 def _conv_access_check(db: Session, current: User, conv: VitalDraftConversation):
     """体征会话归属校验：老人只能操作自己的；家属需绑定该老人。"""
+    if conv.elder_id == current.id:
+        return
     if current.role == "elder":
         if conv.elder_id != current.id:
             raise HTTPException(status_code=403, detail="无权访问该体征会话")
@@ -357,22 +423,68 @@ def spoken_vital_turn(payload: VitalsSpokenTurnRequest,
     不写 vitals 表；只有 confirm 端点才复用现有 POST /api/vitals 落库。"""
     elder_id = resolve_elder_id(db, current, payload.elder_id)
 
+    expected_version = None
     if payload.session_id:
         conv = db.get(VitalDraftConversation, payload.session_id)
         if not conv or conv.elder_id != elder_id:
             raise HTTPException(status_code=404, detail="体征会话不存在或无权访问")
         if conv.status in ("confirmed", "cancelled"):
             raise HTTPException(status_code=400, detail="该体征会话已结束，请重新发起")
+        expected_version = conv.version
+        # 在脱离 ORM 跟踪的快照上合并，再通过版本条件写回，避免续轮覆盖并发确认/取消。
+        db.expunge(conv)
     else:
-        conv = VitalDraftConversation(elder_id=elder_id, status="collecting")
+        conv = VitalDraftConversation(elder_id=elder_id, status="collecting",
+                                     version=0, subject_confirmed=True)
         db.add(conv)
 
+    target_for_subject = db.query(User).filter(User.id == elder_id).first()
+    explicit_subject = any(label in payload.text for label in _SUBJECT_LABELS)
+    explicit_subject = explicit_subject or bool(
+        target_for_subject and target_for_subject.nickname
+        and target_for_subject.nickname in payload.text
+    )
+    if explicit_subject:
+        subject_label, subject_confirmed = _spoken_subject(db, current, elder_id, payload.text)
+        if subject_label:
+            conv.subject_label = subject_label
+            conv.subject_confirmed = subject_confirmed
+    elif not conv.subject_label and target_for_subject:
+        conv.subject_label = target_for_subject.nickname
+        conv.subject_confirmed = True
+    elif conv.subject_confirmed is False and re.fullmatch(
+            r"\s*(?:对|是|确认|确定|就记这个人|按这个对象|没错)[。！!，,\s]*", payload.text):
+        conv.subject_confirmed = True
+    iso_text = re.search(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?\b", payload.text)
+    if iso_text:
+        _parse_measured_at(iso_text.group(0))
     merge_turn(conv, payload.text, payload.hint_type)
     # measured_at 归一为 datetime（草稿解析器返回 ISO 字符串）
     if isinstance(conv.measured_at, str) and conv.measured_at:
-        conv.measured_at = _parse_measured_at(conv.measured_at) or None
+        conv.measured_at = _parse_measured_at(conv.measured_at)
+    if conv.status == "ready" and compute_missing(conv):
+        conv.missing = compute_missing(conv)
+        conv.last_question = "请补充缺失信息后再确认保存。"
+        conv.status = "collecting"
+    if expected_version is not None:
+        changes = {name: getattr(conv, name) for name in (
+            "type", "systolic", "diastolic", "value", "unit", "measurement_context",
+            "measured_text", "measured_at", "raw_text", "subject_label", "subject_confirmed",
+            "missing", "last_question", "status", "version",
+        )}
+        changed = db.execute(update(VitalDraftConversation)
+            .where(VitalDraftConversation.id == conv.id,
+                   VitalDraftConversation.version == expected_version,
+                   VitalDraftConversation.status.in_(("collecting", "ready")))
+            .values(**changes))
+        if changed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="草稿已被其他请求修改，请重新读取后再补充")
     db.commit()
-    db.refresh(conv)
+    if expected_version is not None:
+        conv = db.get(VitalDraftConversation, conv.id)
+    else:
+        db.refresh(conv)
 
     return VitalsSpokenTurnOut(
         session_id=conv.id,
@@ -382,23 +494,156 @@ def spoken_vital_turn(payload: VitalsSpokenTurnRequest,
         can_confirm=(conv.status == "ready"),
         draft=draft_payload(conv),
         disclaimer=HEALTH_DISCLAIMER,
+        elder_id=conv.elder_id,
+        subject_label=conv.subject_label,
+        subject_confirmed=conv.subject_confirmed,
+        version=conv.version,
+        confirmed_vital_id=conv.confirmed_vital_id,
     )
 
 
-@router.post("/draft-conversations/{conv_id}/confirm", response_model=VitalsOut)
-def confirm_vital_draft(conv_id: int,
-                        db: Session = Depends(get_db),
-                        current: User = Depends(get_current_user)):
-    """确认体征会话：信息齐全且范围合法后，复用现有 POST /api/vitals 落库，并标记 confirmed。
-    未确认（collecting）或字段缺失时拒绝写入。"""
+@router.get("/draft-conversations/{conv_id}", response_model=VitalsSpokenTurnOut)
+def get_vital_draft(conv_id: int,
+                    db: Session = Depends(get_db),
+                    current: User = Depends(get_current_user)):
+    """Read a draft without changing raw input, status or version."""
     conv = db.get(VitalDraftConversation, conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail="体征会话不存在")
     _conv_access_check(db, current, conv)
+    return VitalsSpokenTurnOut(
+        session_id=conv.id, status=conv.status,
+        missing=list(conv.missing or []), question=conv.last_question or "",
+        can_confirm=conv.status == "ready", draft=draft_payload(conv),
+        elder_id=conv.elder_id, subject_label=conv.subject_label,
+        subject_confirmed=conv.subject_confirmed, version=conv.version,
+        confirmed_vital_id=conv.confirmed_vital_id,
+    )
+
+
+@router.patch("/draft-conversations/{conv_id}", response_model=VitalsSpokenTurnOut)
+def edit_vital_draft(conv_id: int, payload: VitalsSpokenEditRequest,
+                     db: Session = Depends(get_db),
+                     current: User = Depends(get_current_user)):
+    """Apply explicit structured edits with optimistic version checking; never writes vitals."""
+    conv = db.get(VitalDraftConversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="体征会话不存在")
+    _conv_access_check(db, current, conv)
+    if conv.status in ("confirmed", "cancelled"):
+        raise HTTPException(status_code=409, detail="已结束的体征会话不能编辑")
+    if conv.version != payload.version:
+        raise HTTPException(status_code=409, detail="草稿已被其他请求修改，请重新读取后再编辑")
+
+    fields = payload.model_fields_set
+    values = {name: getattr(conv, name) for name in (
+        "type", "systolic", "diastolic", "value", "measurement_context",
+        "measured_at", "unit", "subject_label", "subject_confirmed", "raw_text",
+    )}
+    edits = {}
+    if "type" in fields:
+        new_type = payload.type
+        if new_type not in VALID_TYPES:
+            raise HTTPException(status_code=400, detail="体征类型无效")
+        if new_type != values["type"]:
+            values.update({"systolic": None, "diastolic": None, "value": None})
+            values["measurement_context"] = "unknown"
+        values["type"] = new_type
+        values["unit"] = {"bp": "mmHg", "bs": "mmol/L", "hr": "次/分", "weight": "kg"}[new_type]
+        edits.update(type=new_type, systolic=values["systolic"],
+                     diastolic=values["diastolic"], value=values["value"],
+                     measurement_context=values["measurement_context"], unit=values["unit"])
+    for name in ("systolic", "diastolic", "value", "measurement_context", "subject_label", "subject_confirmed"):
+        if name in fields:
+            value = getattr(payload, name)
+            if name == "subject_confirmed" and value is None:
+                raise HTTPException(status_code=400, detail="记录对象确认状态不能为空")
+            values[name] = value
+            edits[name] = value
+    if "measured_at" in fields:
+        if payload.measured_at and len(payload.measured_at.strip()) == 10:
+            raise HTTPException(status_code=400, detail="草稿测量时间需包含日期和时刻")
+        values["measured_at"] = (_parse_measured_at(payload.measured_at, payload.timezone or "Asia/Shanghai")
+                                 if payload.measured_at else None)
+        edits["measured_at"] = values["measured_at"]
+
+    if values["type"] == "bs":
+        if values["measurement_context"] not in BS_MEASUREMENT_CONTEXTS:
+            raise HTTPException(status_code=400, detail="血糖测量场景无效")
+    elif values["measurement_context"] not in (None, "unknown"):
+        raise HTTPException(status_code=400, detail="只有血糖记录可以填写测量场景")
+
+    candidate = SimpleNamespace(**values)
+    missing = compute_missing(candidate)
+    errors = _revalidate(candidate) if candidate.type else []
+    status = "collecting" if missing or errors else "ready"
+    from core.vitals_conversation import build_question
+    edits.update(missing=missing, last_question=build_question(candidate, missing, errors),
+                 status=status, version=conv.version + 1)
+    changed = db.execute(update(VitalDraftConversation)
+        .where(VitalDraftConversation.id == conv_id,
+               VitalDraftConversation.version == payload.version,
+               VitalDraftConversation.status.in_(("collecting", "ready")))
+        .values(**edits))
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="草稿版本冲突或会话已结束，请重新读取")
+    db.commit()
+    conv = db.get(VitalDraftConversation, conv_id)
+    return VitalsSpokenTurnOut(
+        session_id=conv.id, status=conv.status, missing=list(conv.missing or []),
+        question=conv.last_question or "", can_confirm=conv.status == "ready",
+        draft=draft_payload(conv), elder_id=conv.elder_id,
+        subject_label=conv.subject_label, subject_confirmed=conv.subject_confirmed,
+        version=conv.version, confirmed_vital_id=conv.confirmed_vital_id,
+    )
+
+
+@router.post("/draft-conversations/{conv_id}/confirm", response_model=VitalDraftConfirmOut)
+def confirm_vital_draft(conv_id: int,
+                        idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+                        db: Session = Depends(get_db),
+                        current: User = Depends(get_current_user)):
+    """Atomically commit a draft, its alert/outbox and replay record."""
+    conv = db.get(VitalDraftConversation, conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="体征会话不存在")
+    _conv_access_check(db, current, conv)
+    key = (idempotency_key or f"vital-draft-confirm:{conv_id}").strip()
+    if not key or len(key) > 120:
+        raise HTTPException(status_code=400, detail="Idempotency-Key 长度必须为 1 到 120 个字符")
+    request_hash = hashlib.sha256(f"confirm:{conv_id}".encode("utf-8")).hexdigest()
+    replay = db.query(IdempotencyRecord).filter(
+        IdempotencyRecord.user_id == current.id,
+        IdempotencyRecord.key == key).first()
+    if replay:
+        if replay.request_hash != request_hash:
+            raise HTTPException(status_code=409, detail="Idempotency-Key 已用于不同请求")
+        result = dict(replay.response_json)
+        result["notification_status"] = _notification_status(db, result["confirmed_vital_id"])
+        return result
     if conv.status == "confirmed":
-        raise HTTPException(status_code=400, detail="该体征会话已确认入库，不能重复确认")
+        vital = db.get(Vitals, conv.confirmed_vital_id) if conv.confirmed_vital_id else None
+        if vital is None:
+            vital = db.query(Vitals).filter(Vitals.draft_session_id == conv_id).first()
+        if vital is None:
+            raise HTTPException(status_code=409, detail="会话状态异常，未找到已确认体征记录")
+        result = VitalsOut.model_validate(vital).model_dump(mode="json")
+        result.update(session_id=conv.id, status="confirmed", confirmed_vital_id=vital.id,
+                      notification_status=_notification_status(db, vital.id))
+        db.add(IdempotencyRecord(user_id=current.id, key=key,
+                                 request_hash=request_hash, response_json=result))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            replay = db.query(IdempotencyRecord).filter_by(user_id=current.id, key=key).first()
+            if not replay or replay.request_hash != request_hash:
+                raise HTTPException(status_code=409, detail="Idempotency-Key 已用于不同请求")
+            return replay.response_json
+        return result
     if conv.status == "cancelled":
-        raise HTTPException(status_code=400, detail="该体征会话已取消，无法确认")
+        raise HTTPException(status_code=409, detail="该体征会话已取消，无法确认")
     if conv.status != "ready":
         raise HTTPException(status_code=400, detail="信息尚未齐全，无法确认")
 
@@ -408,24 +653,68 @@ def confirm_vital_draft(conv_id: int,
     errors = _revalidate(conv)
     if errors:
         raise HTTPException(status_code=400, detail=errors[0])
+    if not conv.subject_confirmed:
+        raise HTTPException(status_code=400, detail="请先确认体征记录对象")
+    if conv.measured_at is None:
+        raise HTTPException(status_code=400, detail="请明确测量时间，或编辑草稿选择按现在记录")
 
-    measured_at = conv.measured_at
-    if isinstance(measured_at, datetime):
-        measured_at = measured_at.strftime("%Y-%m-%d %H:%M:%S")
-    payload = VitalsCreate(
-        type=conv.type,
-        systolic=conv.systolic,
-        diastolic=conv.diastolic,
-        value=conv.value,
-        measurement_context=conv.measurement_context or "unknown",
-        measured_at=measured_at or None,
-        elder_id=conv.elder_id,
+    vital = Vitals(
+        elder_id=conv.elder_id, type=conv.type, systolic=conv.systolic,
+        diastolic=conv.diastolic, value=conv.value,
+        measurement_context=conv.measurement_context if conv.type == "bs" else None,
+        measured_at=conv.measured_at, draft_session_id=conv.id,
     )
-    # 复用现有 create_vital：范围校验、老人/家属归属、measured_at 解析、落库全部一致
-    out = create_vital(payload, db, current)
-    conv.status = "confirmed"
-    db.commit()
-    return out
+    db.add(vital)
+    try:
+        db.flush()
+        alert = _maybe_create_alert(db, vital)
+        changed = db.execute(update(VitalDraftConversation)
+            .where(VitalDraftConversation.id == conv.id,
+                   VitalDraftConversation.version == conv.version,
+                   VitalDraftConversation.status == "ready")
+            .values(status="confirmed", confirmed_vital_id=vital.id,
+                    version=conv.version + 1))
+        if changed.rowcount != 1:
+            db.rollback()
+            existing = db.query(Vitals).filter(Vitals.draft_session_id == conv_id).first()
+            if existing:
+                result = VitalsOut.model_validate(existing).model_dump(mode="json")
+                result.update(session_id=conv_id, status="confirmed",
+                              confirmed_vital_id=existing.id,
+                              notification_status=_notification_status(db, existing.id))
+                return result
+            raise HTTPException(status_code=409, detail="草稿已被确认或修改，请重新读取")
+        notification_status = "pending" if alert is not None else "no_alert"
+        result = VitalsOut.model_validate(vital).model_dump(mode="json")
+        result.update(session_id=conv.id, status="confirmed",
+                      confirmed_vital_id=vital.id,
+                      notification_status=notification_status)
+        db.add(IdempotencyRecord(user_id=current.id, key=key,
+                                 request_hash=request_hash, response_json=result))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(Vitals).filter(Vitals.draft_session_id == conv_id).first()
+        if not existing:
+            raise HTTPException(status_code=409, detail="确认发生并发冲突，请重新读取草稿")
+        result = VitalsOut.model_validate(existing).model_dump(mode="json")
+        result.update(session_id=conv_id, status="confirmed",
+                      confirmed_vital_id=existing.id,
+                      notification_status=_notification_status(db, existing.id))
+        return result
+
+    if alert is not None:
+        from services.notification_outbox import process_pending, status_for_alert
+        try:
+            process_pending(sessionmaker(bind=db.get_bind()), alert_id=alert.id)
+            result["notification_status"] = status_for_alert(db, alert.id)
+            replay = db.query(IdempotencyRecord).filter_by(user_id=current.id, key=key).first()
+            if replay:
+                replay.response_json = result
+                db.commit()
+        except Exception:
+            result["notification_status"] = "pending"
+    return result
 
 
 @router.delete("/draft-conversations/{conv_id}")
@@ -438,10 +727,22 @@ def cancel_vital_draft(conv_id: int,
         raise HTTPException(status_code=404, detail="体征会话不存在")
     _conv_access_check(db, current, conv)
     if conv.status == "confirmed":
-        raise HTTPException(status_code=400, detail="该会话已确认入库，不能取消")
-    conv.status = "cancelled"
+        raise HTTPException(status_code=409, detail="该会话已确认入库，不能取消")
+    if conv.status == "cancelled":
+        return {"ok": True, "status": "cancelled", "session_id": conv.id}
+    changed = db.execute(update(VitalDraftConversation)
+        .where(VitalDraftConversation.id == conv_id,
+               VitalDraftConversation.version == conv.version,
+               VitalDraftConversation.status.in_(("collecting", "ready")))
+        .values(status="cancelled", version=conv.version + 1))
+    if changed.rowcount != 1:
+        db.rollback()
+        latest = db.get(VitalDraftConversation, conv_id)
+        if latest and latest.status == "cancelled":
+            return {"ok": True, "status": "cancelled", "session_id": conv_id}
+        raise HTTPException(status_code=409, detail="会话状态已变化，请重新读取")
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "status": "cancelled", "session_id": conv_id}
 
 
 # 各体征类型对应的固定单位

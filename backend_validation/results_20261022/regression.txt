@@ -1,0 +1,126 @@
+test_afternoon_and_minutes_not_taken_from_vital_value (tests.test_backend_contracts_20261022.BackendContracts.test_afternoon_and_minutes_not_taken_from_vital_value) ... ok
+test_cancel_and_confirm_race (tests.test_backend_contracts_20261022.BackendContracts.test_cancel_and_confirm_race) ... ok
+test_confirm_replay_same_id_and_one_notification (tests.test_backend_contracts_20261022.BackendContracts.test_confirm_replay_same_id_and_one_notification) ... ok
+test_confirmed_retry_with_concurrent_new_key (tests.test_backend_contracts_20261022.BackendContracts.test_confirmed_retry_with_concurrent_new_key) ... ok
+test_document_and_chunk_metadata_version (tests.test_backend_contracts_20261022.BackendContracts.test_document_and_chunk_metadata_version) ... ok
+test_edit_version_time_and_type_cleanup (tests.test_backend_contracts_20261022.BackendContracts.test_edit_version_time_and_type_cleanup) ... ok
+test_elder_view_keeps_complete_conditional_seek (tests.test_backend_contracts_20261022.BackendContracts.test_elder_view_keeps_complete_conditional_seek) ... ok
+test_emergency_worker_reads_user_in_its_own_session (tests.test_backend_contracts_20261022.BackendContracts.test_emergency_worker_reads_user_in_its_own_session) ... ok
+test_family_personal_draft_can_be_read_and_confirmed (tests.test_backend_contracts_20261022.BackendContracts.test_family_personal_draft_can_be_read_and_confirmed) ... ok
+test_injected_failure_rolls_back_all_writes (tests.test_backend_contracts_20261022.BackendContracts.test_injected_failure_rolls_back_all_writes) ... ok
+test_injected_push_failure_preserves_vital_and_retries (tests.test_backend_contracts_20261022.BackendContracts.test_injected_push_failure_preserves_vital_and_retries) ... 通知 outbox 发送失败 id=1
+Traceback (most recent call last):
+  File "D:\AICcode\silver_agent_backend\services\notification_outbox.py", line 67, in process_pending
+    push.send_push(row.receiver_id, row.title, row.content)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+RuntimeError: injected provider outage
+ok
+test_message_read_rechecks_privacy (tests.test_backend_contracts_20261022.BackendContracts.test_message_read_rechecks_privacy) ... ok
+test_no_unit_reversed_ranges_and_two_column_not_normal (tests.test_backend_contracts_20261022.BackendContracts.test_no_unit_reversed_ranges_and_two_column_not_normal) ... ok
+test_null_confirmation_rejected_without_server_error (tests.test_backend_contracts_20261022.BackendContracts.test_null_confirmation_rejected_without_server_error) ... ok
+test_object_requires_explicit_confirmation (tests.test_backend_contracts_20261022.BackendContracts.test_object_requires_explicit_confirmation) ... ok
+test_old_schema_migration_keeps_existing_records (tests.test_backend_contracts_20261022.BackendContracts.test_old_schema_migration_keeps_existing_records) ... ok
+test_outbox_recovers_expired_claim_after_restart (tests.test_backend_contracts_20261022.BackendContracts.test_outbox_recovers_expired_claim_after_restart) ... ok
+test_outbox_two_workers_claim_once (tests.test_backend_contracts_20261022.BackendContracts.test_outbox_two_workers_claim_once) ... ok
+test_report_blood_pressure_pair_not_replaced_by_diastolic (tests.test_backend_contracts_20261022.BackendContracts.test_report_blood_pressure_pair_not_replaced_by_diastolic) ... ok
+test_retrieval_focus_filters_wrong_subtopic (tests.test_backend_contracts_20261022.BackendContracts.test_retrieval_focus_filters_wrong_subtopic) ... ok
+test_retry_checks_current_sharing_and_binding (tests.test_backend_contracts_20261022.BackendContracts.test_retry_checks_current_sharing_and_binding) ... ok
+test_single_bp_correction_overwrites_previous (tests.test_backend_contracts_20261022.BackendContracts.test_single_bp_correction_overwrites_previous) ... ok
+test_summary_rechecks_sharing_after_generation (tests.test_backend_contracts_20261022.BackendContracts.test_summary_rechecks_sharing_after_generation) ... ok
+test_tiered_legacy_aliases_and_emergency_preserved (tests.test_backend_contracts_20261022.BackendContracts.test_tiered_legacy_aliases_and_emergency_preserved) ... ok
+test_time_only_followup_and_raw_text (tests.test_backend_contracts_20261022.BackendContracts.test_time_only_followup_and_raw_text) ... ok
+test_trend_groups_utc_records_by_shanghai_calendar_day (tests.test_backend_contracts_20261022.BackendContracts.test_trend_groups_utc_records_by_shanghai_calendar_day) ... ok
+test_two_concurrent_confirms_one_record (tests.test_backend_contracts_20261022.BackendContracts.test_two_concurrent_confirms_one_record) ... ok
+test_type_switch_and_time_not_used_as_value (tests.test_backend_contracts_20261022.BackendContracts.test_type_switch_and_time_not_used_as_value) ... ok
+test_actual_pdf_export (backend_validation.test_regressions.BackendRegressions.test_actual_pdf_export) ... ok
+test_bound_family_messages_are_shared_and_persisted (backend_validation.test_regressions.BackendRegressions.test_bound_family_messages_are_shared_and_persisted) ... ok
+test_chat_privacy_owner_and_family (backend_validation.test_regressions.BackendRegressions.test_chat_privacy_owner_and_family) ... ok
+test_checkin_schedule_and_ownership (backend_validation.test_regressions.BackendRegressions.test_checkin_schedule_and_ownership) ... ok
+test_family_ownership_and_bound_access (backend_validation.test_regressions.BackendRegressions.test_family_ownership_and_bound_access) ... ok
+test_family_personal_audio (backend_validation.test_regressions.BackendRegressions.test_family_personal_audio) ... ok
+test_future_plan_skipped_and_beijing_scheduler (backend_validation.test_regressions.BackendRegressions.test_future_plan_skipped_and_beijing_scheduler) ... ok
+test_invalid_base64_is_input_error (backend_validation.test_regressions.BackendRegressions.test_invalid_base64_is_input_error) ... ok
+test_invalid_upload_and_server_failure (backend_validation.test_regressions.BackendRegressions.test_invalid_upload_and_server_failure) ... ok
+test_mobile_upload_history_sync_metrics (backend_validation.test_regressions.BackendRegressions.test_mobile_upload_history_sync_metrics) ... ok
+test_ocr_error_status_all_routes (backend_validation.test_regressions.BackendRegressions.test_ocr_error_status_all_routes) ... OCR 服务不可用
+Traceback (most recent call last):
+  File "D:\AICcode\silver_agent_backend\api\drugs.py", line 78, in query_drug
+    ocr_text = recognize_image(payload.image_base64)
+  File "D:\python\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+core.ocr.OcrUnavailableError: broken
+ok
+test_password_login_returns_user_id (backend_validation.test_regressions.BackendRegressions.test_password_login_returns_user_id) ... ok
+test_pdf_empty_invalid_and_missing_dependency (backend_validation.test_regressions.BackendRegressions.test_pdf_empty_invalid_and_missing_dependency) ... ok
+test_photo_vitals_route_removed (backend_validation.test_regressions.BackendRegressions.test_photo_vitals_route_removed) ... ok
+test_privacy_enabled_shares_only_bound_account (backend_validation.test_regressions.BackendRegressions.test_privacy_enabled_shares_only_bound_account) ... ok
+test_privacy_keeps_records_created_before_enabled_time (backend_validation.test_regressions.BackendRegressions.test_privacy_keeps_records_created_before_enabled_time) ... D:\AICcode\silver_agent_backend\backend_validation\test_regressions.py:296: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  cutoff = datetime.utcnow()
+ok
+test_reference_separators (backend_validation.test_regressions.BackendRegressions.test_reference_separators) ... ok
+test_startup_survives_ocr_failure (backend_validation.test_regressions.BackendRegressions.test_startup_survives_ocr_failure) ... OCR 启动自检失败
+Traceback (most recent call last):
+  File "D:\AICcode\silver_agent_backend\main.py", line 41, in lifespan
+    verify_ocr_ready()
+    ~~~~~~~~~~~~~~~~^^
+  File "D:\python\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+core.ocr.OcrUnavailableError: test failure
+ok
+test_units_and_implausible_vitals (backend_validation.test_regressions.BackendRegressions.test_units_and_implausible_vitals) ... ok
+test_unparsed_and_conflicting_advice (backend_validation.test_regressions.BackendRegressions.test_unparsed_and_conflicting_advice) ... ok
+test_vitals_ocr_fallback_extracts_blood_pressure (backend_validation.test_regressions.BackendRegressions.test_vitals_ocr_fallback_extracts_blood_pressure) ... ok
+test_backward_compat_reference_separators (test_report_parse_enhanced.ReportParseEnhancedTests.test_backward_compat_reference_separators) ... ok
+test_backward_compat_unparsed (test_report_parse_enhanced.ReportParseEnhancedTests.test_backward_compat_unparsed) ... ok
+test_evidence_fields (test_report_parse_enhanced.ReportParseEnhancedTests.test_evidence_fields) ... ok
+test_folded_line_merged (test_report_parse_enhanced.ReportParseEnhancedTests.test_folded_line_merged) ... ok
+test_header_row_skipped (test_report_parse_enhanced.ReportParseEnhancedTests.test_header_row_skipped) ... ok
+test_multiple_metrics_and_units (test_report_parse_enhanced.ReportParseEnhancedTests.test_multiple_metrics_and_units) ... ok
+test_second_pass_implausible_glucose (test_report_parse_enhanced.ReportParseEnhancedTests.test_second_pass_implausible_glucose) ... ok
+test_unit_mmhg (test_report_parse_enhanced.ReportParseEnhancedTests.test_unit_mmhg) ... ok
+test_unit_parsed_blood_glucose (test_report_parse_enhanced.ReportParseEnhancedTests.test_unit_parsed_blood_glucose) ... ok
+test_unit_u_l (test_report_parse_enhanced.ReportParseEnhancedTests.test_unit_u_l) ... ok
+test_consult_summary_failure_and_historical_retry (tests.test_family_message_media.FamilyMediaTests.test_consult_summary_failure_and_historical_retry) ... Consultation summary failed: 1
+Traceback (most recent call last):
+  File "D:\AICcode\silver_agent_backend\core\consult_summary.py", line 36, in generate_summary
+    record.transcript = transcribe_audio(audio, AUDIO_TYPES.get(audio.suffix, 'audio/mp4'))
+                        ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "D:\python\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+RuntimeError: offline
+ok
+test_consult_summary_is_generated_persisted_and_bound (tests.test_family_message_media.FamilyMediaTests.test_consult_summary_is_generated_persisted_and_bound) ... ok
+test_recording_survives_sync_and_retry_and_is_private (tests.test_family_message_media.FamilyMediaTests.test_recording_survives_sync_and_retry_and_is_private) ... ok
+test_transcript_is_cached_and_image_is_persisted (tests.test_family_message_media.FamilyMediaTests.test_transcript_is_cached_and_image_is_persisted) ... ok
+test_uploaded_records_can_only_be_deleted_by_owner (tests.test_family_message_media.FamilyMediaTests.test_uploaded_records_can_only_be_deleted_by_owner) ... ok
+
+----------------------------------------------------------------------
+Ran 64 tests in 8.934s
+
+OK
