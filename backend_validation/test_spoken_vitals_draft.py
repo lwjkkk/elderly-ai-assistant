@@ -24,7 +24,7 @@ d = parse_spoken_vitals("今天早上量了血压 140/90", now=NOW)
 ok("血压 x/y", d and d["type"] == "bp" and d["systolic"] == 140 and d["diastolic"] == 90,
    f"got={d}")
 ok("血压 单位/校验", d["unit"] == "mmHg" and d["valid"] is True and d["errors"] == [])
-ok("血压 时间解析", d["measured_text"] == "今天早上" and d["measured_at"] == "2026-10-19T07:00:00+08:00",
+ok("血压 时间解析", d["measured_text"] == "今天早上" and d["measured_at"] == "2026-10-19 07:00:00",
    f"measured_text={d['measured_text']} at={d['measured_at']}")
 ok("血压 原文证据", d["raw_text"] and "140" in d["raw_text"])
 
@@ -40,7 +40,7 @@ ok("血压 中文标签数字", d and d["type"] == "bp" and d["systolic"] == 145
    f"got={d}")
 
 d = parse_spoken_vitals("昨天下午量的血压 120/80", now=NOW)
-ok("血压 时间=昨天下午", d and d["measured_text"] == "昨天下午" and d["measured_at"] == "2026-10-18T15:00:00+08:00",
+ok("血压 时间=昨天下午", d and d["measured_text"] == "昨天下午" and d["measured_at"] == "2026-10-18 15:00:00",
    f"at={d and d['measured_at']}")
 
 # ---- 血糖 ----

@@ -14,7 +14,7 @@ RAG chunk 级回归评测（固定问题集）。
 
 阈值写死为 core.rag_hybrid 里的默认值；调阈值请改 core/rag_hybrid.py 后重跑。
 """
-import os, sys, json, tempfile
+import os, sys, json
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
@@ -62,8 +62,7 @@ CASES = [
 
 def main():
     emb = ri.build_embedder()
-    temporary_index = tempfile.TemporaryDirectory(prefix="silver-rag-eval-")
-    db = os.path.join(temporary_index.name, "vectors.db")
+    db = ri.get_default_db_path()
     rh.ensure_index(db, emb)
 
     stats = {"relevant": 0, "total": 0, "error": 0, "miss": 0, "fp": 0, "empty_ok": 0, "n": 0}
@@ -102,7 +101,6 @@ def main():
     ok = (stats["error_ratio"] <= 0.05 and stats["miss"] == 0 and stats["fp"] <= 1
           and stats["relevant_ratio"] >= 0.80)
     print("\n验收:", "PASS" if ok else "FAIL")
-    temporary_index.cleanup()
     sys.exit(0 if ok else 1)
 
 
