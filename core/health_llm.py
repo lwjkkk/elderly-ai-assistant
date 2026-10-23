@@ -51,6 +51,8 @@ def symptom_advice(input_text: str) -> tuple[str, str]:
     urgent=query_policy.decision(input_text)
     if urgent and urgent.get('emergency_types'):
         return urgent['answer'], RISK_RED
+    if urgent and not urgent.get('allow_reviewed_evidence'):
+        return urgent['answer'], RISK_YELLOW
     raw = call_qwen(SYMPTOM_SYSTEM_PROMPT, f"老人描述的症状：{input_text}")
     if query_policy.unsafe_medication_instruction(raw):
         return '这涉及个人治疗或用药，系统无法安全给出具体方案，请联系医生核实；如有紧急不适请拨打120。', RISK_YELLOW

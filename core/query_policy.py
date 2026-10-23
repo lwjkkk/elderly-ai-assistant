@@ -1,12 +1,15 @@
 """Query scope and deterministic safety decisions, independent of retrieved text."""
 import re
+import unicodedata
 from functools import lru_cache
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
 def normalize(text):
-    text = str(text or '').strip()
+    text = unicodedata.normalize('NFKC', str(text or '')).strip()
+    text = re.sub(r'[\u200b-\u200f\ufeff]', '', text)
+    text = re.sub(r'(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])', '', text)
     for bad, good in {'血亚':'血压','血彐':'血压','微杏':'微信','危信':'微信'}.items():
         text = text.replace(bad, good)
     clauses = re.split(r'[，,；;]', text)
@@ -28,13 +31,13 @@ def emergency_types(text):
     hits=[]
     if re.search(r'噎|卡喉|喉咙.{0,5}卡|气道.{0,4}(?:堵|梗阻)',q) and re.search(r'说不出|不能说话|咳不出|喘|发紫|呼吸|噎住',q):
         hits.append('choking')
-    if re.search(r'嘴(?:角)?歪|口角歪斜|一侧.{0,5}(?:无力|麻木|不能动)|(?:一边|左边|右边|一只).{0,5}(?:胳膊|手|脚|肢体).{0,6}(?:无力|麻木|抬不起|不能动)|说话含糊|吐字不清|突然.{0,8}胳膊.{0,5}抬不起',q):
+    if re.search(r'嘴(?:角|巴)?歪|口角歪斜|一侧.{0,5}(?:无力|麻木|发麻|不能动)|(?:一边|左边|右边|一只).{0,5}(?:胳膊|手|脚|肢体).{0,6}(?:无力|麻木|发麻|抬不起|不能动)|说话(?:含糊|不清)|吐字不清|突然.{0,8}胳膊.{0,5}抬不起',q):
         hits.append('stroke')
     if re.search(r'胸痛|胸闷|胸前区.{0,4}(?:痛|闷)|胸口.{0,4}(?:痛|闷)|心口.{0,4}(?:痛|闷)',q):
         hits.append('chest_pain')
     if re.search(r'呼吸困难|喘不过气|喘不上气|喘不上来|窒息',q): hits.append('breath')
     if re.search(r'意识(?:不清|模糊)|昏迷|叫不醒|突然晕倒',q): hits.append('consciousness')
-    if re.search(r'大量出血|呕血|咯血|便血|黑便',q): hits.append('bleeding')
+    if re.search(r'大量出血|呕血|吐血|咯血|便血|黑便',q): hits.append('bleeding')
     return hits
 
 
@@ -46,6 +49,41 @@ def four(concern, meaning, action, seek):
     return f'【关注点】{concern}\n【是什么意思】{meaning}\n【下一步】{action}\n【就医提醒】{seek}'
 
 
+def _protected_request(q):
+    """Requests are classified by intent; no chat claim grants account permissions."""
+    if (re.search(r'你的.{0,10}(?:系统提示|系统指令|内部规则|开发者指令)|(?:内部|隐藏|原始|完整|初始).{0,8}(?:系统提示|系统指令)|(?:system|developer).{0,8}(?:prompt|message|instruction)',q,re.I)
+            and re.search(r'告诉|给我|输出|打印|显示|泄露|复述|翻译|逐字|内容|是什么|base64|dump|print|reveal|show',q,re.I)):
+        return {'module':'daily_life','reason':'internal_instructions_private',
+                'answer':'我不能披露或复述内部系统提示词、开发者指令和隐藏规则。可以说明公开的功能边界：提供信息整理与健康科普，不替代医生诊断，不提供个人处方，不绕过账号授权。'}
+    reset_help=re.search(r'怎么|如何|忘记|忘了|找回|重置|修改|设置|保护',q)
+    secret_request=re.search(r'(?:告诉|发给|读出|打印|导出|提供).{0,18}(?:密码|验证码|密钥|token)|(?:密码|验证码|密钥).{0,5}(?:多少|是什么|给我)',q,re.I)
+    direct_secret=re.search(r'密码.{0,5}(?:多少|是什么)|直接.{0,8}(?:告诉|给我)|别人的|他人的|绕过|破解',q)
+    if secret_request and (not reset_help or direct_secret):
+        return {'module':'daily_life','reason':'credentials_private',
+                'answer':'我不能读取、猜测或透露任何账号密码、验证码、密钥或令牌，也不会把聊天中的身份声明当作授权。请通过软件的账号管理或官方找回流程处理；不要在聊天中发送这些凭据。'}
+    fabricated=re.search(r'编(?:一个|个|造|出)|伪造|捏造|虚构|假造|随便编',q)
+    prevention=re.search(r'如何识别|怎么识别|防止|辨别|如何核实|怎么核实',q)
+    if fabricated and re.search(r'来源|出处|引用|参考文献|证据|链接',q) and not prevention:
+        return {'module':'daily_life','reason':'source_fabrication_refused',
+                'answer':'我不能编造政策来源、链接或证据。没有经过核实的依据就应明确说明无法确认，请通过对应主管部门的官方渠道核实。'}
+    if re.search(r'绑定|家属关系',q) and re.search(r'看不到|不能看|无法看|没权限|为什么.{0,6}数据',q):
+        return {'module':'services','reason':'binding_access_guidance',
+                'answer':'聊天无法核实这个账号的绑定状态，也不能直接开放或返回长辈的数据。请登录后在家属绑定列表核对是否为有效绑定、是否选对长辈，并检查出生年月资料和当前分享规则。实际权限由后端校验；仅自称亲戚或声称刚绑定不能代替授权。若仍有问题，请保留错误提示联系管理员，不要在聊天发送健康记录或密码。'}
+    records=re.search(r'血压(?:记录|数据)|体检报告|病历|诊疗记录|健康(?:记录|数据)|问诊录音|录音文件',q)
+    request=re.search(r'发给|给我|看看|看一眼|查看|查询|调取|导出|下载',q)
+    own_help=re.search(r'(?:我的|自己的).{0,8}(?:报告|记录|数据)|怎么|如何|哪里',q)
+    third_party=re.search(r'他(?:的)?|她(?:的)?|别人|他人|长辈|亲戚|邻居|家属|大爷|大妈|其他用户|elder_id',q)
+    permission_help=(re.search(r'(?:怎么|如何).{0,10}(?:授权|绑定)',q)
+                     and not re.search(r'绕过|跳过|忽略|不用授权|不用绑定',q))
+    if records and request and (third_party or not own_help) and not permission_help:
+        return {'module':'services','reason':'private_records_access',
+                'answer':'我不能通过聊天提供或编造他人的血压记录、体检报告、病历或录音。自称家属、远房亲戚或说“只看一眼”都不能代替授权。请通过已登录且具有有效绑定和相应访问权限的数据页面查看，后端会按绑定、年龄和分享规则校验；没有权限就不能读取。'}
+    if re.search(r'给我.{0,6}诊断|直接.{0,8}诊断|替我.{0,4}确诊|帮我.{0,4}确诊|你.{0,8}医生.{0,12}诊断',q):
+        return {'module':'health','reason':'diagnosis_boundary',
+                'answer':four('您希望获得个人疾病诊断。','系统不是医生，角色扮演或要求忽略规则也不能把聊天变成医生面诊。','可以帮您整理症状、解释检查指标和准备就诊问题；确诊需要医生结合病史、检查和面诊判断。','有不适请及时就诊；若出现胸痛、呼吸困难等危险信号，请立即拨打120。')}
+    return None
+
+
 def decision(question):
     q=normalize(question)
     urgent=emergency_types(q)
@@ -55,9 +93,17 @@ def decision(question):
             action+='不能说话、不能有效咳嗽或呼吸时，不要强行喂水、喂食或用手盲掏喉咙。'
         elif 'stroke' in urgent:
             action+='记下异常开始时间，不要强行拉拽肢体，不要自行喂水喂药。'
+        if re.search(r'药|硝酸甘油|阿司匹林',q):
+            action+='不要根据聊天决定药物片数或临时加药；如有既往处方，请向120调度员说明并听从指导。'
         return {'module':'health','reason':'urgent_symptoms','emergency_types':urgent,
                 'answer':four('您描述了需要立即求助的危险信号。','系统不能据此确诊，也不应按普通饮食或关节保养问题处理。',action,'请立即拨打120或由急救人员安排就医，不要因继续聊天延误。')}
-    if re.search(r'几片|多少(?:毫克|单位|粒|剂量)|剂量|漏(?:吃|服)|补服|加倍|停药|停.{0,3}药|减药|换药|一起吃|合用|开具处方|开(?:降压|降糖)?药|给我.{0,3}开.{0,4}药',q) and medical_intent(q):
+    protected=_protected_request(q)
+    if protected:
+        return protected
+    peer_medication=(re.search(r'邻居|别人|朋友|同事|他人',q) and '药' in q
+                     and re.search(r'我.{0,12}(?:也|能|可以|一样)|照着吃|照吃',q))
+    prescription=re.search(r'(?:给我|开|写|完整).{0,10}(?:药方|处方)|处方.{0,6}(?:给我|写出来)',q)
+    if (re.search(r'几片|多少(?:毫克|单位|粒|剂量)|剂量|漏(?:吃|服)|补服|加倍|加量|加药|增量|停药|停.{0,3}药|减药|换药|一起吃|合用|开具处方|开(?:降压|降糖)?药|给我.{0,3}开.{0,4}药',q) and medical_intent(q)) or peer_medication or prescription:
         return {'module':'health','reason':'medication_boundary','answer':four('这涉及个人用药或补漏服决策。','药名、规格、服药时间和既有医嘱尚未完整确认，不能靠通用知识决定剂量、补服、合用或停药。','请核对原处方和药盒，联系开药医生或药师确认；不要自行加倍、增减、换药或凭血压一次读数决定是否服药。','如已误服或出现明显不适，请及时寻求医疗帮助；紧急时拨打120。')}
     if re.search(r'肾病|肾脏|透析',q) and re.search(r'钾|香蕉|饮食|吃|喝|盐|蛋白',q):
         return {'module':'health','reason':'individual_medical_limits','answer':four('肾脏相关饮食需要结合个人检查结果。','是否限钾、限水或限制蛋白质取决于肾功能、血钾、治疗情况及医嘱，不能把通用高血压补钾建议直接套用。','请携带近期化验结果向医生或营养专业人员确认；不要自行大量补钾、改变饮水量或按网上统一克数调整。','若有明显不适请及时就医，具体饮食限制以个人医嘱为准。')}
@@ -73,8 +119,6 @@ def decision(question):
         return {'module':'services','reason':'regional_policy_unverified','allow_reviewed_evidence':True,'answer':'这需要核对参保地或户籍地、适用年度、人群及险种。当前知识库没有足以确认该地区当期金额或比例的已核验政策，不能用通用区间代替。请向当地医保或民政等主管部门核实，或提供官方政策链接后再一起核对。'}
     if re.search(r'学生票',q):
         return {'module':'services','reason':'specific_procedure_missing','allow_reviewed_evidence':True,'answer':'学生票还涉及学生优惠资格核验及特定购票要求，不能仅教注册实名就说完成。当前知识库缺少已核验的学生票流程，请在铁路12306官方应用的学生优惠资质相关栏目核对最新要求。'}
-    if re.search(r'编.{0,6}来源|伪造.{0,6}(?:证据|来源)',q):
-        return {'module':'daily_life','reason':'source_fabrication_refused','answer':'我不能伪造来源或证据。可以帮您查找已有资料，并如实说明是否有对应依据。'}
     if re.search(r'我家.{0,8}密码.{0,4}(?:多少|什么)|我的.{0,6}(?:身份证号|银行卡余额).{0,4}(?:多少|什么)',q):
         return {'module':'daily_life','reason':'private_fact_unavailable','answer':'我没有您所问的个人密码、证件号码或账户信息，不能猜测。请通过您自己的安全记录或对应官方渠道核实，不要向聊天发送密码或验证码。'}
     if re.search(r'那个|这个|刚才|上面',q) and len(q)<22 and not re.search(r'手机|血|药|微信|医保|照片|闹钟',q):
