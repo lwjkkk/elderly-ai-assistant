@@ -35,6 +35,8 @@ def init_db():
     # 必须先 import models，否则 Base 不知道表的存在
     from db import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    for table in ("health_reports", "report_jobs"):
+        _add_column_if_missing(table, "ocr_details", f"ALTER TABLE {table} ADD COLUMN ocr_details JSON")
     # 对已存在的旧库补建新增列（SQLite 用 ALTER TABLE，幂等：已存在则跳过）
     # 注意：补列必须在建索引之前，否则索引引用不存在的列会报错
     _add_column_if_missing(

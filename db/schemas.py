@@ -435,6 +435,7 @@ class HealthReportOut(BaseModel):
     elder_id: int
     image_url: str | None = None
     ocr_text: str | None = None
+    ocr_details: dict | None = None
     advice_text: str | None = None
     # 上传、历史与同步共用该字段。歧义项保留原文并标为 unparsed。
     metrics: list[dict] = Field(

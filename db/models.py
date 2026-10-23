@@ -132,6 +132,7 @@ class HealthReport(Base):
     elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     image_url = Column(String(500), nullable=True)     # 体检单图片保存路径
     ocr_text = Column(String, nullable=True)           # OCR 识别出的指标文字
+    ocr_details = Column(JSON, nullable=True)          # 坐标、置信度及持久化指标
     advice_text = Column(String, nullable=True)        # AI 大白话建议
     created_at = Column(DateTime, server_default=func.now())
 
@@ -148,6 +149,7 @@ class ReportJob(Base):
     ocr_text = Column(String, nullable=True)
     metrics = Column(JSON, nullable=True)
     timings = Column(JSON, nullable=True)
+    ocr_details = Column(JSON, nullable=True)
     report_id = Column(Integer, ForeignKey("health_reports.id"), nullable=True)
     error = Column(String(500), nullable=True)
     created_at = Column(DateTime, server_default=func.now())

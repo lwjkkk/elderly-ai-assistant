@@ -15,9 +15,9 @@ from db.database import get_db
 from db.models import User, HealthReport, ReportJob
 from db.schemas import HealthReportOut
 from core.security import get_current_user
-from core.ocr import recognize_image, OcrUnavailableError, OcrNoTextError
+from core.ocr import OcrUnavailableError
 from core.health_llm import report_advice
-from core.report_parse import parse_metrics
+from core.report_ocr import recognize_report, report_metrics
 from api.meds import resolve_elder_id
 
 router = APIRouter(prefix="/api/reports", tags=["体检报告"])
@@ -65,14 +65,14 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
     # 放到线程池执行，避免耗时的 OCR/LLM 调用阻塞事件循环
     image_b64 = base64.b64encode(content).decode("ascii")
     try:
-        ocr_text = await asyncio.to_thread(recognize_image, image_b64)
+        ocr_text, ocr_details = await asyncio.to_thread(recognize_report, image_b64)
     except OcrUnavailableError as e:
         raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # 先用代码精确判定每项 正常/偏高/偏低，再让 LLM 据此用大白话表达，避免数值误判
     ocr_seconds = time.perf_counter() - started
-    metrics = parse_metrics(ocr_text)
+    metrics = ocr_details["metrics"]
     explain_started = time.perf_counter()
     advice = await asyncio.to_thread(report_advice, ocr_text, metrics)
 
@@ -87,6 +87,7 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
         elder_id=target,
         image_url=image_url,
         ocr_text=ocr_text,
+        ocr_details=ocr_details,
         advice_text=advice,
     )
     try:
@@ -155,9 +156,10 @@ def get_report_job(job_id: str, db: Session = Depends(get_db), current: User = D
         if report is None:
             raise HTTPException(status_code=410, detail="对应报告已删除。")
         result = HealthReportOut.model_validate(report).model_dump(mode="json")
-        result["metrics"] = job.metrics or []
+        result["metrics"] = report_metrics(report)
     return {"job_id": job.id, "status": job.status, "poll_after_ms": 1500,
             "ocr_text": job.ocr_text, "metrics": job.metrics or [],
+            "ocr_details": job.ocr_details,
             "timings": job.timings or {}, "error": job.error, "report": result}
 
 
@@ -176,7 +178,7 @@ def list_reports(elder_id: int | None = None,
     result = []
     for rec in records:
         out = HealthReportOut.model_validate(rec).model_dump()
-        out["metrics"] = parse_metrics(rec.ocr_text or "")
+        out["metrics"] = report_metrics(rec)
         result.append(out)
     return result
 

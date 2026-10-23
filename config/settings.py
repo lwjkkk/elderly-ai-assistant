@@ -32,7 +32,8 @@ OCR_LANG = "ch"
 OCR_USE_GPU = False
 # OCR 模型目录：必须是纯英文绝对路径。默认位于后端项目目录下，避免写入受限的 D 盘根目录。
 # Paddle 推理引擎无法打开中文用户名路径（如 C:/Users/张三/.paddleocr/...）下的模型文件，
-# 统一放到 D 盘后端目录的纯英文子目录，由 ocr.py 显式传给 det/rec/cls 三个模型子目录。
+# 此目录保留兼容；v3 自定义权重使用 OCR_DET_MODEL_DIR / OCR_REC_MODEL_DIR。
+# 默认固定 PP-OCRv6_medium_det/rec（可由 OCR_DET_MODEL / OCR_REC_MODEL 覆盖），使用 PaddleX 缓存。
 _DEFAULT_OCR_MODEL_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "ocr_models")
 )

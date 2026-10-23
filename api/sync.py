@@ -18,7 +18,7 @@ from db.schemas import (
 )
 from core.security import get_current_user
 from api.meds import resolve_elder_id
-from core.report_parse import parse_metrics
+from core.report_ocr import report_metrics
 from core import age as age_mod
 
 router = APIRouter(prefix="/api", tags=["同步"])
@@ -121,7 +121,7 @@ def sync(since: str | None = None,
         "vitals": [VitalsOut.model_validate(v).model_dump() for v in vitals],
         "reports": [
             {**HealthReportOut.model_validate(r).model_dump(),
-             "metrics": parse_metrics(r.ocr_text or "")}
+             "metrics": report_metrics(r)}
             for r in reports
         ],
         "symptoms": [SymptomOut.model_validate(s).model_dump() for s in symptoms],
