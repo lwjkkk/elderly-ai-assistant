@@ -7,8 +7,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from db.models import HealthReport, ReportJob
-from core.ocr import recognize_image
-from core.report_parse import parse_metrics
+from core.report_ocr import recognize_report
+from core.ocr import OcrNoTextError, OcrUnavailableError
 from core.health_llm import report_advice
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,13 @@ def _run(factory, job_id):
             with open(image_path, "rb") as stream:
                 encoded = base64.b64encode(stream.read()).decode("ascii")
             t = time.perf_counter()
-            text = recognize_image(encoded)
+            text, details = recognize_report(encoded)
             timings["ocr_seconds"] = round(time.perf_counter() - t, 3)
             t = time.perf_counter()
-            metrics = parse_metrics(text)
+            metrics = details["metrics"]
             timings["parse_seconds"] = round(time.perf_counter() - t, 3)
             job.ocr_text, job.metrics = text, metrics
+            job.ocr_details = details
             job.timings = dict(timings)
             job.status = "explaining"
             db.commit()  # 指标可先供客户端读取，无需等模型完成。
@@ -74,7 +75,7 @@ def _run(factory, job_id):
             timings["explain_seconds"] = round(time.perf_counter() - t, 3)
             report = HealthReport(elder_id=job.elder_id,
                                   image_url="/api/reports/image/" + os.path.basename(image_path),
-                                  ocr_text=text, advice_text=advice)
+                                  ocr_text=text, advice_text=advice, ocr_details=details)
             db.add(report)
             db.flush()
             job.report_id, job.status = report.id, "completed"
@@ -82,7 +83,7 @@ def _run(factory, job_id):
             job.timings = dict(timings)
             db.commit()  # 报告与任务成功状态原子写入。
             logger.info("report_job_timing job=%s timings=%s", job_id, timings)
-    except Exception:
+    except Exception as exc:
         logger.exception("Report job failed: %s", job_id)
         if image_path and os.path.isfile(image_path):
             try:
@@ -93,7 +94,12 @@ def _run(factory, job_id):
             job = db.get(ReportJob, job_id)
             if job is not None:
                 job.status = "failed"
-                job.error = "报告处理失败；已识别的指标可供核对，请稍后重新上传。"
+                if isinstance(exc, OcrUnavailableError):
+                    job.error = "识别服务暂不可用，请稍后重试。"
+                elif isinstance(exc, (OcrNoTextError, ValueError)) and not job.metrics:
+                    job.error = str(exc)
+                else:
+                    job.error = "报告处理失败；已识别的指标可供核对，请稍后重新上传。"
                 job.image_path = None
                 job.timings = {**timings, "total_seconds": round(time.perf_counter() - started, 3)}
                 db.commit()

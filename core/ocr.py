@@ -1,5 +1,5 @@
 # OCR 封装：基于 PaddleOCR 识别药盒/截图文字
-# 针对老人拍照场景做了适配：开启角度分类（倾斜）、中文模型；低清反光依赖模型自身能力。
+# 通用识别保留坐标与置信度；体检报告质量检查和局部重识别在 report_ocr.py。
 # 设计为懒加载：import 本模块不依赖 paddle，真正调用时才加载，未安装则给出明确提示。
 
 import base64
@@ -7,12 +7,14 @@ import logging
 import os
 import re
 import sys
+import threading
 
-from config.settings import OCR_MODEL_DIR, OCR_LANG, OCR_USE_GPU
+from config.settings import OCR_MODEL_DIR, OCR_USE_GPU
 
 logger = logging.getLogger(__name__)
 
 _ocr = None
+_ocr_lock = threading.RLock()
 _dll_directory_handles = []
 
 
@@ -44,9 +46,9 @@ class OcrNoTextError(ValueError):
     这是业务输入问题，返回 400，提示用户重拍。"""
 
 
-def _get_ocr():
+def _get_ocr_unlocked():
     """懒加载 PaddleOCR 实例（首次调用较慢，会加载模型）。
-    模型目录统一指向 OCR_MODEL_DIR 下的纯英文子目录，规避中文路径打不开模型文件的问题。"""
+    模型名称固定；自定义权重通过 OCR_DET_MODEL_DIR/OCR_REC_MODEL_DIR 显式配置。"""
     global _ocr
     if _ocr is None:
         try:
@@ -69,7 +71,11 @@ def _get_ocr():
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,
-                lang=OCR_LANG,
+                text_detection_model_name=os.getenv("OCR_DET_MODEL", "PP-OCRv6_medium_det"),
+                text_recognition_model_name=os.getenv("OCR_REC_MODEL", "PP-OCRv6_medium_rec"),
+                **_model_directories(),
+                device="gpu:0" if OCR_USE_GPU else "cpu",
+                text_rec_score_thresh=0.0,
                 enable_mkldnn=False,
             )
         except Exception as e:
@@ -78,6 +84,23 @@ def _get_ocr():
                 f"OCR 模型初始化失败（paddleocr 3.x 自动下载模型）：{e}"
             ) from e
     return _ocr
+
+
+def _model_directories():
+    """Only explicitly configured v3 weights; never silently load legacy v2 directories."""
+    options = {}
+    for kind, parameter in (("DET", "text_detection_model_dir"), ("REC", "text_recognition_model_dir")):
+        directory = os.getenv(f"OCR_{kind}_MODEL_DIR")
+        if directory:
+            if not os.path.isdir(directory):
+                raise ValueError(f"OCR_{kind}_MODEL_DIR 不存在")
+            options[parameter] = directory
+    return options
+
+
+def _get_ocr():
+    with _ocr_lock:
+        return _get_ocr_unlocked()
 
 
 def _decode_image(image_base64: str):
@@ -170,7 +193,10 @@ def _detect_two_columns(blocks, image_w: float) -> float | None:
     cross = []
     for row in rows:
         cxs = sorted(b["cx"] / image_w for b in row)
-        if len(row) >= 6 and cxs[0] < 0.35 and cxs[-1] > 0.65:
+        names = [b for b in row if _is_indicator_name(b["text"])]
+        if (len(row) >= 6 and cxs[0] < 0.35 and cxs[-1] > 0.65
+                and any(b["cx"] / image_w < 0.4 for b in names)
+                and any(0.5 <= b["cx"] / image_w < 0.8 for b in names)):
             cross.append(cxs[len(cxs) // 2])
     if len(cross) < 3:
         return None
@@ -189,7 +215,7 @@ _NAME_NUM_CN = "〇一二三四五六七八九十百千万"
 
 def _is_indicator_name(text: str) -> bool:
     """判定文本块是否为体检指标的"名称块"（用于做行锚）。
-    指标名特征：2~10 个中文、不含阿拉伯数字、非表头/个人信息/标题行。"""
+    支持中文、英文缩写及 HbA1c 等含数字名称，排除表头和个人信息。"""
     t = (text or "").strip()
     if not t:
         return False
@@ -197,10 +223,10 @@ def _is_indicator_name(text: str) -> bool:
         return False
     if "：" in t or ":" in t:          # "姓名：王楼"等
         return False
-    if re.search(r"[0-9０-９]", t):
-        return False
     cn = re.findall(r"[\u4e00-\u9fff]", t)
-    if len(cn) < 2 or len(cn) > 12:
+    if not cn:
+        return bool(re.fullmatch(r"(?:HbA1c|[A-Z]{2,6}(?:[-/][A-Z0-9]{1,4})?|25[- ]?OH[- ]?D)", t))
+    if len(cn) < 2 or len(cn) > 16:
         return False
     if any(w in t for w in _NAME_NOISE):
         return False
@@ -211,7 +237,9 @@ def _split_by_name_anchors(col_blocks):
     """把单栏块按"名称块 cy"分行：名称块决定行序，值/单位/范围块归到 cy 最近的名称行。
     离所有名称行都过远（头部 title/表头/个人信息、或尾部）的块单独按 y 分行，避免污染指标行。
     用于行距不均匀、单纯 y 聚类会把相邻行合并/拆分的拍照表格（尤其中右栏）。"""
-    anchors = [b for b in col_blocks if _is_indicator_name(b["text"])]
+    candidates = [b for b in col_blocks if _is_indicator_name(b["text"])]
+    chinese = [b for b in candidates if re.search(r"[\u4e00-\u9fff]", b["text"])]
+    anchors = chinese or candidates
     if not anchors:
         return _group_rows(col_blocks)
     anchors.sort(key=lambda b: b["cy"])
@@ -222,7 +250,8 @@ def _split_by_name_anchors(col_blocks):
     else:
         h = sorted(b["h"] for b in col_blocks)
         row_gap = h[len(h) // 2] or 20
-    thresh = max(row_gap * 0.6, 10)
+    heights = sorted(b["h"] for b in col_blocks)
+    thresh = max(min(row_gap * 0.48, heights[len(heights) // 2] * 1.2), 8)
     rows = [[] for _ in anchors]
     amap = {id(b): i for i, b in enumerate(anchors)}
     assigned = set()
@@ -246,7 +275,7 @@ def _split_by_name_anchors(col_blocks):
     return result
 
 
-def _reconstruct_table_lines(blocks, image_w: float) -> list[str]:
+def _reconstruct_table_rows(blocks, image_w: float):
     """把带坐标的文本块重建为表格行文本：
     - 单栏：全局 y 分行，行内按 x 排序拼接；
     - 双栏：按栏界拆左右。左栏行距正常用 y 聚类；右栏行距小易合并错位，用"名称块锚定"分行。
@@ -254,22 +283,20 @@ def _reconstruct_table_lines(blocks, image_w: float) -> list[str]:
     这样真实双栏体检单每条指标(名称+值+单位+参考范围)独占一行，解析层无需坐标即可正确配对。"""
     ratio = _detect_two_columns(blocks, image_w)
     if ratio is None:
-        lines = []
-        for row in _group_rows(blocks):
-            joined = _join_sorted(row)
-            if joined:
-                lines.append(joined)
-        return lines
+        return _group_rows(blocks)
     left = [b for b in blocks if b["cx"] / image_w < ratio]
     right = [b for b in blocks if b["cx"] / image_w >= ratio]
     lines = []
     # 左右栏都按"名称块锚定"分行（ratio 已夹紧到中缝，右栏名称不会漏进左栏抢块）。
     for col in (left, right):
         for row in _split_by_name_anchors(col):
-            joined = _join_sorted(row)
-            if joined:
-                lines.append(joined)
+            if row:
+                lines.append(row)
     return lines
+
+
+def _reconstruct_table_lines(blocks, image_w: float) -> list[str]:
+    return [_join_sorted(row) for row in _reconstruct_table_rows(blocks, image_w) if row]
 
 
 def _join_sorted(row) -> str:
@@ -286,8 +313,9 @@ def _merge_name_and_data(lines):
     while i < len(lines):
         cur = lines[i]
         rest = re.sub(r"^\d+\s*", "", cur)
-        is_name_line = not re.search(r"\d", rest)
-        if is_name_line and i + 1 < len(lines):
+        is_name_line = _is_indicator_name(rest) and not re.search(r"\d", rest)
+        if (is_name_line and i + 1 < len(lines)
+                and re.match(r"^\s*[<>≤≥]?\s*\d", lines[i + 1])):
             merged.append(f"{cur} {lines[i + 1]}")
             i += 2
         else:
@@ -296,78 +324,48 @@ def _merge_name_and_data(lines):
     return merged
 
 
-def recognize_image(image_base64: str) -> str:
-    """识别图片中的文字，按版面坐标重建为逐行文本（适合表格类化验单/药盒）。
-
-    异常约定：
-    - OcrUnavailableError：后端 OCR 环境/模型问题（调用方返回 500）
-    - OcrNoTextError / ValueError：图片本身问题（调用方返回 400）
-    """
-    arr = _decode_image(image_base64)
-    ocr = _get_ocr()
-    img_w = arr.shape[1]
-
-    # paddleocr 3.x 的 .ocr() 即 .predict()；识别调用做兼容。
-    try:
+def recognize_blocks(arr):
+    """Real OCR inference, preserving original-image coordinates and confidence."""
+    with _ocr_lock:
+        ocr = _get_ocr()
         try:
-            result = ocr.ocr(arr, cls=True)
-        except (AttributeError, TypeError):
-            result = ocr.predict(arr)
-    except Exception as e:
-        # 推理阶段模型文件打不开/磁盘错误等属于服务端问题，不是用户照片问题
-        raise OcrUnavailableError(f"OCR 推理失败：{e}") from e
-
-    lines = []
-    # 3.x：predict 返回 PaddleOCRResult 列表，取 rec_texts + rec_polys 坐标重建表格行。
-    # 2.x：page 为 [ [box, (text, score)], ... ]，用坐标重建行。
-    for page in result or []:
-        if hasattr(page, "get"):
-            texts = page.get("rec_texts") or []
-            polys = page.get("rec_polys")
-            if polys is not None:
-                try:
-                    import numpy as np
-                    polys = np.asarray(polys)
-                    blocks = []
-                    for i, t in enumerate(texts):
-                        if i >= len(polys):
-                            break
-                        p = polys[i]
-                        xs = [pt[0] for pt in p]
-                        ys = [pt[1] for pt in p]
-                        blocks.append({
-                            "text": t,
-                            "cx": sum(xs) / len(xs),
-                            "cy": sum(ys) / len(ys),
-                            "h": max(ys) - min(ys),
-                        })
-                    lines.extend(_reconstruct_table_lines(blocks, img_w))
-                except Exception:
-                    # 坐标解析异常时退化为按顺序取文本
-                    for t in texts:
-                        if t:
-                            lines.append(t)
-            else:
-                for t in texts:
-                    if t:
-                        lines.append(t)
+            result = list(ocr.predict(arr))
+        except Exception as exc:
+            raise OcrUnavailableError(f"OCR 推理失败：{exc}") from exc
+    blocks = []
+    for page in result:
+        if not hasattr(page, "get"):
+            raise OcrUnavailableError("OCR 返回结构不兼容，请使用 PaddleOCR 3.x")
+        texts = page.get("rec_texts")
+        polys = page.get("rec_polys")
+        scores = page.get("rec_scores")
+        if texts is None:
             continue
-
-        blocks = []
-        for item in page or []:
-            try:
-                box, (text, _score) = item[0], item[1]
-                xs = [p[0] for p in box]
-                ys = [p[1] for p in box]
-                cy, cx = sum(ys) / 4, sum(xs) / 4
-                height = max(ys) - min(ys)
-                blocks.append((cy, cx, height, text))
-            except (IndexError, TypeError):
+        for index, text in enumerate(texts):
+            if not text:
                 continue
-        lines.extend(_group_lines_by_position(blocks))
+            score = float(scores[index]) if scores is not None and index < len(scores) else None
+            polygon = None
+            if polys is not None and index < len(polys):
+                polygon = [[float(x), float(y)] for x, y in polys[index]]
+            if not polygon:
+                # Preserve text but do not invent geometry or trust its table alignment.
+                blocks.append({"text": str(text), "confidence": score, "polygon": None,
+                               "cx": 0.0, "cy": float(index * 20), "h": 10.0})
+                continue
+            xs, ys = zip(*polygon)
+            blocks.append({"text": str(text), "confidence": score, "polygon": polygon,
+                           "cx": sum(xs) / len(xs), "cy": sum(ys) / len(ys),
+                           "h": max(ys) - min(ys)})
+    return blocks
 
-    lines = _merge_name_and_data(lines)
-    text = "\n".join(t for t in lines if t)
+
+def recognize_image(image_base64: str) -> str:
+    """Compatibility text API for drug images; report pipeline uses structured blocks."""
+    arr = _decode_image(image_base64)
+    blocks = recognize_blocks(arr)
+    blocks = [b for b in blocks if b["confidence"] is None or b["confidence"] >= .5]
+    text = "\n".join(_reconstruct_table_lines(blocks, arr.shape[1]))
     if not text.strip():
         raise OcrNoTextError("照片中未识别到文字，请重拍一张清晰、光线充足的照片")
     return text
@@ -381,9 +379,7 @@ def verify_ocr_ready() -> None:
         import numpy as np
 
         probe = np.full((128, 256, 3), 255, dtype=np.uint8)
-        try:
-            ocr.ocr(probe, cls=True)
-        except (AttributeError, TypeError):
+        with _ocr_lock:
             ocr.predict(probe)
     except Exception as e:
         raise OcrUnavailableError(f"OCR 启动自检推理失败：{e}") from e

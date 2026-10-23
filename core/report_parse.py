@@ -28,7 +28,7 @@ _RANGE = re.compile(
 
 # 项目代号：大写字母缩写，如 ALT、CK-MB、HDL、GLU、TC、TG
 # 至少 2 个字母或含连字符，避免匹配单位中的单个 L / U / G 等
-_CODE = re.compile(r"\b([A-Z]{2,6}(?:-[A-Z]{1,3})?)\b")
+_CODE = re.compile(r"\b(HbA1c|[A-Z]{2,6}(?:[-/][A-Z0-9]{1,4})?)\b")
 
 # 中文指标名：2~8 个连续中文字符（白细胞、血红蛋白、总胆固醇等）
 _CN_NAME = re.compile(r"[\u4e00-\u9fff]{2,8}")
@@ -98,6 +98,11 @@ def _normalize_unit_noise(line: str) -> str:
 def _extract_result(line: str, range_start: int) -> float | None:
     """从范围之前的文本里取结果数字：去掉行首序号和单位中的数字后取最后一个数字。"""
     before = line[:range_start]
+    unit = _UNIT.search(before)
+    if unit and re.search(r"\d", before[:unit.start()]):
+        # A flag after the unit (e.g. ↑ read as 1) is not the measured value.
+        before = before[:unit.start()]
+    before = _CODE.sub(" ", before)
     # 去掉行首序号（如 "1 ALT 50" 里的 "1"），仅当序号后紧跟名称/代号（非数值/单位）。
     # 避免误删真正的首列结果值（如 "14.4 U/L 9.0-50.0" 的 14.4、"0.31 g/L ..." 的 0.31）。
     before = re.sub(r"^\d{1,2}\s+(?=[A-Z]{2,}|[\u4e00-\u9fff])", "", before)
@@ -172,7 +177,10 @@ def _merge_lines(raw_lines: list[str]) -> list[tuple[str, list[int], str]]:
             i += 1
             continue
         # 错行合并：有指标名/代号但本行无数字，且后续存在数值行 → 拼接
-        if _extract_code(line) and not re.search(r"\d", line):
+        if (_extract_code(line) and not re.search(r"\d", line)
+                and i + 1 < n
+                and not any(w in line for w in ("姓名", "检验者", "审核", "备注", "报告单", "时间"))
+                and re.match(r"^\s*(?:[<>≤≥]?\s*\d|[A-Z]{2,6}\b)", raw_lines[i + 1])):
             buf_text = [line]
             buf_lines = [i]
             j = i + 1
