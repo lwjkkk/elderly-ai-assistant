@@ -4,6 +4,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # 解决 Windows 下 torch/numpy Op
 
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +29,11 @@ from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
 from core.ocr import OcrUnavailableError, verify_ocr_ready
+from core.agent import warmup_rag
+from services.report_jobs import recover_interrupted
+from db.database import SessionLocal
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +41,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # 启动：建表、启动定时任务，并检查 OCR 依赖/模型/预测器。
     init_db()
+    recover_interrupted(SessionLocal)
     start_scheduler()
+    try:
+        await asyncio.to_thread(warmup_rag)
+        logger.info("RAG 启动预热通过")
+    except Exception:
+        logger.exception("RAG 启动预热失败，将在请求时重试或降级")
     try:
         verify_ocr_ready()
         app.state.ocr_ready = True

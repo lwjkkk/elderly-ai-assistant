@@ -58,6 +58,8 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
         "keywords": "",
         "questions": [],
         "source_url": None, "updated_at": None, "region": None,
+        "platform": None, "aliases": None, "review_status": None,
+        "reviewed_by": None, "reviewed_at": None, "valid_until": None,
     }
     rel_path = os.path.relpath(path, kb_dir).replace("\\", "/")
     meta["document_id"] = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:24]
@@ -71,7 +73,7 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
             in_body = True
             continue
         if not in_body:
-            m = re.match(r"^(标题|关键词|分类|问题|来源网址|来源URL|source_url|更新时间|地区)\s*[：:]\s*(.*)$", s, re.I)
+            m = re.match(r"^(标题|关键词|分类|问题|来源网址|来源URL|source_url|更新时间|地区|适用平台|别名|审核状态|审核人|审核日期|有效截止)\s*[：:]\s*(.*)$", s, re.I)
             if m:
                 k, v = m.group(1).lower(), m.group(2).strip()
                 if k == "问题":
@@ -88,6 +90,11 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
                     meta["updated_at"] = v or None
                 elif k == "地区":
                     meta["region"] = v or None
+                else:
+                    key = {"适用平台":"platform", "别名":"aliases", "审核状态":"review_status",
+                           "审核人":"reviewed_by", "审核日期":"reviewed_at", "有效截止":"valid_until"}.get(k)
+                    if key:
+                        meta[key] = v or None
             continue
         body_lines.append(ln)
     meta["body"] = "\n".join(body_lines).strip()
@@ -101,14 +108,18 @@ def chunk_text(body: str, max_chunk: int = MAX_CHUNK) -> list:
     """
     if not body:
         return []
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n|(?=[一二三四五六七八九十]+、)", body) if p.strip()]
     chunks = []
     for para in paragraphs:
+        if re.match(r"温馨提示[：:]|免责声明[：:]", para):
+            continue
         if len(para) <= max_chunk:
             chunks.append(para)
             continue
         # 按小标题式行/句末标点细分
         pieces = re.split(r"(?<=[。！？；：])\s*|\n", para)
+        heading = re.match(r"^([一二三四五六七八九十]+、[^\n]{1,45})", para)
+        prefix = (heading.group(1) + "\n") if heading else ""
         buf = ""
         for piece in pieces:
             piece = piece.strip()
@@ -116,7 +127,7 @@ def chunk_text(body: str, max_chunk: int = MAX_CHUNK) -> list:
                 continue
             if buf and len(buf) + len(piece) > max_chunk:
                 chunks.append(buf)
-                buf = piece
+                buf = prefix + piece if prefix and not piece.startswith(prefix.strip()) else piece
             else:
                 buf = (buf + piece) if buf else piece
         if buf:
@@ -160,28 +171,6 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
     seen = set()
     docs = [d for d in docs if not (d in seen or seen.add(d))]
 
-    con = _conn(db_path)
-    cur = con.cursor()
-    cur.execute(f"DROP TABLE IF EXISTS {TABLE}")
-    cur.execute(f"""
-        CREATE TABLE {TABLE} (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            source     TEXT NOT NULL,
-            title      TEXT,
-            category   TEXT,
-            keywords   TEXT,
-            questions  TEXT,
-            dir        TEXT,
-            chunk_index INTEGER NOT NULL,
-            text       TEXT NOT NULL,
-            metadata_json TEXT,
-            embedding  BLOB NOT NULL
-        )
-    """)
-    # 标量列索引（10.25 关键词混合排序与分类过滤用）
-    cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_source ON {TABLE}(source)")
-    cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_cat ON {TABLE}(category)")
-
     stats = {"docs": 0, "chunks": 0, "skipped": 0}
     rows = []
     pending_texts = []
@@ -194,7 +183,7 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
         chunks = chunk_text(meta["body"])
         stats["docs"] += 1
         for i, text in enumerate(chunks):
-            pending_texts.append(text)
+            pending_texts.append(f"{meta['title']}\n{meta.get('aliases') or ''}\n{text}")
             chunk_ids.append(i)
             rows.append({
                 "source": meta["source"], "title": meta["title"],
@@ -208,28 +197,54 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
                 ).hexdigest()[:32],
                 "source_url": meta["source_url"], "updated_at": meta["updated_at"],
                 "region": meta["region"],
+                **{key:meta.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until')},
             })
         stats["chunks"] += len(chunks)
 
-    if pending_texts:
-        vecs = embed_texts(embedder, pending_texts)
-        for r, vec in zip(rows, vecs):
-            cur.execute(
-                f"INSERT INTO {TABLE}(source,title,category,keywords,questions,dir,chunk_index,text,metadata_json,embedding) "
-                f"VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (r["source"], r["title"], r["category"], r["keywords"], r["questions"],
-                 r["dir"], r["chunk_index"], r["text"],
-                 json.dumps({"title": r["title"], "category": r["category"],
-                             "keywords": r["keywords"], "questions": json.loads(r["questions"]),
-                             "dir": r["dir"], "chunk_index": r["chunk_index"],
-                             "document_id": r["document_id"],
-                             "chunk_id": r["chunk_id"],
-                             "document_version": r["document_version"],
-                             "source_url": r["source_url"], "updated_at": r["updated_at"],
-                             "region": r["region"]}, ensure_ascii=False),
-                 vec.astype(np.float32).tobytes()))
-    con.commit()
-    con.close()
+    vecs = embed_texts(embedder, pending_texts) if pending_texts else []
+    con = _conn(db_path)
+    try:
+        with con:
+            con.execute("BEGIN IMMEDIATE")
+            cur = con.cursor()
+            cur.execute(f"DROP TABLE IF EXISTS {TABLE}")
+            cur.execute(f"""
+                CREATE TABLE {TABLE} (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source     TEXT NOT NULL,
+                    title      TEXT,
+                    category   TEXT,
+                    keywords   TEXT,
+                    questions  TEXT,
+                    dir        TEXT,
+                    chunk_index INTEGER NOT NULL,
+                    text       TEXT NOT NULL,
+                    metadata_json TEXT,
+                    embedding  BLOB NOT NULL
+                )
+            """)
+            # 标量列索引（10.25 关键词混合排序与分类过滤用）
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_source ON {TABLE}(source)")
+            cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLE}_cat ON {TABLE}(category)")
+
+            for r, vec in zip(rows, vecs):
+                cur.execute(
+                    f"INSERT INTO {TABLE}(source,title,category,keywords,questions,dir,chunk_index,text,metadata_json,embedding) "
+                    f"VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (r["source"], r["title"], r["category"], r["keywords"], r["questions"],
+                     r["dir"], r["chunk_index"], r["text"],
+                     json.dumps({"title": r["title"], "category": r["category"],
+                                 "keywords": r["keywords"], "questions": json.loads(r["questions"]),
+                                 "dir": r["dir"], "chunk_index": r["chunk_index"],
+                                 "document_id": r["document_id"],
+                                 "chunk_id": r["chunk_id"],
+                                 "document_version": r["document_version"],
+                                 "source_url": r["source_url"], "updated_at": r["updated_at"],
+                                 "region": r["region"],
+                                 **{key:r.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until')}}, ensure_ascii=False),
+                     vec.astype(np.float32).tobytes()))
+    finally:
+        con.close()
     stats["dim"] = EMBED_DIM
     stats["db"] = os.path.abspath(db_path)
     return stats

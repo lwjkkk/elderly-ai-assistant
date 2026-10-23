@@ -136,6 +136,24 @@ class HealthReport(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class ReportJob(Base):
+    """报告后台任务。阶段结果持久化，进程重启后可明确告知中断。"""
+    __tablename__ = "report_jobs"
+
+    id = Column(String(32), primary_key=True)
+    elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    requested_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(20), nullable=False, default="queued", index=True)
+    image_path = Column(String(500), nullable=True)
+    ocr_text = Column(String, nullable=True)
+    metrics = Column(JSON, nullable=True)
+    timings = Column(JSON, nullable=True)
+    report_id = Column(Integer, ForeignKey("health_reports.id"), nullable=True)
+    error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class SymptomCheck(Base):
     """症状自查表：输入症状描述，AI 建议 + 风险分级。"""
     __tablename__ = "symptom_checks"

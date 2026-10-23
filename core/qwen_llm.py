@@ -38,6 +38,7 @@ def _get_client() -> OpenAI:
             api_key=key,
             base_url=LLM_BASE_URL,
             timeout=QWEN_TIMEOUT,
+            max_retries=0,  # 重试只由外层统一控制，避免 SDK 重试叠加放大等待。
         )
     return _client
 
@@ -78,6 +79,7 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
         try:
             logger.info(f"第 {attempt} 次调用通义千问，模型：{model_name}")
 
+            started = time.perf_counter()
             response = _get_client().chat.completions.create(
                 model=model_name,
                 messages=messages,
@@ -87,7 +89,10 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
 
             answer = response.choices[0].message.content
             if answer:
-                logger.info("通义千问调用成功")
+                usage = getattr(response, "usage", None)
+                logger.info("llm_timing seconds=%.3f attempt=%d prompt_tokens=%s completion_tokens=%s",
+                            time.perf_counter() - started, attempt,
+                            getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None))
                 # 返回前做违禁词 / 医疗绝对化用语兜底过滤
                 cleaned, blocked = sanitize(answer.strip())
                 if blocked:

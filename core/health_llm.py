@@ -39,13 +39,21 @@ REPORT_SYSTEM_PROMPT = (
     "输出结构：先列“需要关注的异常项”（只有程序确认没有偏高/偏低项时才能说没有已确认异常），"
     "再一句话带过正常项；存在未能核对项时必须单独列出，绝不能概括成“本次没有明显异常”或“一切正常”。"
     "最后给整体建议。句子要短、术语要解释、不夸大、不遗漏。"
+    "控制篇幅：每个异常指标或未能核对项各用1-2句，正常项合并一句，整体建议最多3条。"
+    "通常控制在250-400字；指标较多时优先完整列出异常和未核对项，不为缩短而遗漏。"
     "严禁下疾病结论或给用药处方，结果以医生解读为准。"
 )
 
 
 def symptom_advice(input_text: str) -> tuple[str, str]:
     """根据症状描述返回 (建议文本, 风险等级)。无法判定时保守取 yellow。"""
+    from core import query_policy
+    urgent=query_policy.decision(input_text)
+    if urgent and urgent.get('emergency_types'):
+        return urgent['answer'], RISK_RED
     raw = call_qwen(SYMPTOM_SYSTEM_PROMPT, f"老人描述的症状：{input_text}")
+    if query_policy.unsafe_medication_instruction(raw):
+        return '这涉及个人治疗或用药，系统无法安全给出具体方案，请联系医生核实；如有紧急不适请拨打120。', RISK_YELLOW
 
     match = _RISK_PATTERN.search(raw)
     risk = match.group(1).lower() if match else RISK_YELLOW
@@ -95,6 +103,9 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
     user += "体检单原始识别文字：\n" + ocr_text
 
     answer = call_qwen(REPORT_SYSTEM_PROMPT, user)
+    from core.query_policy import unsafe_medication_instruction
+    if unsafe_medication_instruction(answer):
+        answer = 'AI解读涉及未经核实的个体用药处理，已隐藏。请对照下方程序核对指标，并由医生评估，不要自行调整用药。'
 
     # 模型若给出与程序核对相冲突的整体正常结论，整段 AI 解读不可信，改为确定性提示。
     broad_normal_claim = re.search(
