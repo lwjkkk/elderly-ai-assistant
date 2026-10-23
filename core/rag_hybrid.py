@@ -18,8 +18,8 @@
      关键词通道在 chunk 文本上打分，且只计 ≥3 字词，避免 2 字碎片虚高；
   2) chunk 级 RRF 融合：两个通道各自出 chunk 排名，RRF 在 chunk id 上融合；
   3) 相关性门槛：向量分 < VECTOR_CHUNK_THRESHOLD、关键词分 < KEYWORD_CHUNK_MIN
-     的 chunk 不进候选池；融合后再用 FINAL_MIN_RRF 卡一道；
-     低于门槛就不展示来源；
+     的 chunk 不进候选池；再进行对象/任务约束与语义重排；
+     无直接相关片段时不展示来源；
   4) 同 source 去重：每篇文档最多保留 MAX_CHUNKS_PER_SOURCE 个 chunk，
      避免一篇长文档霸榜；
   5) 无足够依据时 channel="none"，由调用方在回答里提示「知识库依据不足」。
@@ -40,15 +40,17 @@ import numpy as np
 
 from core import rag as _kw
 from core import rag_indexer as _ri
+from core.query_policy import normalize, matches_scope, active_profiles, documented_review
+
+INDEX_FORMAT_VERSION = "scope-heading-20261023-v1"
 
 # ---------------- 默认配置（阈值由 backend_validation/test_rag_chunks.py 网格搜索标定） ----------------
-# 向量阈值 0.50：低于此值的 chunk 只靠关键词 title 命中会被 RRF 门槛挡掉，
-# 避免"明天天气适合去海边钓鱼吗"这种带"天气"关键词但意图是"钓鱼"的问题误召回"手机看天气预报"教程。
+# 0.50 为向量候选门槛；最终还需对象/任务约束及重排，不代表回答准确率。
 VECTOR_CHUNK_THRESHOLD = 0.50
 KEYWORD_CHUNK_MIN = 2.0         # 单 chunk 关键词分低于此值不进候选
 RRF_K = 60.0
-# RRF 融合门槛：网格搜索显示 0.030 时错误来源率=0、漏召回=0；
-# 真正强相关 chunk（两通道都排前 2）rrf≈0.032~0.033，弱相关单通道 chunk rrf≈0.016~0.029，被卡掉。
+# 保留旧参数供显式覆盖时诊断；默认不再用 RRF 硬门槛删除强单通道命中。
+# 旧的小样本网格结果不能代表当前知识库的整体质量。
 FINAL_MIN_RRF = 0.030
 MAX_CHUNKS_PER_SOURCE = 2       # 同一篇文档最多保留几个 chunk
 CANDIDATE_POOL = 50             # 每通道取多少 chunk 参与融合
@@ -70,7 +72,7 @@ def compute_fingerprint(kb_dir: str) -> str:
         with open(f, "rb") as stream:
             digest = hashlib.sha256(stream.read()).hexdigest()
         entries.append((rel, digest))
-    blob = json.dumps(entries, ensure_ascii=False, sort_keys=True)
+    blob = json.dumps([INDEX_FORMAT_VERSION, entries], ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
 
@@ -88,6 +90,9 @@ def _metadata_fields(raw: str | None) -> dict:
 
 def _matches_query_focus(question: str, title: str, body: str) -> bool:
     """显式疾病/子主题必须在候选中落地，不能只凭文章总标题给无关段落加分。"""
+    if not matches_scope(question, title, body):
+        return False
+    question = normalize(question)
     combined = (title or "") + "\n" + (body or "")
     for query_pattern, candidate_pattern in (
         (r"高血压|降压", r"血压|降压"),
@@ -105,7 +110,7 @@ def _matches_query_focus(question: str, title: str, body: str) -> bool:
         return False
     dietary = re.search(r"饮食|食物|吃什么|吃饭|少盐|膳食", question)
     if dietary and not re.search(r"吃什么药|药怎么吃|药物", question):
-        if not re.search(r"饮食|食物|膳食|盐|蔬菜|青菜|水果|主食|油脂|油腻|吃饭", body or ""):
+        if not re.search(r"饮食|食物|膳食|盐|蔬菜|青菜|水果|主食|油脂|油腻", body or ""):
             return False
     if "红包" in question and "转账" not in question and "红包" not in combined:
         return False
@@ -173,7 +178,7 @@ def _vector_chunk_scores(db_path: str, question: str, embedder,
             "keywords": row[4], "questions": row[5], "chunk_index": row[6],
             "text": row[7], "dir": row[8], "vector_score": s,
             **{key: meta.get(key) for key in ("document_id", "chunk_id", "document_version",
-                                               "source_url", "updated_at", "region")},
+                                               "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until")},
         })
     out.sort(key=lambda x: -x["vector_score"])
     return out[:limit]
@@ -222,7 +227,24 @@ def _score_chunk(chunk_text: str, meta: dict, keywords: list) -> float:
         if cnt:
             body_score += min(cnt, 3) * (len(k) / 3.0)
 
-    return meta_score + body_score
+    return min(meta_score, 8.0) + min(body_score, 16.0)
+
+
+def _grams(text):
+    text = normalize(text).lower()
+    text = re.sub(r"老年人|老人|手机|怎么|如何|什么|请问|注意|一般|平时|需要|[\W_]", "", text)
+    return {text[i:i+2] for i in range(max(0, len(text)-1))}
+
+
+def _question_similarity(question, raw_questions):
+    try:
+        questions = json.loads(raw_questions or '[]') if isinstance(raw_questions, str) else raw_questions
+    except (TypeError, ValueError):
+        questions = []
+    query = _grams(question)
+    if not query or not isinstance(questions, list): return 0.0
+    return max((2 * len(query & _grams(q)) / max(1, len(query) + len(_grams(q)))
+                for q in questions if isinstance(q,str)), default=0.0)
 
 
 def _keyword_chunk_scores(question: str, db_path: str,
@@ -246,7 +268,7 @@ def _keyword_chunk_scores(question: str, db_path: str,
             "keywords": keywords, "questions": questions, "chunk_index": cidx,
             "text": text, "dir": dr, "keyword_score": s,
             **{key: extra.get(key) for key in ("document_id", "chunk_id", "document_version",
-                                                "source_url", "updated_at", "region")},
+                                                "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until")},
         })
     out.sort(key=lambda x: -x["keyword_score"])
     return out[:limit]
@@ -265,10 +287,11 @@ def hybrid_retrieve(question: str, top_k: int = 3,
       1) 向量通道：top chunks（>= vector_threshold）；
       2) 关键词通道：top chunks（>= keyword_min）；
       3) RRF 融合（chunk id 级别）；
-      4) 融合后 < final_min_rrf 丢弃；
+      4) 对象/任务约束与语义重排（显式覆盖旧参数时保留 RRF 诊断门槛）；
       5) 同 source 最多保留 max_per_source 个 chunk；
       6) 无有效结果 → channel="none"，由调用方提示知识库依据不足。
     """
+    question = normalize(question)
     db_path = db_path or _ri.get_default_db_path()
     if embedder is None:
         embedder = _ri.build_embedder()
@@ -299,14 +322,45 @@ def hybrid_retrieve(question: str, top_k: int = 3,
         if cid in rank_vec:
             rrf += w_vec / (RRF_K + rank_vec[cid])
         merged.append((cid, rrf))
-    merged.sort(key=lambda x: -x[1])
+    # RRF用于候选融合，不再把单通道强命中按0.030硬删。
+    # 实际排序联合语义分、问题示例及正文覆盖；实体/任务约束已在召回前执行。
+    reranked=[]
+    query_grams=_grams(question)
+    for cid,rrf in merged:
+        c=by_id[cid]
+        text=c.get('text') or ''
+        heading=text.splitlines()[0] if text else ''
+        if re.search(r'字体|字太小|字号',question):
+            if '微信' not in question and '微信' in heading: continue
+            if '微信' in question and '微信' not in text: continue
+        if re.search(r'收到|别人.{0,3}语音',question) and re.search(r'发语音|发送语音',heading): continue
+        if re.search(r'(?:发|包|给).{0,12}红包',question) and '抢红包' not in question and re.search(r'抢红包|查看零钱',heading): continue
+        if re.search(r'不删.{0,4}照片|保留.{0,4}照片',question) and re.search(r'(?:清理|删除|删).{0,8}照片',heading): continue
+        if re.search(r'苹果|iPhone|iOS',question,re.I) and not re.search(r'苹果|iPhone|iOS',c.get('platform') or '',re.I): continue
+        if '学生票' in question and not re.search(r'学生票|学生优惠|学生资质',text): continue
+        region=re.search(r'武汉|上海|北京|广州|深圳',question)
+        if region and re.search(r'医保|津贴|补贴|报销',question):
+            if region.group() not in (c.get('region') or '') or not c.get('valid_until') or not documented_review(c): continue
+        if re.match(r'^\s*(?:温馨提示|免责声明)[：:]',text): continue
+        example=_question_similarity(question,c.get('questions'))
+        coverage=len(query_grams & _grams(text))/max(1,len(query_grams))
+        vector=c.get('vector_score') or 0.0
+        if vector < .55 and example < .60 and not active_profiles(question): continue
+        if not active_profiles(question) and example < .45 and (vector < .62 or coverage < .12): continue
+        rank=.65*vector+.20*example+.15*min(1.0,coverage)
+        c['rerank_score']=rank
+        c['question_similarity']=example
+        reranked.append((cid,rrf))
+    reranked.sort(key=lambda x:(-by_id[x[0]]['rerank_score'], -x[1], str(by_id[x[0]]['source']), by_id[x[0]].get('chunk_index',0)))
 
     out = []
     per_source_count = {}
-    for cid, rrf in merged:
-        if rrf < final_min_rrf:
-            continue
+    for cid, rrf in reranked:
+        if final_min_rrf != FINAL_MIN_RRF and rrf < final_min_rrf:
+            continue  # 显式覆盖旧参数时仍可用作候选诊断门槛；默认走范围约束及重排。
         c = by_id[cid]
+        if out and c['rerank_score'] < by_id[reranked[0][0]]['rerank_score'] - .12:
+            continue
         src = c["source"]
         if per_source_count.get(src, 0) >= max_per_source:
             continue
@@ -327,6 +381,9 @@ def hybrid_retrieve(question: str, top_k: int = 3,
                     "region": c.get("region"),
             "best_chunk": c.get("text") or "",
             "score": round(rrf, 5),
+            "rerank_score": round(c['rerank_score'], 5),
+            "question_similarity": round(c['question_similarity'], 5),
+            **{key:c.get(key) for key in ('platform','review_status','reviewed_by','reviewed_at','valid_until')},
             "keyword_score": round(c["keyword_score"], 3) if c.get("keyword_score") is not None else None,
             "vector_score": round(c["vector_score"], 4) if c.get("vector_score") is not None else None,
             "channel": "hybrid" if (cid in rank_vec and cid in rank_kw)

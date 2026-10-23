@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # 类别 → 中文标签（用于消息内容和前端分类）
 _EMERGENCY_LABELS = [
+    ("choking", re.compile(r"噎住|卡喉"), "噎食/气道梗阻"),
     ("chest_pain", re.compile(r"胸痛|胸口压(榨|抑)|心口痛|胸口闷(痛)?|胸闷|胸口疼|心口疼|胸口痛|胸口难受"), "胸痛胸闷"),
     ("breath", re.compile(r"呼吸困难|喘不上气|喘不过气|窒息感|喘不上来|喘不上"), "呼吸困难"),
     ("consciousness", re.compile(r"意识(模糊|不清|丧失)|昏迷|叫不醒|突然晕倒"), "意识不清"),
@@ -94,7 +95,7 @@ def _llm_judge_emergency(text: str) -> list[str]:
     if not data.get("emergency"):
         return []
     types = data.get("types") or []
-    valid = {"chest_pain", "breath", "consciousness", "stroke", "bleeding"}
+    valid = {"chest_pain", "breath", "consciousness", "stroke", "bleeding", "choking"}
     return [t for t in types if t in valid]
 
 

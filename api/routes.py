@@ -20,11 +20,12 @@ router = APIRouter()
 
 def _run_chat_side_effects(question: str, result: dict, current: User | None, db: Session) -> list[str]:
     """共享普通问答与三段式接口的摘要和紧急事件副作用，单次请求只调用一次。"""
-    emergency_types: list[str] = []
+    emergency_types: list[str] = list(result.get('emergency_types') or [])
     factory = sessionmaker(bind=db.get_bind())
     if current is not None and current.role == "elder":
         from core.emergency_alert import detect_emergency, notify_family_async
-        emergency_types = detect_emergency(question)
+        if 'emergency_types' not in result:
+            emergency_types = detect_emergency(question)
         if emergency_types:
             notify_family_async(factory, current, question, emergency_types)
 
@@ -75,11 +76,13 @@ def chat_tiered(request: TieredRequest,
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警，
     响应里带 emergency=true 供老人端显示红色横幅。
     """
-    result = get_agent_answer(request.question)
+    result = get_agent_answer(request.question, structured_health=True)
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
     if result.get("module") == "health":
-        tiered = build(request.question, result.get("answer", ""), role)
+        tiered = build(request.question, result.get("answer", ""), role, generated=True)
+        if result.get('answer_origin') == 'safety_rule':
+            tiered['source'] = 'deterministic'
     else:
         # 操作教程等保留原回答和步骤，避免强加医疗解释与就医提醒。
         view = {"concern": result.get("answer", ""), "meaning": "",
@@ -102,6 +105,9 @@ def chat_tiered(request: TieredRequest,
         "retrieval_channel": result.get("retrieval_channel", "none"),
         "fallback_reason": result.get("fallback_reason"),
         "index_version": result.get("index_version"),
+        "evidence_notice": result.get('evidence_notice'),
+        "answer_origin": result.get('answer_origin', 'llm'),
+        "safety_flags": result.get('safety_flags', []),
         "role": role,
         "source": tiered["source"],
         "parts": tiered["parts"],

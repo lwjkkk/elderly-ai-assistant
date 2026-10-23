@@ -37,7 +37,7 @@ _EMERGENCY_SEEK_PREFIX = (
 
 _TIER_SYSTEM = (
     "你是面向老年人的健康知识回答助手，只做科普与风险提示，不做疾病诊断、不给处方。"
-    "请把给定回答整理为四段，每段用【关注点】/【是什么意思】/【下一步】/【就医提醒】开头，逐行输出："
+    "请根据用户问题及提供的参考资料直接回答，输出四段，每段用【关注点】/【是什么意思】/【下一步】/【就医提醒】开头，逐行输出："
     "【关注点】说明回答针对的现象或问题；"
     "【是什么意思】用通俗话解释现有证据能说明什么，并保留不确定性；"
     "【下一步】给出 1-3 条现在可以做的具体做法；"
@@ -45,6 +45,7 @@ _TIER_SYSTEM = (
     "要明确写「立即拨打120或去急诊」，不要和一般头晕、乏力、轻度头痛混为一谈；"
     "一般不适写「建议尽快就诊或复诊」；异常读数写「先复测，仍异常请就诊」。"
     "语言通俗、句子要短、不夸大、不制造恐慌。只输出四段，不要其他内容。"
+    "通常控制在200-350字，不重复同一建议，必须保留必要的风险条件和就医动作。"
 )
 
 # 老人简版限长（字符）
@@ -148,12 +149,13 @@ def _has_emergency(text: str) -> bool:
     return any(p.search(text) for p in _EMERGENCY_PATTERNS)
 
 
-def build(question: str, answer: str, role: str) -> dict:
+def build(question: str, answer: str, role: str, *, generated: bool = False) -> dict:
     """生成健康结构化回答并同时返回老人简版/家属详版。LLM 失败走确定性降级。
     若问题/回答中出现红旗紧急症状，就医提醒强制前置「立即拨打120/急诊」提示，
     不与一般不适混为一谈。"""
     try:
-        raw = call_qwen(_TIER_SYSTEM, f"问题：{question}\n参考资料：{answer}")
+        # 主问答已经直接生成四段时，只做解析，绝不再请求一次模型。
+        raw = answer if generated else call_qwen(_TIER_SYSTEM, f"问题：{question}\n参考资料：{answer}")
         if not raw or not _TAG.search(raw):
             raise ValueError("模型未返回结构化段落")
         parts = parse_three(raw)
