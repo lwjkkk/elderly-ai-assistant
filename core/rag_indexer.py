@@ -18,6 +18,7 @@ import json
 import glob
 import time
 import hashlib
+from core.query_policy import retrieval_allowed
 
 import numpy as np
 
@@ -39,7 +40,7 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
     """
     kb_dir = kb_dir or get_kb_dir()
     content = None
-    for enc in ("utf-8", "gbk"):
+    for enc in ("utf-8-sig", "gbk"):
         try:
             with open(path, encoding=enc) as f:
                 content = f.read()
@@ -60,6 +61,7 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
         "source_url": None, "updated_at": None, "region": None,
         "platform": None, "aliases": None, "review_status": None,
         "reviewed_by": None, "reviewed_at": None, "valid_until": None,
+        "source_scope": None, "review_notes": None,
     }
     rel_path = os.path.relpath(path, kb_dir).replace("\\", "/")
     meta["document_id"] = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:24]
@@ -69,11 +71,14 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
     body_lines = []
     for ln in lines:
         s = ln.strip()
-        if s.lower().startswith("回答"):
+        answer_marker = re.match(r"^回答\s*[：:]\s*(.*)$", s)
+        if not in_body and answer_marker:
             in_body = True
+            if answer_marker.group(1):
+                body_lines.append(answer_marker.group(1))
             continue
         if not in_body:
-            m = re.match(r"^(标题|关键词|分类|问题|来源网址|来源URL|source_url|更新时间|地区|适用平台|别名|审核状态|审核人|审核日期|有效截止)\s*[：:]\s*(.*)$", s, re.I)
+            m = re.match(r"^(标题|关键词|分类|问题|来源网址|来源URL|source_url|更新时间|地区|适用平台|别名|审核状态|审核人|审核日期|有效截止|依据覆盖|疑问点)\s*[：:]\s*(.*)$", s, re.I)
             if m:
                 k, v = m.group(1).lower(), m.group(2).strip()
                 if k == "问题":
@@ -92,7 +97,8 @@ def parse_doc(path: str, kb_dir: str = None) -> dict:
                     meta["region"] = v or None
                 else:
                     key = {"适用平台":"platform", "别名":"aliases", "审核状态":"review_status",
-                           "审核人":"reviewed_by", "审核日期":"reviewed_at", "有效截止":"valid_until"}.get(k)
+                           "审核人":"reviewed_by", "审核日期":"reviewed_at", "有效截止":"valid_until",
+                           "依据覆盖":"source_scope", "疑问点":"review_notes"}.get(k)
                     if key:
                         meta[key] = v or None
             continue
@@ -109,6 +115,12 @@ def chunk_text(body: str, max_chunk: int = MAX_CHUNK) -> list:
     if not body:
         return []
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n|(?=[一二三四五六七八九十]+、)", body) if p.strip()]
+    # Keep short articles whole: splitting eligibility from the conclusion can
+    # turn a conditional medical/policy statement into an unconditional claim.
+    usable = [p for p in paragraphs if not re.match(r"温馨提示[：:]|免责声明[：:]", p)]
+    compact = "\n\n".join(usable)
+    if len(compact) <= max_chunk:
+        return [compact] if compact else []
     chunks = []
     for para in paragraphs:
         if re.match(r"温馨提示[：:]|免责声明[：:]", para):
@@ -177,7 +189,7 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
     chunk_ids = []
     for path in docs:
         meta = parse_doc(path, kb_dir)
-        if not meta["body"]:
+        if not meta["body"] or not retrieval_allowed(meta):
             stats["skipped"] += 1
             continue
         chunks = chunk_text(meta["body"])
@@ -197,7 +209,7 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
                 ).hexdigest()[:32],
                 "source_url": meta["source_url"], "updated_at": meta["updated_at"],
                 "region": meta["region"],
-                **{key:meta.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until')},
+                **{key:meta.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until','source_scope','review_notes')},
             })
         stats["chunks"] += len(chunks)
 
@@ -241,7 +253,7 @@ def build_index(kb_dir: str, db_path: str, embedder=None) -> dict:
                                  "document_version": r["document_version"],
                                  "source_url": r["source_url"], "updated_at": r["updated_at"],
                                  "region": r["region"],
-                                 **{key:r.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until')}}, ensure_ascii=False),
+                                 **{key:r.get(key) for key in ('platform','aliases','review_status','reviewed_by','reviewed_at','valid_until','source_scope','review_notes')}}, ensure_ascii=False),
                      vec.astype(np.float32).tobytes()))
     finally:
         con.close()

@@ -115,7 +115,9 @@ def decision(question):
         date=datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y年%m月%d日')
         return {'module':'services' if re.search(r'票|股票|股价',q) else 'daily_life','reason':'realtime_data_unavailable',
                 'answer':f'今天是{date}。我目前没有查询实时天气、余票、行情或当地公告的工具，不能确认您问的实时情况。请通过对应官方应用或服务单位核实；如需操作指引，请告诉我您使用的应用和所在地。'}
-    if re.search(r'医保|津贴|补贴|社保|报销',q) and re.search(r'今年|当年|20\d{2}|具体.{0,4}(?:多少|比例)|每月.{0,4}多少|武汉|上海|北京|广州|深圳',q):
+    if re.search(r'医保|津贴|补贴|社保|报销|失业保险',q) and (
+            re.search(r'今年|当年|20\d{2}|多少|比例|金额|能领|能拿|武汉|上海|北京|广州|深圳',q)
+            or re.search(r'[\u4e00-\u9fff]{2,}(?:省|市|自治区|自治州|县|区)',q)):
         return {'module':'services','reason':'regional_policy_unverified','allow_reviewed_evidence':True,'answer':'这需要核对参保地或户籍地、适用年度、人群及险种。当前知识库没有足以确认该地区当期金额或比例的已核验政策，不能用通用区间代替。请向当地医保或民政等主管部门核实，或提供官方政策链接后再一起核对。'}
     if re.search(r'学生票',q):
         return {'module':'services','reason':'specific_procedure_missing','allow_reviewed_evidence':True,'answer':'学生票还涉及学生优惠资格核验及特定购票要求，不能仅教注册实名就说完成。当前知识库缺少已核验的学生票流程，请在铁路12306官方应用的学生优惠资质相关栏目核对最新要求。'}
@@ -128,6 +130,8 @@ def decision(question):
 
 # 任务约束使用主题与动作，不使用整句测试题作为白名单。
 PROFILES=[
+ ('reimbursement',r'报销|医保.{0,12}(?:能报|可报|报吗|结算)',r'医保|报销|门诊|备案',r'医保|报销|待遇|结算'),
+ ('itch',r'皮肤.{0,8}痒|瘙痒',r'皮肤|瘙痒',r'皮肤|瘙痒'),
  ('bp_device',r'血压计',r'血压计',r'血压|袖带|测量|校准'),
  ('glucose_device',r'血糖仪',r'血糖仪',r'血糖|试纸|测量'),
  ('glucose',r'血糖',r'血糖|糖尿病|慢性病',r'血糖|糖尿病|低血糖'),
@@ -152,6 +156,7 @@ PROFILES=[
  ('font',r'字体|字号|字太小|文字.{0,3}大',r'字体|字.{0,3}大|字号',r'字体|字号|文本大小'),
  ('brightness',r'亮度|调亮|屏幕.{0,3}暗',r'亮度',r'亮度|调亮|滑块'),
  ('voice_text',r'语音.{0,6}(?:文字|转)|声音转文字',r'语音转文字',r'转文字|转换.{0,3}文字'),
+ ('voice_send',r'(?:发|发送).{0,4}语音|语音.{0,5}(?:怎么|如何)?发',r'发语音|发送语音|语音消息',r'按住|松开|发送语音'),
  ('red_packet',r'红包',r'红包',r'红包'),
  ('transfer',r'转账',r'转账',r'转账'),
  ('payment_code',r'付款码',r'付款码',r'付款码|收付款'),
@@ -180,7 +185,16 @@ PROFILES=[
 @lru_cache(maxsize=512)
 def active_profiles(question):
     q=normalize(question)
-    return tuple(p for p in PROFILES if re.search(p[1],q,re.I))
+    profiles = tuple(p for p in PROFILES if re.search(p[1],q,re.I))
+    # A disease can be background to an administrative task, and itching can
+    # cause poor sleep. Keep the actual task rather than requiring both titles.
+    if any(p[0] == 'reimbursement' for p in profiles):
+        return tuple(p for p in profiles if p[0] == 'reimbursement')
+    if any(p[0] == 'itch' for p in profiles):
+        return tuple(p for p in profiles if p[0] != 'sleep')
+    if any(p[0] == 'voice_text' for p in profiles):
+        return tuple(p for p in profiles if p[0] != 'voice_send')
+    return profiles
 
 
 def matches_scope(question,title,body):
@@ -197,12 +211,37 @@ def matches_scope(question,title,body):
     if re.search(r'空腹',q) and re.search(r'饭后|餐后',q) and re.search(r'区别|不同',q):
         if not re.search(r'空腹',body or '') or not re.search(r'饭后|餐后',body or ''): return False
         if not re.search(r'血糖目标|血糖规范|空腹.{0,3}血糖|空腹.{0,2}[0-9：:]|空腹.{0,3}(?:定义|是指)',body or ''): return False
-    if re.search(r'校准|校验|保养',q) and not re.search(r'校准|校验|保养|校正|维修',body or ''): return False
+    instrument_maintenance = re.search(r'校准|校验',q) or (
+        '保养' in q and re.search(r'血压计|血糖仪|仪器|设备', q))
+    if instrument_maintenance and not re.search(r'校准|校验|保养|校正|维修',body or ''): return False
+    return True
+
+
+def retrieval_allowed(meta):
+    """Editorial holds and expiry apply to every retrieval channel, not just badges."""
+    status = str(meta.get('review_status') or '').strip().lower()
+    if status and status != 'approved':
+        return False
+    if str(meta.get('review_notes') or '').strip():
+        return False
+    today = datetime.now(ZoneInfo('Asia/Shanghai')).date()
+    for key in ('updated_at', 'reviewed_at', 'valid_until'):
+        value = meta.get(key)
+        if not value:
+            continue
+        try:
+            date = datetime.fromisoformat(value).date()
+        except (ValueError, TypeError):
+            return False
+        if (key == 'valid_until' and date < today) or (key != 'valid_until' and date > today):
+            return False
     return True
 
 
 def documented_review(meta):
     today=datetime.now(ZoneInfo('Asia/Shanghai')).date()
+    if not retrieval_allowed(meta):
+        return False
     if meta.get('review_status')!='approved' or not meta.get('reviewed_by') or not re.match(r'https?://',meta.get('source_url') or ''):
         return False
     try:
@@ -212,6 +251,24 @@ def documented_review(meta):
         if meta.get('valid_until') and datetime.fromisoformat(meta['valid_until']).date()<today: return False
     except (ValueError,TypeError):
         return False
+    return True
+
+
+def is_ios_question(question):
+    return bool(re.search(r'iPhone|iOS', question, re.I) or (
+        '苹果' in question and re.search(r'手机|设备|截[屏图]|相册|系统|设置|主屏|按键', question)))
+
+
+def reference_applicable(meta, question):
+    """Same device/review rules for hybrid retrieval and degraded keyword retrieval."""
+    if not retrieval_allowed(meta):
+        return False
+    platform = meta.get('platform') or ''
+    if is_ios_question(question):
+        return bool(re.search(r'苹果|iPhone|iOS', platform, re.I))
+    if re.search(r'安卓|Android', question, re.I):
+        if re.search(r'iPhone|iOS', platform, re.I) and not re.search(r'安卓|Android', platform, re.I):
+            return False
     return True
 
 

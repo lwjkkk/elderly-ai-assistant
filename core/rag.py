@@ -57,13 +57,12 @@ def _load_documents():
                     except UnicodeDecodeError:
                         continue
                 if content:
-                    # 记录文件相对 knowledge_base 的目录，便于按目录映射模块
-                    rel_dir = os.path.relpath(os.path.dirname(path), KNOWLEDGE_BASE_DIR)
-                    docs.append({
-                        "content": content,
-                        "source": os.path.basename(path),
-                        "dir": "" if rel_dir == "." else rel_dir,
-                    })
+                    from core.rag_indexer import parse_doc
+                    from core.query_policy import retrieval_allowed
+                    meta = parse_doc(path, KNOWLEDGE_BASE_DIR)
+                    if not meta["body"] or not retrieval_allowed(meta):
+                        continue
+                    docs.append({**meta, "content": content})
             except Exception as e:
                 logger.warning(f"读取知识库文件失败 {path}: {e}")
     return docs
@@ -199,16 +198,9 @@ def retrieve_from_knowledge_base(question: str, top_k: int = 2,
             continue
         score = _score_document(doc, keywords)
         if score >= _MIN_SCORE:
-            scored.append({
-                "score": score,
-                "content": doc["content"],
-                "source": doc["source"],
-                "dir": doc["dir"],
-            })
+            scored.append({**doc, "score": score})
 
     # 按匹配度从高到低排序，取前 top_k 个
     scored.sort(key=lambda x: x["score"], reverse=True)
-    return [
-        {"content": d["content"], "source": d["source"], "dir": d["dir"]}
-        for d in scored[:top_k]
-    ]
+    return [{key: value for key, value in d.items() if key != "score"}
+            for d in scored[:top_k]]
