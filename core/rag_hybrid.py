@@ -40,9 +40,9 @@ import numpy as np
 
 from core import rag as _kw
 from core import rag_indexer as _ri
-from core.query_policy import normalize, matches_scope, active_profiles, documented_review
+from core.query_policy import normalize, matches_scope, active_profiles, documented_review, reference_applicable, is_ios_question
 
-INDEX_FORMAT_VERSION = "scope-heading-20261023-v1"
+INDEX_FORMAT_VERSION = "review-context-20261024-v3"
 
 # ---------------- 默认配置（阈值由 backend_validation/test_rag_chunks.py 网格搜索标定） ----------------
 # 0.50 为向量候选门槛；最终还需对象/任务约束及重排，不代表回答准确率。
@@ -93,17 +93,24 @@ def _matches_query_focus(question: str, title: str, body: str) -> bool:
     if not matches_scope(question, title, body):
         return False
     question = normalize(question)
+    if re.search(r'进口药|国产药|医保目录', question) and re.search(r'医保|报销|能报|可报', question):
+        if not re.search(r'进口|目录', body or ''):
+            return False
+    if re.search(r'截屏|截图', question) and not re.search(r'保存|相册|相簿|删除|编辑|分享|在哪', question):
+        if not re.search(r'同时|组合键|辅助触控', body or ''):
+            return False
     combined = (title or "") + "\n" + (body or "")
     for query_pattern, candidate_pattern in (
         (r"高血压|降压", r"血压|降压"),
         (r"糖尿病|控糖", r"糖尿病|血糖|控糖"),
     ):
-        if re.search(query_pattern, question) and not re.search(candidate_pattern, combined):
+        if (not any(p[0] == 'reimbursement' for p in active_profiles(question))
+                and re.search(query_pattern, question) and not re.search(candidate_pattern, combined)):
             return False
     if re.search(r"12306|火车票|高铁票|动车票", question):
         if not re.search(r"12306|火车|高铁|(?<!机)动车|铁路", combined):
             return False
-    if re.search(r"校准|保养", question) and not re.search(r"校准|保养|校验|维修|校正", body or ""):
+    if (re.search(r"校准|校验", question) or ("保养" in question and re.search(r"血压计|血糖仪|仪器|设备", question))) and not re.search(r"校准|保养|校验|维修|校正", body or ""):
         return False
     # 特定疾病咨询不应把另一种疾病的专用饮食限制当作通用建议。
     if "糖尿病" in question and re.search(r"肾脏病|肾病|透析", title or "") and "糖尿病" not in (title or ""):
@@ -173,12 +180,14 @@ def _vector_chunk_scores(db_path: str, question: str, embedder,
         if not _matches_query_focus(question, row[2], row[7]):
             continue
         meta = _metadata_fields(row[9])
+        if not reference_applicable(meta, question):
+            continue
         out.append({
             "id": row[0], "source": row[1], "title": row[2], "category": row[3],
             "keywords": row[4], "questions": row[5], "chunk_index": row[6],
             "text": row[7], "dir": row[8], "vector_score": s,
             **{key: meta.get(key) for key in ("document_id", "chunk_id", "document_version",
-                                               "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until")},
+                                               "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until", "source_scope", "review_notes")},
         })
     out.sort(key=lambda x: -x["vector_score"])
     return out[:limit]
@@ -258,6 +267,8 @@ def _keyword_chunk_scores(question: str, db_path: str,
         if not _matches_query_focus(question, title, text):
             continue
         extra = _metadata_fields(raw_meta)
+        if not reference_applicable(extra, question):
+            continue
         meta = {"source": source, "title": title, "keywords": keywords,
                 "category": category, "questions": questions, "dir": dr}
         s = _score_chunk(text, meta, kws)
@@ -268,7 +279,7 @@ def _keyword_chunk_scores(question: str, db_path: str,
             "keywords": keywords, "questions": questions, "chunk_index": cidx,
             "text": text, "dir": dr, "keyword_score": s,
             **{key: extra.get(key) for key in ("document_id", "chunk_id", "document_version",
-                                                "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until")},
+                                                "source_url", "updated_at", "region", "platform", "aliases", "review_status", "reviewed_by", "reviewed_at", "valid_until", "source_scope", "review_notes")},
         })
     out.sort(key=lambda x: -x["keyword_score"])
     return out[:limit]
@@ -336,7 +347,7 @@ def hybrid_retrieve(question: str, top_k: int = 3,
         if re.search(r'收到|别人.{0,3}语音',question) and re.search(r'发语音|发送语音',heading): continue
         if re.search(r'(?:发|包|给).{0,12}红包',question) and '抢红包' not in question and re.search(r'抢红包|查看零钱',heading): continue
         if re.search(r'不删.{0,4}照片|保留.{0,4}照片',question) and re.search(r'(?:清理|删除|删).{0,8}照片',heading): continue
-        if re.search(r'苹果|iPhone|iOS',question,re.I) and not re.search(r'苹果|iPhone|iOS',c.get('platform') or '',re.I): continue
+        if is_ios_question(question) and not re.search(r'苹果|iPhone|iOS',c.get('platform') or '',re.I): continue
         if '学生票' in question and not re.search(r'学生票|学生优惠|学生资质',text): continue
         region=re.search(r'武汉|上海|北京|广州|深圳',question)
         if region and re.search(r'医保|津贴|补贴|报销',question):
@@ -383,7 +394,7 @@ def hybrid_retrieve(question: str, top_k: int = 3,
             "score": round(rrf, 5),
             "rerank_score": round(c['rerank_score'], 5),
             "question_similarity": round(c['question_similarity'], 5),
-            **{key:c.get(key) for key in ('platform','review_status','reviewed_by','reviewed_at','valid_until')},
+            **{key:c.get(key) for key in ('platform','review_status','reviewed_by','reviewed_at','valid_until','source_scope','review_notes')},
             "keyword_score": round(c["keyword_score"], 3) if c.get("keyword_score") is not None else None,
             "vector_score": round(c["vector_score"], 4) if c.get("vector_score") is not None else None,
             "channel": "hybrid" if (cid in rank_vec and cid in rank_kw)
