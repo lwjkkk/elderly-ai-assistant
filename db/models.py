@@ -164,6 +164,7 @@ class SymptomCheck(Base):
     elder_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     input_text = Column(String, nullable=False)        # 老人描述的症状
     advice_text = Column(String, nullable=True)        # AI 建议
+    answer_data = Column(JSON, nullable=True)         # 当次来源快照，历史读取不重新检索
     # 风险等级：green=可居家观察，yellow=建议尽快就医，red=立即就医/急诊
     risk = Column(String(10), nullable=False)
     created_at = Column(DateTime, server_default=func.now())

@@ -173,11 +173,8 @@ def generation_prompt(module: str) -> str:
 
 
 def display_notice(module: str) -> str:
-    if module == 'health':
-        return '仅供健康科普，不能替代医生面诊或处方。'
-    if module == 'services':
-        return '具体办理条件以当地主管部门和受理机构规定为准。'
-    return '操作请以实际界面和官方说明为准，注意保护个人信息。'
+    from core.evidence import safety_notice
+    return safety_notice(module)
 
 
 def _decorate(view: dict, module: str) -> dict:
@@ -187,7 +184,8 @@ def _decorate(view: dict, module: str) -> dict:
     sections = [{'key': key, 'label': label, 'content': view.get(key, '').strip()}
                 for key, label in zip(('concern', 'meaning', 'next_step', 'seek'), labels)
                 if view.get(key, '').strip()]
-    return {**view, 'note': '', 'sections': sections,
+    return {**view, 'conclusion': view.get('concern', ''),
+            'advice': view.get('next_step', ''), 'note': '', 'sections': sections,
             'text': '\n\n'.join(section['label'] + '：\n' + section['content'] for section in sections)}
 
 
@@ -223,7 +221,8 @@ def build(question: str, answer: str, role: str, *, generated: bool = False, mod
                     elder_view['next_step'] = sentences[0] + sentences[-1]
     except Exception:
         source = 'deterministic'
-        parts = {'concern': '', 'meaning': '', 'next_step': answer or '暂时无法完成回答，请稍后重试。',
+        parts = {'concern': '请结合当前问题核对下一步。' if module == 'health' else '',
+                 'meaning': '', 'next_step': answer or '暂时无法完成回答，请稍后重试。',
                  'seek': _FALLBACK_SEEK if module == 'health' else ''}
         elder_view, family_view = dict(parts), dict(parts)
 

@@ -3,7 +3,7 @@
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from core.disclaimer import HEALTH_DISCLAIMER
 
@@ -423,6 +423,34 @@ class SymptomOut(BaseModel):
     risk: str                       # green / yellow / red
     created_at: datetime | None = None
     disclaimer: str = HEALTH_DISCLAIMER
+    sources: list[dict] = Field(default_factory=list)
+    has_evidence: bool = False
+    knowledge_base_hit: bool = False
+    evidence_status: str = 'none'
+    evidence_notice: str = ''
+    evidence_card: dict = Field(default_factory=lambda: {
+        'visible': False, 'title': '知识库参考', 'items': [], 'notice': ''})
+    answer_footer: dict = Field(default_factory=dict)
+    display_notice: str = ''
+    retrieval_channel: str = 'none'
+    answer_origin: str = 'legacy'
+
+    @model_validator(mode='before')
+    @classmethod
+    def restore_evidence(cls, value):
+        from core.evidence import attach_evidence
+        if isinstance(value, dict):
+            data = dict(value)
+            snapshot = data.pop('answer_data', None)
+            if isinstance(snapshot, dict):
+                data.update(snapshot)
+        else:
+            data = {key: getattr(value, key, None)
+                    for key in ('id', 'elder_id', 'input_text', 'advice_text', 'risk', 'created_at')}
+            data.update(getattr(value, 'answer_data', None) or {})
+        # Old records have no saved evidence; never fabricate it from today's KB.
+        data.update(attach_evidence(data))
+        return data
 
     class Config:
         from_attributes = True
