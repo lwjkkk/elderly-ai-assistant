@@ -105,7 +105,8 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
             result = m.get('result_text') or m.get('result')
             reason = m.get('verification_reason') or '参考范围未能识别'
             return f"{m['code']}：结果{result}，{reason}，判定【未能核对】"
-        return (f"{m['code']} 结果{m['result']}，参考{m['lo']}~{m['hi']}，"
+        reference = m.get('range_text') or f"{m['lo']}~{m['hi']}"
+        return (f"{m['code']} 结果{m['result']}，参考{reference}，"
                 f"判定【{labels[m['status']]}】")
 
     abnormal = [m for m in metrics if m["status"] in ("high", "low")]
@@ -131,7 +132,7 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
                  "必须如实说明“本次识别效果有限，未能自动核对各项指标，请对照纸质报告或请医生解读”。\n\n")
     user += "体检单原始识别文字：\n" + ocr_text
 
-    answer = call_qwen(REPORT_SYSTEM_PROMPT, user)
+    answer = call_qwen(REPORT_SYSTEM_PROMPT + '结论仅限程序已核对项目，不能声称原报告所有项目均已识别或整份报告全部正常。', user)
     from core.query_policy import unsafe_medication_instruction
     if unsafe_medication_instruction(answer):
         answer = 'AI解读涉及未经核实的个体用药处理，已隐藏。请对照下方程序核对指标，并由医生评估，不要自行调整用药。'
@@ -144,6 +145,8 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
     )
     if broad_normal_claim and (abnormal or unparsed or not metrics):
         answer = "AI 解读与程序核对结果不一致，已隐藏这段不可靠解读。请以报告原文及医生意见为准。"
+    elif broad_normal_claim:
+        answer = '已识别并核对的项目未发现超出所示参考条件的结果；这不代表整份报告已完整识别或健康状况正常，请结合报告原文与医生意见。'
 
     verified = []
     if abnormal:

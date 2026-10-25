@@ -9,6 +9,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from db.database import get_db
@@ -18,6 +19,7 @@ from core.security import get_current_user
 from core.ocr import OcrUnavailableError
 from core.health_llm import report_advice
 from core.report_ocr import recognize_report, report_metrics
+from core.report_quality import ReportRetakeRequired
 from api.meds import resolve_elder_id
 
 router = APIRouter(prefix="/api/reports", tags=["体检报告"])
@@ -66,6 +68,11 @@ async def upload_report(file: UploadFile = File(..., description="体检单图�
     image_b64 = base64.b64encode(content).decode("ascii")
     try:
         ocr_text, ocr_details = await asyncio.to_thread(recognize_report, image_b64)
+    except ReportRetakeRequired as e:
+        # Keep the legacy string detail readable while adding structured fields.
+        return JSONResponse(status_code=422, content={'detail':str(e),
+                            'code':'report_retake_required','retake_required':True,
+                            'retake':e.detail,'quality_summary':e.document['quality_summary']})
     except OcrUnavailableError as e:
         raise HTTPException(status_code=500, detail=f"识别服务暂不可用，请稍后再试：{e}")
     except ValueError as e:
@@ -157,7 +164,10 @@ def get_report_job(job_id: str, db: Session = Depends(get_db), current: User = D
             raise HTTPException(status_code=410, detail="对应报告已删除。")
         result = HealthReportOut.model_validate(report).model_dump(mode="json")
         result["metrics"] = report_metrics(report)
+    details = job.ocr_details or {}
     return {"job_id": job.id, "status": job.status, "poll_after_ms": 1500,
+            "retake_required":bool(details.get('retake_required')),
+            "retake":details.get('retake'),
             "ocr_text": job.ocr_text, "metrics": job.metrics or [],
             "ocr_details": job.ocr_details,
             "timings": job.timings or {}, "error": job.error, "report": result}

@@ -10,6 +10,7 @@ from db.models import HealthReport, ReportJob
 from core.report_ocr import recognize_report
 from core.ocr import OcrNoTextError, OcrUnavailableError
 from core.health_llm import report_advice
+from core.report_quality import ReportRetakeRequired
 
 logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="report-job")
@@ -94,7 +95,11 @@ def _run(factory, job_id):
             job = db.get(ReportJob, job_id)
             if job is not None:
                 job.status = "failed"
-                if isinstance(exc, OcrUnavailableError):
+                if isinstance(exc, ReportRetakeRequired):
+                    job.ocr_details = exc.document
+                    job.metrics = exc.document.get('metrics',[])
+                    job.error = str(exc)
+                elif isinstance(exc, OcrUnavailableError):
                     job.error = "识别服务暂不可用，请稍后重试。"
                 elif isinstance(exc, (OcrNoTextError, ValueError)) and not job.metrics:
                     job.error = str(exc)
