@@ -165,7 +165,8 @@ PROFILES=[
  ('font',r'字体|字号|字太小|文字.{0,3}大',r'字体|字.{0,3}大|字号',r'字体|字号|文本大小'),
  ('brightness',r'亮度|调亮|屏幕.{0,3}暗',r'亮度',r'亮度|调亮|滑块'),
  ('voice_text',r'语音.{0,6}(?:文字|转)|声音转文字',r'语音转文字',r'转文字|转换.{0,3}文字'),
- ('voice_send',r'(?:发|发送).{0,4}语音|语音.{0,5}(?:怎么|如何)?发',r'发语音|发送语音|语音消息',r'按住|松开|发送语音'),
+ ('voice_send',r'(?:发|发送).{0,4}语音|语音.{0,5}(?:怎么|如何)?发|按住说话',r'发语音|发送语音|语音消息',r'按住|松开|发送语音'),
+ ('photo_send',r'(?:发|发送).{0,5}(?:图片|照片)|(?:图片|照片).{0,5}(?:怎么|如何)发',r'发.{0,5}(?:图片|照片)|发送图片',r'图片|照片|相册'),
  ('red_packet',r'红包',r'红包',r'红包'),
  ('transfer',r'转账',r'转账',r'转账'),
  ('payment_code',r'付款码',r'付款码',r'付款码|收付款'),
@@ -183,6 +184,7 @@ PROFILES=[
  ('e_bike',r'电动车.{0,4}上牌',r'电动车上牌',r'上牌|车管'),
  ('fraud_police',r'安全账户|自称.{0,3}公安',r'诈骗',r'安全账户|公安|公检法'),
  ('fraud_parcel',r'快递.{0,10}(?:理赔|链接|丢)|理赔.{0,6}链接',r'诈骗',r'快递|理赔|链接'),
+ ('fraud_solicitation',r'(?:陌生人|陌生电话|不认识的人).{0,15}(?:转钱|转账|汇款)',r'诈骗',r'转钱|转账|汇款|账户|银行卡'),
  ('gas',r'燃气.{0,5}(?:味|泄漏)|闻到燃气',r'燃气',r'燃气|通风|开关'),
  ('earthquake',r'地震',r'地震',r'震|躲|电梯'),
  ('legal_aid',r'法律援助',r'法律援助',r'法律援助|律师'),
@@ -205,6 +207,8 @@ def active_profiles(question):
         return tuple(p for p in profiles if p[0] != 'sleep')
     if any(p[0] == 'voice_text' for p in profiles):
         return tuple(p for p in profiles if p[0] != 'voice_send')
+    if '朋友圈' in q:
+        return tuple(p for p in profiles if p[0] != 'photo_send')
     return profiles
 
 

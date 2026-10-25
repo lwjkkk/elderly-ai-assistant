@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from core.agent import get_agent_answer
+from core.evidence import attach_evidence
 from core.chat_summary import save_summary_sync
 from core.security import get_current_user, get_optional_user
 from db.database import get_db
@@ -53,7 +54,7 @@ def chat(request: ChatRequest,
     """日常问答。老人登录时，对属于 drug/med/selfcheck/consult 的问答后台提炼摘要落库。
     未登录也能用（可选鉴权），此时不落库。
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警。"""
-    result = get_agent_answer(request.question)
+    result = attach_evidence(get_agent_answer(request.question))
 
     emergency_types = _run_chat_side_effects(request.question, result, current, db)
     result["emergency"] = bool(emergency_types)
@@ -76,7 +77,7 @@ def chat_tiered(request: TieredRequest,
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警，
     响应里带 emergency=true 供老人端显示红色横幅。
     """
-    result = get_agent_answer(request.question, structured_health=True)
+    result = attach_evidence(get_agent_answer(request.question, structured_health=True))
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
     tiered = build(request.question, result.get("answer", ""), role, generated=True,
@@ -93,6 +94,10 @@ def chat_tiered(request: TieredRequest,
         "steps": [],
         "disclaimer": tiered["display_notice"],
         "sources": result.get("sources", []),
+        "has_evidence": result["has_evidence"],
+        "knowledge_base_hit": result["knowledge_base_hit"],
+        "evidence_card": result["evidence_card"],
+        "answer_footer": result["answer_footer"],
         "evidence_status": result.get("evidence_status", "none"),
         "retrieval_channel": result.get("retrieval_channel", "none"),
         "fallback_reason": result.get("fallback_reason"),

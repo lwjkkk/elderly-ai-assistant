@@ -43,6 +43,11 @@ def _module_from_dir(dir_path: str) -> str:
 
 
 def get_agent_answer(question: str, *, structured_health: bool = False) -> dict:
+    from core.evidence import attach_evidence
+    return attach_evidence(_generate_agent_answer(question, structured_health=structured_health))
+
+
+def _generate_agent_answer(question: str, *, structured_health: bool = False) -> dict:
     """
     老年智能体主函数 - 前端调用这个接口
 

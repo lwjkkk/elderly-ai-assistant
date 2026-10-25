@@ -6,7 +6,7 @@ from db.database import get_db
 from db.models import User, SymptomCheck
 from db.schemas import SymptomCreate, SymptomOut
 from core.security import get_current_user
-from core.health_llm import symptom_advice
+from core.health_llm import symptom_assessment
 from api.meds import resolve_elder_id
 
 router = APIRouter(prefix="/api", tags=["症状自查"])
@@ -21,13 +21,15 @@ def check_symptom(payload: SymptomCreate,
         raise HTTPException(status_code=400, detail="请先描述症状")
 
     elder_id = resolve_elder_id(db, current, payload.elder_id)
-    advice, risk = symptom_advice(payload.input_text)
+    result = symptom_assessment(payload.input_text)
 
     rec = SymptomCheck(
         elder_id=elder_id,
         input_text=payload.input_text,
-        advice_text=advice,
-        risk=risk,
+        advice_text=result['advice_text'],
+        risk=result['risk'],
+        answer_data={key: value for key, value in result.items()
+                     if key not in ('advice_text', 'risk')},
     )
     db.add(rec)
     db.commit()
