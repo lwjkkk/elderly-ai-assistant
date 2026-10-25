@@ -27,19 +27,6 @@ def preserves(original, candidate):
     return True
 
 
-def rotation(image, clockwise):
-    import cv2
-    import numpy as np
-    h,w = image.shape[:2]
-    if clockwise==90:
-        return cv2.rotate(image,cv2.ROTATE_90_CLOCKWISE),np.array([[0,-1,h-1],[1,0,0],[0,0,1]],dtype=float)
-    if clockwise==180:
-        return cv2.rotate(image,cv2.ROTATE_180),np.array([[-1,0,w-1],[0,-1,h-1],[0,0,1]],dtype=float)
-    if clockwise==270:
-        return cv2.rotate(image,cv2.ROTATE_90_COUNTERCLOCKWISE),np.array([[0,1,0],[-1,0,w-1],[0,0,1]],dtype=float)
-    raise ValueError('Only right-angle rotation candidates are supported')
-
-
 def table_crop(image, document):
     import numpy as np
     points = [p for row in document['rows'] for role in ('name','code','result','reference','unit')
@@ -57,70 +44,51 @@ def table_crop(image, document):
     return image[y0:y1,x0:x1],np.array([[1,0,-x0],[0,1,-y0],[0,0,1]],dtype=float),'table_crop'
 
 
-def page_warp(image):
-    """Only a clear, convex, complete quadrilateral is a perspective candidate."""
-    import cv2
-    import numpy as np
-    h,w = image.shape[:2]
-    scale = min(1,1000/max(h,w))
-    small = cv2.resize(image,None,fx=scale,fy=scale) if scale<1 else image
-    gray = cv2.cvtColor(small,cv2.COLOR_BGR2GRAY)
-    _,mask = cv2.threshold(cv2.GaussianBlur(gray,(5,5),0),0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    contours,_ = cv2.findContours(mask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-    for contour in sorted(contours,key=cv2.contourArea,reverse=True)[:3]:
-        approx = cv2.approxPolyDP(contour,.02*cv2.arcLength(contour,True),True)
-        area = cv2.contourArea(approx)/(small.shape[0]*small.shape[1])
-        if len(approx)!=4 or not .35<area<.96 or not cv2.isContourConvex(approx):
+def orientation_issue(document):
+    """Use existing text boxes only; never rotate or run orientation OCR probes."""
+    from math import atan,degrees
+    from statistics import median
+    vertical = 0
+    eligible = 0
+    angles = []
+    for block in document.get('raw_blocks',[]):
+        polygon = block.get('polygon',[])
+        if len(polygon)<4 or len(block.get('text','').strip())<3:
             continue
-        points = approx.reshape(4,2).astype(float)/scale
-        # Angle ordering handles either contour winding without duplicate corners.
-        center = points.mean(axis=0)
-        points = points[np.argsort(np.arctan2(points[:,1]-center[1],points[:,0]-center[0]))]
-        points = np.roll(points,-np.argmin(points.sum(axis=1)),axis=0)
-        tl,tr,br,bl = points
-        width = int(max(np.linalg.norm(tr-tl),np.linalg.norm(br-bl)))
-        height = int(max(np.linalg.norm(bl-tl),np.linalg.norm(br-tr)))
-        if min(width,height)<200:
-            continue
-        matrix = cv2.getPerspectiveTransform(points.astype('float32'),np.array([[0,0],[width-1,0],[width-1,height-1],[0,height-1]],dtype='float32'))
-        return cv2.warpPerspective(image,matrix,(width,height),borderValue=(255,255,255)),matrix,'page_perspective'
+        xs,ys = zip(*polygon)
+        width,height = max(xs)-min(xs),max(ys)-min(ys)
+        if max(width,height)>=3*max(1,min(width,height)):
+            eligible += 1
+            vertical += height>width*2.5
+        dx,dy = polygon[1][0]-polygon[0][0],polygon[1][1]-polygon[0][1]
+        if abs(dx)>=50 and width>height*2:
+            angles.append(degrees(atan(dy/dx)))
+    if eligible>=4 and vertical/eligible>.6:
+        return {'code':'vertical_text','message':'报告文字横放或方向不正，请摆正后重新拍摄'}
+    if len(angles)>=4 and abs(median(angles))>10:
+        return {'code':'excessive_tilt','message':'报告倾斜明显，请正对报告重新拍摄','median_angle':round(median(angles),2)}
     return None
 
 
 def select_view(image, initial, recognize, build):
-    import cv2
     import numpy as np
-    current,document = image,initial
+    document = initial
     forward = np.eye(3)
-    metadata = {'selected':'original','candidates':[],'orientation_probe_calls':0,'additional_full_image_calls':0}
-    if not document['tables']:
-        probes = []
-        metadata['orientation_probes_full_resolution'] = True
-        for degrees in (90,180,270):
-            rotated,matrix = rotation(image,degrees)
-            metadata['orientation_probe_calls'] += 1
-            try:
-                candidate = build(recognize(rotated),rotated.shape[1],rotated.shape[0])
-                probes.append((quality(candidate),degrees,rotated,matrix,candidate))
-                metadata['candidates'].append({'view':f'rotation_probe_{degrees}','quality':quality(candidate)})
-            except Exception:
-                metadata['candidates'].append({'view':f'rotation_probe_{degrees}','failed':True})
-        if probes:
-            best = max(x[0] for x in probes)
-            winners = [p for p in probes if p[0]==best]
-            if best>quality(initial) and len(winners)==1:
-                _,degrees,rotated,matrix,candidate = winners[0]
-                accepted = preserves(initial,candidate)
-                metadata['candidates'].append({'view':f'rotation_{degrees}','quality':quality(candidate),'accepted':accepted})
-                if accepted:
-                    current,document,forward = rotated,candidate,matrix
-                    metadata['selected'] = f'rotation_{degrees}'
+    issue = orientation_issue(initial)
+    metadata = {'selected':'original','candidates':[],'orientation_probe_calls':0,
+                'additional_full_image_calls':0,'rotation_policy':'retake_no_rotation',
+                'orientation_status':'incorrect' if issue else 'unconfirmed' if not document['tables'] else 'no_issue_detected'}
+    if issue:
+        metadata['orientation_issue'] = issue
+    # No upright table: ask for a better photo instead of repeatedly rotating,
+    # rectifying or re-recognizing the full image.
+    if issue or not document['tables']:
+        metadata['original_quality'] = metadata['selected_quality'] = quality(initial)
+        return image,document,forward,metadata
     metrics = document.get('metrics',[])
     weak = not metrics or quality(document)[1]<len(metrics)*.7 or any(m.get('result') is None and m.get('lo') is not None for m in metrics)
     if weak:
-        view = table_crop(current,document)
-        if view is None and (not metrics or quality(document)[1]<len(metrics)*.5):
-            view = page_warp(current)
+        view = table_crop(image,document)
         if view is not None:
             transformed,matrix,label = view
             metadata['additional_full_image_calls'] += 1
@@ -129,13 +97,13 @@ def select_view(image, initial, recognize, build):
                 accepted = quality(candidate)>quality(document) and preserves(document,candidate)
                 metadata['candidates'].append({'view':label,'quality':quality(candidate),'accepted':accepted})
                 if accepted:
-                    current,document,forward = transformed,candidate,matrix@forward
+                    image,document,forward = transformed,candidate,matrix
                     metadata['selected'] += '+'+label
             except Exception:
                 metadata['candidates'].append({'view':label,'failed':True})
     metadata['original_quality'] = quality(initial)
     metadata['selected_quality'] = quality(document)
-    return current,document,forward,metadata
+    return image,document,forward,metadata
 
 
 def restore_coordinates(document, forward, original_shape):

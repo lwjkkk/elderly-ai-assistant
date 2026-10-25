@@ -8,7 +8,7 @@ from core.ocr import (_decode_image, recognize_blocks, _reconstruct_table_rows,
                       OcrNoTextError)
 from core.report_parse import parse_metrics
 
-VERSION = "report-ocr-2.2"
+VERSION = "report-ocr-2.3"
 LOW_CONFIDENCE = 0.90  # Operational review threshold, not calibrated accuracy.
 MAX_RETRIES = 6
 MAX_RECOGNITION_CALLS = 12
@@ -55,7 +55,12 @@ def recognize_report(image_base64):
     document = document_from_blocks(blocks, int(arr.shape[1]), int(arr.shape[0]))
     from core.report_preprocess import select_view,restore_coordinates
     working,document,forward,preprocessing = select_view(arr,document,recognize_blocks,document_from_blocks)
-    refine_document(document, working)
+    if preprocessing['orientation_status']=='incorrect' or not document['tables']:
+        document['recognition_call_count'] = 0
+        document['retry_budget'] = {'max_fields':MAX_RETRIES,'max_calls':MAX_RECOGNITION_CALLS,'exhausted':False}
+        preprocessing['local_refinement_skipped'] = True
+    else:
+        refine_document(document, working)
     document = restore_coordinates(document,forward,arr.shape)
     document['preprocessing'] = preprocessing
     document['warnings'] = _warnings(arr) + document['warnings']
