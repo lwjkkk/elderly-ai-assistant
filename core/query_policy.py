@@ -96,14 +96,22 @@ def decision(question):
         if re.search(r'药|硝酸甘油|阿司匹林',q):
             action+='不要根据聊天决定药物片数或临时加药；如有既往处方，请向120调度员说明并听从指导。'
         return {'module':'health','reason':'urgent_symptoms','emergency_types':urgent,
-                'answer':four('您描述了需要立即求助的危险信号。','系统不能据此确诊，也不应按普通饮食或关节保养问题处理。',action,'请立即拨打120或由急救人员安排就医，不要因继续聊天延误。')}
+                'answer':four('您描述了需要立即求助的危险信号。','这些表现可能有严重风险，需要尽快由急救人员评估。',action,'请立即拨打120或由急救人员安排就医，不要因继续聊天延误。')}
     protected=_protected_request(q)
     if protected:
         return protected
     peer_medication=(re.search(r'邻居|别人|朋友|同事|他人',q) and '药' in q
                      and re.search(r'我.{0,12}(?:也|能|可以|一样)|照着吃|照吃',q))
-    prescription=re.search(r'(?:给我|开|写|完整).{0,10}(?:药方|处方)|处方.{0,6}(?:给我|写出来)',q)
-    if (re.search(r'几片|多少(?:毫克|单位|粒|剂量)|剂量|漏(?:吃|服)|补服|加倍|加量|加药|增量|停药|停.{0,3}药|减药|换药|一起吃|合用|开具处方|开(?:降压|降糖)?药|给我.{0,3}开.{0,4}药',q) and medical_intent(q)) or peer_medication or prescription:
+    # Describing a hospital prescription is not asking the assistant to prescribe.
+    administrative = bool(re.search(r'报销|医保|结算|挂号|取号|发票|费用|缴费|办理|取药流程', q))
+    prescription_text = q
+    if not re.search(r'扮演|假装|请你|你来|你直接|让你', q):
+        prescription_text = re.sub(r'(?:医生|大夫|医院|药师)(?:已经|之前|刚才|刚|曾经)?(?:给我|为我|帮我)(?:开|写|出具).{0,5}(?:药方|处方)', '', q)
+    prescription=re.search(r'(?:给我|帮我|请你|你来|你直接|直接|生成|写一[份张]|开一[份张]).{0,10}(?:药方|处方)|处方.{0,6}(?:给我|写出来)',prescription_text)
+    dose_change = re.search(r'几片|多少(?:毫克|单位|粒|剂量)|剂量|漏(?:吃|服)|补服|加倍|加量|加药|增量|停药|停.{0,3}药|减药|换药|一起吃|合用', q)
+    drug_selection = re.search(r'该(?:吃|用|开).{0,8}药|(?:吃|用|开)什么药|给我.{0,3}开.{0,4}药', q)
+    generic_prescribing = not administrative and re.search(r'开具处方|开(?:降压|降糖)?药', q)
+    if ((dose_change or drug_selection or generic_prescribing) and medical_intent(q)) or peer_medication or prescription:
         return {'module':'health','reason':'medication_boundary','answer':four('这涉及个人用药或补漏服决策。','药名、规格、服药时间和既有医嘱尚未完整确认，不能靠通用知识决定剂量、补服、合用或停药。','请核对原处方和药盒，联系开药医生或药师确认；不要自行加倍、增减、换药或凭血压一次读数决定是否服药。','如已误服或出现明显不适，请及时寻求医疗帮助；紧急时拨打120。')}
     if re.search(r'肾病|肾脏|透析',q) and re.search(r'钾|香蕉|饮食|吃|喝|盐|蛋白',q):
         return {'module':'health','reason':'individual_medical_limits','answer':four('肾脏相关饮食需要结合个人检查结果。','是否限钾、限水或限制蛋白质取决于肾功能、血钾、治疗情况及医嘱，不能把通用高血压补钾建议直接套用。','请携带近期化验结果向医生或营养专业人员确认；不要自行大量补钾、改变饮水量或按网上统一克数调整。','若有明显不适请及时就医，具体饮食限制以个人医嘱为准。')}
@@ -131,6 +139,7 @@ def decision(question):
 # 任务约束使用主题与动作，不使用整句测试题作为白名单。
 PROFILES=[
  ('reimbursement',r'报销|医保.{0,12}(?:能报|可报|报吗|结算)',r'医保|报销|门诊|备案',r'医保|报销|待遇|结算'),
+ ('medical_admin',r'挂号|取号|医院.{0,12}(?:缴费|付费)|(?:开药|取药).{0,10}(?:流程|费用|缴费)',r'医院|挂号|医保',r'挂号|就诊|医保|缴费'),
  ('itch',r'皮肤.{0,8}痒|瘙痒',r'皮肤|瘙痒',r'皮肤|瘙痒'),
  ('bp_device',r'血压计',r'血压计',r'血压|袖带|测量|校准'),
  ('glucose_device',r'血糖仪',r'血糖仪',r'血糖|试纸|测量'),
@@ -190,6 +199,8 @@ def active_profiles(question):
     # cause poor sleep. Keep the actual task rather than requiring both titles.
     if any(p[0] == 'reimbursement' for p in profiles):
         return tuple(p for p in profiles if p[0] == 'reimbursement')
+    if any(p[0] == 'medical_admin' for p in profiles):
+        return tuple(p for p in profiles if p[0] == 'medical_admin')
     if any(p[0] == 'itch' for p in profiles):
         return tuple(p for p in profiles if p[0] != 'sleep')
     if any(p[0] == 'voice_text' for p in profiles):

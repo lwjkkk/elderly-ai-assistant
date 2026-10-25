@@ -79,33 +79,25 @@ def chat_tiered(request: TieredRequest,
     result = get_agent_answer(request.question, structured_health=True)
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
-    if result.get("module") == "health":
-        tiered = build(request.question, result.get("answer", ""), role, generated=True)
-        if result.get('answer_origin') == 'safety_rule':
-            tiered['source'] = 'deterministic'
-    else:
-        # 操作教程等保留原回答和步骤，避免强加医疗解释与就医提醒。
-        view = {"concern": result.get("answer", ""), "meaning": "",
-                "next_step": "\n".join(result.get("steps", [])), "seek": "",
-                "conclusion": result.get("answer", ""),
-                "advice": "\n".join(result.get("steps", []))}
-        tiered = {"schema_version": 2, "source": "deterministic", "parts": view,
-                  "elder_view": dict(view), "family_view": dict(view), "view": dict(view)}
+    tiered = build(request.question, result.get("answer", ""), role, generated=True,
+                   module=result.get('module', 'daily_life'))
+    if result.get('answer_origin') == 'safety_rule':
+        tiered['source'] = 'deterministic'
 
     emergency_types = _run_chat_side_effects(request.question, result, current, db)
 
     return {
         "schema_version": tiered["schema_version"],
-        "answer": result.get("answer", ""),
+        "answer": tiered["view"]["text"],
         "module": result.get("module", ""),
-        "steps": result.get("steps", []),
-        "disclaimer": result.get("disclaimer", "仅供健康信息参考"),
+        "steps": [],
+        "disclaimer": tiered["display_notice"],
         "sources": result.get("sources", []),
         "evidence_status": result.get("evidence_status", "none"),
         "retrieval_channel": result.get("retrieval_channel", "none"),
         "fallback_reason": result.get("fallback_reason"),
         "index_version": result.get("index_version"),
-        "evidence_notice": result.get('evidence_notice'),
+        "evidence_notice": "",
         "answer_origin": result.get('answer_origin', 'llm'),
         "safety_flags": result.get('safety_flags', []),
         "role": role,
@@ -114,6 +106,11 @@ def chat_tiered(request: TieredRequest,
         "elder_view": tiered["elder_view"],
         "family_view": tiered["family_view"],
         "view": tiered["view"],
+        "elder_answer": tiered["elder_answer"],
+        "family_answer": tiered["family_answer"],
+        "views_distinct": tiered["views_distinct"],
+        "render_mode": tiered["render_mode"],
+        "display_notice": tiered["display_notice"],
         "emergency": bool(emergency_types),
         "emergency_types": emergency_types,
     }

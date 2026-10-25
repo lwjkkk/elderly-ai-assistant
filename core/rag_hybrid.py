@@ -93,6 +93,11 @@ def _matches_query_focus(question: str, title: str, body: str) -> bool:
     if not matches_scope(question, title, body):
         return False
     question = normalize(question)
+    if any(p[0] in ('reimbursement', 'medical_admin') for p in active_profiles(question)):
+        if not re.search(r'异地|外地|跨省|转诊|备案', question) and re.search(r'异地|备案', title or ''):
+            return False
+        if not re.search(r'凭证|激活|医保码|刷码|社保卡', question) and re.search(r'电子凭证|电子社保卡|激活', title or ''):
+            return False
     if re.search(r'进口药|国产药|医保目录', question) and re.search(r'医保|报销|能报|可报', question):
         if not re.search(r'进口|目录', body or ''):
             return False
@@ -104,7 +109,7 @@ def _matches_query_focus(question: str, title: str, body: str) -> bool:
         (r"高血压|降压", r"血压|降压"),
         (r"糖尿病|控糖", r"糖尿病|血糖|控糖"),
     ):
-        if (not any(p[0] == 'reimbursement' for p in active_profiles(question))
+        if (not any(p[0] in ('reimbursement', 'medical_admin') for p in active_profiles(question))
                 and re.search(query_pattern, question) and not re.search(candidate_pattern, combined)):
             return False
     if re.search(r"12306|火车票|高铁票|动车票", question):

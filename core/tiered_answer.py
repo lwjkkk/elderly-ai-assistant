@@ -18,8 +18,8 @@ import re
 
 from core.qwen_llm import call_qwen
 
-# 三段标记
-_TAG = re.compile(r"【(关注点|是什么意思|下一步|结论|建议|就医提醒)】")
+# 四段标记，非健康场景使用补充提醒
+_TAG = re.compile(r"【(关注点|是什么意思|下一步|结论|建议|就医提醒|补充提醒)】")
 
 # 紧急红旗症状：命中即强制前置"立即拨打120/急诊"提示，不与一般不适混为一谈。
 # 依据常见急救分级：胸痛/胸闷压榨感、呼吸困难、意识不清、中风征象（口角歪斜/一侧无力/说话不清）、大出血。
@@ -57,9 +57,14 @@ def _parts():
     return {"concern": "", "meaning": "", "next_step": "", "seek": ""}
 
 
-def parse_three(raw: str) -> dict:
+def parse_three(raw: str, module: str = 'health') -> dict:
     """从 LLM 输出解析四段；缺段补确定性兜底，绝不编造内容。"""
     parts = _parts()
+    seek_fallback = _FALLBACK_SEEK if module == 'health' else '具体条件以官方说明或受理机构要求为准。'
+    meaning_fallback = ('现有信息不足以作出确定判断，请勿据此自行诊断。' if module == 'health'
+                        else '需要结合您的实际情况核对办理或操作条件。')
+    action_fallback = ('建议先观察并结合医生意见决定下一步，避免自行用药。' if module == 'health'
+                       else '请说明您使用的设备或办理所在地，以便核对下一步。')
     if not raw:
         return {"concern": "请结合具体情况核对当前问题。",
                 "conclusion": "请结合具体情况核对当前问题。",
@@ -80,16 +85,16 @@ def parse_three(raw: str) -> dict:
             parts["meaning"] = seg
         elif tag in ("下一步", "建议"):
             parts["next_step"] = seg
-        elif tag == "就医提醒":
+        elif tag in ("就医提醒", "补充提醒"):
             parts["seek"] = seg
     if not parts["seek"]:
-        parts["seek"] = _FALLBACK_SEEK
+        parts["seek"] = seek_fallback
     if not parts["concern"]:
         parts["concern"] = "请结合具体情况核对当前问题。"
     if not parts["meaning"]:
-        parts["meaning"] = "现有信息不足以作出确定判断，请勿据此自行诊断。"
+        parts["meaning"] = meaning_fallback
     if not parts["next_step"]:
-        parts["next_step"] = "建议先观察并结合医生意见决定下一步，避免自行用药。"
+        parts["next_step"] = action_fallback
     return {**parts, "conclusion": parts["concern"], "advice": parts["next_step"]}
 
 
@@ -109,7 +114,7 @@ def elder_simple(parts: dict) -> dict:
     只在模型未给出时用兜底；紧急症状保留强制前缀。"""
     concern = _first_sentence(parts["concern"], 40) or parts["concern"][:40]
     meaning = _first_sentence(parts["meaning"], 48) or parts["meaning"][:48]
-    next_step = _first_sentence(parts["next_step"], 48) or parts["next_step"][:48]
+    next_step = parts["next_step"]  # Preserve all prohibitions and conditions in legacy safety replies.
     # 就医提醒：优先保留模型生成的具体内容（复查时机/就诊指征），不硬替换为通用兜底；
     # 仅当模型未给出 seek 时才用兜底。紧急症状保留强制前缀。
     raw_seek = (parts.get("seek") or "").strip()
@@ -149,47 +154,92 @@ def _has_emergency(text: str) -> bool:
     return any(p.search(text) for p in _EMERGENCY_PATTERNS)
 
 
-def build(question: str, answer: str, role: str, *, generated: bool = False) -> dict:
-    """生成健康结构化回答并同时返回老人简版/家属详版。LLM 失败走确定性降级。
-    若问题/回答中出现红旗紧急症状，就医提醒强制前置「立即拨打120/急诊」提示，
-    不与一般不适混为一谈。"""
+def generation_prompt(module: str) -> str:
+    domain = ('健康科普，解释证据与下一步，不诊断、不处方。就医提醒保留必要条件与动作。'
+              if module == 'health' else
+              '直接完成用户询问的操作或办理任务，不套用医疗问诊结构。医保问题讲资格、结算与办理流程，不转成药物剂量建议。')
+    return (
+        '你为同一个问题一次生成老人简版和家属详版。' + domain +
+        '严格先输出【老人简版】，再输出【家属详版】。每组依次包含'
+        '【关注点】【是什么意思】【下一步】以及' + ('【就医提醒】' if module == 'health' else '【补充提醒】') +
+        '四项。老人简版总计约60至100字，用简单短句给出最少必要动作；家属详版约180至260字，'
+        '补全参考资料内的条件、办理材料或核对事项，不复制简版凑数。两版事实一致，严禁虚构资料之外的细节。'
+        '缺少参保地或险种时，先讲医院医保窗口核对、就诊开方和符合条件的直接结算流程，再追问；不保证本人符合报销资格。'
+        '慢特病仅作为若符合当地资格时的可选办理分支，不写成所有高血压或糖尿病患者唯一或必需的报销途径。'
+        '用户未提异地就医，不主动把备案当成必做步骤，不扩展无关流程。'
+        '两版都保留关键禁忌和急救动作，不为缩短文字删掉否定条件。'
+        '不输出思考过程、检索状态、通道、规则名、来源审核结论或重复免责声明，安全提醒只写一次必要内容。'
+    )
+
+
+def display_notice(module: str) -> str:
+    if module == 'health':
+        return '仅供健康科普，不能替代医生面诊或处方。'
+    if module == 'services':
+        return '具体办理条件以当地主管部门和受理机构规定为准。'
+    return '操作请以实际界面和官方说明为准，注意保护个人信息。'
+
+
+def _decorate(view: dict, module: str) -> dict:
+    labels = (('关注什么', '是什么意思', '下一步怎么办', '何时就医') if module == 'health'
+              else ('办理事项', '适用条件', '办理步骤', '注意事项') if module == 'services'
+              else ('要做什么', '准备条件', '操作步骤', '注意事项'))
+    sections = [{'key': key, 'label': label, 'content': view.get(key, '').strip()}
+                for key, label in zip(('concern', 'meaning', 'next_step', 'seek'), labels)
+                if view.get(key, '').strip()]
+    return {**view, 'note': '', 'sections': sections,
+            'text': '\n\n'.join(section['label'] + '：\n' + section['content'] for section in sections)}
+
+
+def build(question: str, answer: str, role: str, *, generated: bool = False, module: str = 'health') -> dict:
+    """One generation, two explicit views; legacy answers remain parseable without another call."""
+    raw = answer or ''
+    source = 'llm'
     try:
-        # 主问答已经直接生成四段时，只做解析，绝不再请求一次模型。
-        raw = answer if generated else call_qwen(_TIER_SYSTEM, f"问题：{question}\n参考资料：{answer}")
-        if not raw or not _TAG.search(raw):
-            raise ValueError("模型未返回结构化段落")
-        parts = parse_three(raw)
-        source = "llm"
+        if not generated:
+            raw = call_qwen(generation_prompt(module), f'问题：{question}\n参考资料：{answer}')
+        raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.S).strip()
+        groups = re.search(r'【老人简版】(.*?)【家属详版】(.*)', raw, flags=re.S)
+        if groups and all(_TAG.search(group) for group in groups.groups()):
+            short_parts, parts = (parse_three(group, module=module) for group in groups.groups())
+            elder_view, family_view = family_detail(short_parts), family_detail(parts)
+        elif _TAG.search(raw):
+            parts = parse_three(raw, module=module)
+            elder_view, family_view = elder_simple(parts), family_detail(parts)
+            # A short safety answer can legitimately share actions and warnings;
+            # omit the longer explanation instead of inventing extra family facts.
+            elder_view['meaning'] = ''
+        else:
+            source = 'deterministic'
+            parts = {'concern': '请结合当前问题核对下一步。' if module == 'health' else '',
+                     'meaning': '现有内容不足以作出诊断，请结合医生评估。' if module == 'health' else '',
+                     'next_step': raw, 'seek': ''}
+            if module == 'health':
+                parts['seek'] = _FALLBACK_SEEK
+            elder_view, family_view = dict(parts), dict(parts)
+            if module != 'health' and len(raw) > 120:
+                sentences = [s.strip() for s in re.split(r'(?<=[。！？])', raw) if s.strip()]
+                if len(sentences) > 1:
+                    elder_view['next_step'] = sentences[0] + sentences[-1]
     except Exception:
-        first = _first_sentence(answer, 60) or "请结合具体情况处理。"
-        rest = answer.replace(first, "", 1).strip()
-        parts = {
-            "concern": first,
-            "meaning": "以下解释仅根据当前回答内容整理，信息不足时不能代替医生判断。",
-            "next_step": rest[:200] if rest else "建议结合自身情况并与医生沟通确认下一步做法。",
-            "seek": _FALLBACK_SEEK,
-        }
-        source = "deterministic"
+        source = 'deterministic'
+        parts = {'concern': '', 'meaning': '', 'next_step': answer or '暂时无法完成回答，请稍后重试。',
+                 'seek': _FALLBACK_SEEK if module == 'health' else ''}
+        elder_view, family_view = dict(parts), dict(parts)
 
-    # 红旗症状分级：命中则在就医提醒最前面强制加紧急提示
-    if _has_emergency(question) or _has_emergency(answer):
-        if not parts["seek"].startswith(_EMERGENCY_SEEK_PREFIX):
-            parts["seek"] = _EMERGENCY_SEEK_PREFIX + parts["seek"]
-
-    elder_view = elder_simple(parts)
-    family_view = family_detail(parts)
-    view = family_view if role == "family" else elder_view
-    # 保留旧版字段，兼容只读取结论/建议/就医提醒的客户端。
-    legacy_parts = {
-        **parts,
-        "conclusion": parts["concern"],
-        "advice": parts["next_step"],
-    }
-    return {
-        "schema_version": 2,
-        "source": source,
-        "parts": legacy_parts,
-        "elder_view": elder_view,
-        "family_view": family_view,
-        "view": view,
-    }
+    if module == 'health' and (_has_emergency(family_view.get('seek', '')) or '120' in family_view.get('seek', '')):
+        elder_view['seek'] = family_view['seek']
+    from core.query_policy import emergency_types
+    if emergency_types(question):
+        for view in (elder_view, family_view):
+            seek = view.get('seek', '')
+            if '120' not in seek:
+                view['seek'] = '请立即拨打120，并按急救调度员指导处理。' + seek
+    elder_view, family_view = _decorate(elder_view, module), _decorate(family_view, module)
+    view = family_view if role == 'family' else elder_view
+    return {'schema_version': 3, 'source': source,
+            'parts': {**parts, 'conclusion': parts['concern'], 'advice': parts['next_step']},
+            'elder_view': elder_view, 'family_view': family_view, 'view': view,
+            'elder_answer': elder_view['text'], 'family_answer': family_view['text'],
+            'views_distinct': elder_view['text'] != family_view['text'],
+            'render_mode': 'dual_view', 'display_notice': display_notice(module)}
