@@ -1,7 +1,7 @@
 """Operational retake gate; these thresholds are not medical accuracy scores."""
 REQUIREMENTS = [
     '一次拍摄一页报告，保留完整表头、项目、结果、单位和参考范围；原件本身没有的字段无需补写。',
-    '将报告摆正、尽量铺平，镜头正对纸面，减少倾斜和弯曲。',
+    '将报告文字摆正、尽量铺平，镜头正对纸面；不要横放、倒置或明显倾斜拍摄，方向不对请重拍。',
     '光线均匀，避开反光、阴影、手指和其他遮挡。',
     '靠近拍摄并对焦，确保放大后数字、小数点和单位仍清楚，上传清晰原图。',
 ]
@@ -26,10 +26,12 @@ def assess_report(document):
                 and 'alignment' not in m.get('review_fields',[])):
             reliable += 1
     reasons = []
-    if not document.get('raw_blocks'):
+    if document.get('preprocessing',{}).get('orientation_status')=='incorrect':
+        reasons.append({'code':'wrong_orientation','message':'报告文字方向不正或倾斜明显，请将报告摆正后重新拍摄'})
+    elif not document.get('raw_blocks'):
         reasons.append({'code':'no_text','message':'没有识别到可用文字'})
     elif not document.get('tables'):
-        reasons.append({'code':'no_table','message':'未能定位包含项目、结果与参考条件的报告表格'})
+        reasons.append({'code':'no_table','message':'未能定位正向、完整的报告表格，请将文字摆正并拍清项目、结果和参考条件后重新拍摄'})
     elif not count or not extracted:
         reasons.append({'code':'no_results','message':'未能提取可用的检测结果'})
     elif not reliable:
