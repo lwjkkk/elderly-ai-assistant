@@ -27,6 +27,9 @@ QWEN_TEMPERATURE = 0.7        # 温度，越低越稳定
 QWEN_TIMEOUT = 180            # 网络超时时间（秒）；本地CPU跑7B模型生成长回答较慢，给足时间
 QWEN_MAX_RETRIES = 2          # 失败重试次数
 
+# 与前端一致：到点后60分钟整仍可打卡，超过后仅表示未打卡，不证明未服药。
+MEDICATION_CHECKIN_GRACE_MINUTES = 60
+
 # OCR 配置
 OCR_LANG = "ch"
 OCR_USE_GPU = False

@@ -302,6 +302,11 @@ class NotificationOutbox(Base):
     status = Column(String(20), nullable=False, default="pending")
     retry_count = Column(Integer, nullable=False, default=0)
     claimed_at = Column(DateTime, nullable=True)
+    # NULL keeps existing vital/emergency rows compatible with the old queue.
+    kind = Column(String(30), nullable=True)
+    medication_id = Column(Integer, nullable=True, index=True)
+    scheduled_for = Column(DateTime, nullable=True)  # UTC, timezone-naive as other persisted times
+    expires_at = Column(DateTime, nullable=True)
     last_error = Column(String(500), nullable=True)
     title = Column(String(120), nullable=False)
     content = Column(String, nullable=False)

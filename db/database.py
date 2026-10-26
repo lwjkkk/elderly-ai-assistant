@@ -112,6 +112,10 @@ def init_db():
     _add_column_if_missing("vital_draft_conversations", "subject_label", "ALTER TABLE vital_draft_conversations ADD COLUMN subject_label VARCHAR(80)")
     _add_column_if_missing("vital_draft_conversations", "subject_confirmed", "ALTER TABLE vital_draft_conversations ADD COLUMN subject_confirmed BOOLEAN NOT NULL DEFAULT 1")
     _add_column_if_missing("notification_outbox", "claimed_at", "ALTER TABLE notification_outbox ADD COLUMN claimed_at DATETIME")
+    for column, sql_type in [("kind", "VARCHAR(30)"), ("medication_id", "INTEGER"),
+                             ("scheduled_for", "DATETIME"), ("expires_at", "DATETIME")]:
+        _add_column_if_missing("notification_outbox", column,
+                              f"ALTER TABLE notification_outbox ADD COLUMN {column} {sql_type}")
     # Partial unique indexes safely upgrade existing SQLite databases and allow NULL for legacy/manual records.
     with engine.begin() as conn:
         if "vitals" in inspect(engine).get_table_names():
