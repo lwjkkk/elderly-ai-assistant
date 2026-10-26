@@ -34,8 +34,12 @@ REPORT_SYSTEM_PROMPT = (
     "也不允许自行新增程序没有标出的异常项。"
     "你的任务是把这些结论用大白话讲出来：说明每个指标是查什么的；对偏高/偏低项解释意味着什么、"
     "是否需要复查或就医；正常项一句话带过即可。"
-    "常见常识：HDL 高密度脂蛋白是“好胆固醇”，轻度偏高通常对心血管有保护作用、不必担心"
-    "（即使程序按数值标为偏高，也要这样解释）；LDL 低密度脂蛋白是“坏胆固醇”，真正偏高才需警惕。"
+    "只依据输入中明确提供的检测条件，不得把GLU自动称为“空腹血糖”，不得编造空腹、采血时间或病史。"
+    "未说明采血条件时称为“血糖”，必要时说明是否空腹未知。"
+    "不能根据单项结果断言健康、确诊疾病或损伤程度，也不能用“某指标偏高一定有益、不必担心”等保证性话术。"
+    "未能核对项目必须逐项保留具体原因：缺单位不能说成缺参考范围，名称/行归属不确定不能说成读数正常。"
+    "带<、>、≤、≥的结果表示界限，不能把边界数字写成测得的精确值，按程序给出的区间结论表达。"
+    "不要编造新的指标、阈值、数值或明确复查周期，不根据单项数值分别指定多个科室。"
     "输出结构：先列“需要关注的异常项”（只有程序确认没有偏高/偏低项时才能说没有已确认异常），"
     "再一句话带过正常项；存在未能核对项时必须单独列出，绝不能概括成“本次没有明显异常”或“一切正常”。"
     "最后给整体建议。句子要短、术语要解释、不夸大、不遗漏。"
@@ -106,8 +110,9 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
             reason = m.get('verification_reason') or '参考范围未能识别'
             return f"{m['code']}：结果{result}，{reason}，判定【未能核对】"
         reference = m.get('range_text') or f"{m['lo']}~{m['hi']}"
+        bound_note = ('；'+m['bound_comparison']['note']) if m.get('bound_comparison') else ''
         return (f"{m['code']} 结果{m['result']}，参考{reference}，"
-                f"判定【{labels[m['status']]}】")
+                f"判定【{labels[m['status']]}】{bound_note}")
 
     abnormal = [m for m in metrics if m["status"] in ("high", "low")]
     normal = [m for m in metrics if m["status"] == "normal"]
@@ -122,7 +127,7 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
         user += ("以下是程序确认的正常项，只需一句话带过：\n"
                  + "\n".join(_line(m) for m in normal) + "\n\n")
     if unparsed:
-        user += ("以下指标未能自动核对参考范围（OCR 可能没识别清楚），"
+        user += ("以下指标尚不能完成可靠核对，必须逐项保留后面列出的具体原因，不能统一改写为参考范围没看清。"
                  "你不能把它们当作正常项一笔带过，必须明确提示老人：这些项需要对照纸质报告或请医生确认，"
                  "不要自行判断高低：\n"
                  + "\n".join(_line(m) for m in unparsed) + "\n\n")
@@ -130,7 +135,7 @@ def report_advice(ocr_text: str, metrics: list | None = None) -> str:
         user += ("注意：本次程序没有成功核对任何指标的参考范围，"
                  "你绝对不能回答“一切正常”或“均在正常范围内”，"
                  "必须如实说明“本次识别效果有限，未能自动核对各项指标，请对照纸质报告或请医生解读”。\n\n")
-    user += "体检单原始识别文字：\n" + ocr_text
+    user += "以下只覆盖本次识别到的项目，不能推断整张报告已完整识别。\n体检单原始识别文字：\n" + ocr_text
 
     answer = call_qwen(REPORT_SYSTEM_PROMPT + '结论仅限程序已核对项目，不能声称原报告所有项目均已识别或整份报告全部正常。', user)
     from core.query_policy import unsafe_medication_instruction

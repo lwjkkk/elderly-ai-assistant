@@ -1,6 +1,8 @@
 """Parse report cells, never the last number in a flattened OCR line."""
 import re
 from decimal import Decimal, InvalidOperation
+from core.report_units import normalize_unit, valid_unit
+from core.report_bounds import compare_limit
 
 NUMBER = r'[+-]?\d+(?:[.,]\s*\d+)?'
 INTERVAL = re.compile(rf'^\s*({NUMBER})\s*(?:--?|[~～〜—–]|至)\s*({NUMBER})\s*$')
@@ -115,10 +117,7 @@ def parse_cells(cells, *, evidence, alignment_ok=True):
     unit_raw = cells.get('unit', '').strip()
     unit = unit_raw if unit_raw not in ('', '-', 'NULL', 'null') else None
     if unit:
-        unit = re.sub(r'\s+', '', unit).replace('µ', 'μ')
-        unit = unit.lstrip('↑↓←→')
-        unit = re.sub(r'^[*×](?=10)', '', unit)
-        unit = re.sub(r'^10(?:\^|[eE])?(9|12)/([Ll])$', r'10^\1/\2', unit)
+        unit = normalize_unit(unit)
     numeric_text = re.sub(r'\s*[↑↓↗↘]+\s*$', '', result_text)
     value = decimal(numeric_text) if re.fullmatch(NUMBER, numeric_text) else None
     censored = LIMIT.fullmatch(result_text)
@@ -141,26 +140,30 @@ def parse_cells(cells, *, evidence, alignment_ok=True):
     if not critical or any(b.get('confidence') is None or b['confidence'] < .90 for b in critical):
         reasons.append('关键字段OCR置信度不足，请核对原图')
         review_fields.append('ocr')
-    if value is not None and not bounds:
+    if (value is not None or censored) and not bounds:
         reasons.append('报告参考条件缺失或暂不支持，保留结果但不判断高低')
         review_fields.append('reference')
-    if value is not None and not unit and not UNITLESS.search(code) and not UNITLESS.search(name):
+    if (value is not None or censored) and not unit and not UNITLESS.search(code) and not UNITLESS.search(name):
         reasons.append('计量单位未能确认')
         review_fields.append('unit')
-    if unit and not re.fullmatch(r'%|[fF][lL]|[pP][gG]|(?:10\^(?:9|12))/[Ll]|(?:[μu]?mol|mmol|[μu]?g|mg|ng|pg|g|[μu]?U|IU|mIU)/(?:[Ll]|dL|dl|mL|ml)|(?:cell)?/[μu]?[Ll]|/HPF|/100WBC|mmHg|mm/h|L/L|m[lL]/min(?:/1\.73m[²2])?|mOsm/kgH?2?O?',unit):
+    if unit and not valid_unit(unit):
         reasons.append('单位形式需要人工核对')
         review_fields.append('unit')
-    if value is None:
+    if value is None and not censored:
         reasons.append('定性或复合结果已保留，请核对原报告')
+    bound_comparison = compare_limit(censored[1], decimal(censored[2]), bounds) if censored else None
     if censored:
-        reasons.append('结果为界限值，不能当作精确数值自动比较')
-        review_fields.append('result_bound')
+        if not bound_comparison['certain']:
+            reasons.append(bound_comparison['note'])
+            review_fields.append('result_bound')
     status = 'unparsed'
     qualitative_match=bool(value is None and result_text and qualitative_key(result_text)
                            and qualitative_key(result_text)==qualitative_key(range_text))
     if qualitative_match and not review_fields:
         status='normal'
         reasons=[]
+    if censored and bound_comparison['certain'] and not review_fields:
+        status = bound_comparison['possible_statuses'][0]
     if value is not None and bounds and not reasons:
         lo, hi = bounds['lo'], bounds['hi']
         if lo is not None and (value < decimal(lo) or (value == decimal(lo) and not bounds['lo_inclusive'])):
@@ -177,15 +180,19 @@ def parse_cells(cells, *, evidence, alignment_ok=True):
             'result_value': float(value) if value is not None else None,
             'result_kind': 'numeric' if value is not None else 'censored' if censored else 'qualitative' if qualitative_result else 'unknown',
             'result_bound': {'operator':censored[1],'value':float(decimal(censored[2]))} if censored else None,
+            'bound_comparison': bound_comparison,
             'result_text': result_text or None, 'unit': unit, 'unit_raw': unit_raw or None,
+            'unit_normalization': {'original':unit_raw,'normalized':unit,'numeric_rescaling':False}
+                                  if unit and unit_raw != unit else None,
             'lo': bounds['lo'] if bounds else None, 'hi': bounds['hi'] if bounds else None,
             **(bounds or {'reference_kind': 'qualitative' if QUALITATIVE.fullmatch(range_text) else 'unknown'}),
             'range_text': range_text or None, 'status': status, 'needs_review': status == 'unparsed',
             'extraction_status': 'complete' if result_text and range_text else 'partial',
             'verification_status': 'verified' if status != 'unparsed' else 'needs_review',
-            'comparison_status': ('qualitative_match' if qualitative_match else 'unknown') if value is None else status,
+            'comparison_status': ('certain_'+status if status!='unparsed' else 'unverified_bound' if bound_comparison['certain'] else 'indeterminate') if censored else
+                                 ('qualitative_match' if qualitative_match else 'unknown') if value is None else status,
             'review_fields': sorted(set(review_fields)),
-            'verification_reason': '；'.join(reasons) or '表头、单元格与数值比较已核对',
+            'verification_reason': '；'.join(reasons) or (bound_comparison['note'] if censored else '表头、单元格与数值比较已核对'),
             'field_evidence': evidence, 'source_blocks': blocks, 'ocr_confidence': confidence,
             'ocr_text': ' | '.join(cells.get(k, '') for k in ('name','code','result','unit','reference')),
             'parser_version': '3.0.0'}

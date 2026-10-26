@@ -8,7 +8,7 @@ from core.ocr import (_decode_image, recognize_blocks, _reconstruct_table_rows,
                       OcrNoTextError)
 from core.report_parse import parse_metrics
 
-VERSION = "report-ocr-2.4"
+VERSION = "report-ocr-2.5"
 LOW_CONFIDENCE = 0.90  # Operational review threshold, not calibrated accuracy.
 MAX_RETRIES = 6
 MAX_RECOGNITION_CALLS = 12
@@ -107,7 +107,8 @@ def refine_document(document, arr):
     from core.report_fields import reference, QUALITATIVE
     from core.report_layout import text
     from core.report_recovery import (locate_crop, merged_result_crop, valid_reading,
-                                      choose_reading, canonical)
+                                      choose_reading, canonical, merged_name_crop,
+                                      name_boundary_confirmed)
     from core.report_coverage import update_coverage
     tasks = []
     metrics_by_row = {m['source_line']:m for m in document['metrics']}
@@ -115,18 +116,24 @@ def refine_document(document, arr):
         metric = metrics_by_row.get(index)
         if not metric:
             continue
-        for field in ('result','unit','reference'):
+        for field in ('result','unit','reference','name','code'):
             current = row['fields'].get(field,[])
             low = any(b.get('confidence') is None or b['confidence']<LOW_CONFIDENCE for b in current)
+            if field=='code' and row.get('code_result_split'):
+                continue
+            if field=='name' and canonical('name',text(current))!=canonical('name',row['cells'].get('name','')):
+                continue  # A derived name needs all of its original spans.
             missing_result = field=='result' and not row['cells'].get('result')
             invalid_result = (field=='result' and bool(current)
                               and 'result' in metric['review_fields'])
             invalid_unit = field=='unit' and 'unit' in metric['review_fields'] and bool(current)
             ref_text = row['cells'].get('reference','')
+            if field=='reference' and metric.get('result_kind')=='qualitative' and not QUALITATIVE.fullmatch(ref_text):
+                continue  # Explanatory text is not an unreadable numeric range.
             missing_ref = field=='reference' and not ref_text and metric.get('result_kind')=='numeric'
             invalid_ref = field=='reference' and bool(current) and not reference(ref_text) and not QUALITATIVE.fullmatch(ref_text)
             if missing_result or invalid_result or invalid_unit or low or missing_ref or invalid_ref:
-                priority = 0 if missing_result or invalid_result else 1 if invalid_unit else 2 if missing_ref else 3 if low else 4
+                priority = 0 if missing_result or invalid_result else 1 if invalid_unit else 2 if low and field in ('name','code') else 3 if missing_ref else 4 if low else 5
                 tasks.append((priority,index,field))
     document['recognition_call_count'] = 0
     for _,index,field in sorted(tasks)[:MAX_RETRIES]:
@@ -137,11 +144,12 @@ def refine_document(document, arr):
         if not crop:
             continue
         original = row['cells'].get(field,'')
+        alignment_before = row['alignment_ok']
         entry = {'crop':crop,'original':original,'candidate':'','blocks':[],
                  'accepted':False,'observations':[]}
         row.setdefault('retry_fields',{})[field] = entry
 
-        def observe(bounds, variant):
+        def observe(bounds, variant, observations=None):
             x0,y0,x1,y1 = bounds
             x0,y0,x1,y1 = max(0,x0),max(0,y0),min(arr.shape[1],x1),min(arr.shape[0],y1)
             if x1<=x0 or y1<=y0 or document['recognition_call_count']>=MAX_RECOGNITION_CALLS:
@@ -166,8 +174,9 @@ def refine_document(document, arr):
                                    'cy':y0+block['cy']/scale,'h':block['h']/scale})
                 value = text(mapped)
                 confident = bool(mapped) and all(b.get('confidence') is not None and b['confidence']>=LOW_CONFIDENCE for b in mapped)
-                entry['observations'].append({'variant':variant,'crop':[x0,y0,x1,y1],
-                                              'text':value,'blocks':mapped,'confident':confident})
+                target = entry['observations'] if observations is None else observations
+                target.append({'variant':variant,'crop':[x0,y0,x1,y1],
+                               'text':value,'blocks':mapped,'confident':confident})
             except Exception:
                 entry.setdefault('errors',[]).append(variant)
                 row.setdefault('retry_errors',[]).append(field)
@@ -175,6 +184,9 @@ def refine_document(document, arr):
         if field=='unit':
             for variant in ('original','enlarged','contrast'):
                 observe(crop,variant)
+        elif field in ('name','code'):
+            observe(crop,'enlarged')
+            observe(crop,'contrast')
         else:
             observe(crop,'enlarged')
         edge_result = field=='result' and field in row.get('inferred_crop',{})
@@ -185,13 +197,15 @@ def refine_document(document, arr):
             if len(readings)<2:
                 observe(crop,'original')
         merged_crop = merged_result_crop(row,crop) if field=='result' and not original else None
+        if merged_crop and any(valid_reading(field,o['text']) for o in entry['observations']):
+            observe(crop,'contrast')
         if merged_crop and not any(valid_reading(field,o['text']) for o in entry['observations']):
             observe(merged_crop,'enlarged')
             observe(merged_crop,'contrast')
             entry['merged_name_candidate'] = True
         old_valid = valid_reading(field,original)
         chosen = choose_reading(field,entry['observations'],original,old_valid,
-                                require_agreement=field=='unit' or edge_result or qualitative_result or entry.get('merged_name_candidate',False))
+                                require_agreement=field in ('unit','name','code') or edge_result or qualitative_result or bool(merged_crop))
         entry['candidate'] = chosen['text'] if chosen else (entry['observations'][0]['text'] if entry['observations'] else '')
         entry['blocks'] = chosen['blocks'] if chosen else []
         alternatives = {canonical(field,o['text']) for o in entry['observations'] if valid_reading(field,o['text'])}
@@ -200,10 +214,23 @@ def refine_document(document, arr):
             row['cells'][field] = chosen['text']
             entry['accepted'] = True
             if merged_crop:
-                # Recovery improves extracted value, but a merged original name
-                # still needs human review before claiming its row is verified.
-                row['alignment_ok'] = False
-                entry['requires_boundary_review'] = True
+                boundary = merged_name_crop(row,chosen['blocks'],chosen['text'])
+                name_observations = []
+                if boundary and document['recognition_call_count']+2<=MAX_RECOGNITION_CALLS:
+                    name_crop,expected_name = boundary
+                    observe(name_crop,'enlarged',name_observations)
+                    observe(name_crop,'contrast',name_observations)
+                confirmed = bool(boundary and name_boundary_confirmed(boundary[1],name_observations))
+                entry['name_boundary'] = {'confirmed':confirmed,'observations':name_observations,
+                                          'original_name':row['cells'].get('name')}
+                if confirmed:
+                    name_reading = next(o for o in name_observations if o['confident'])
+                    row['cells']['name'] = name_reading['text']
+                    row['fields']['name'] = name_reading['blocks']
+                    row['alignment_ok'] = alignment_before
+                else:
+                    row['alignment_ok'] = False
+                    entry['requires_boundary_review'] = True
         elif len(alternatives)>1 or (old_valid and alternatives and canonical(field,original) not in alternatives):
             row['alignment_ok'] = False
             entry['conflict'] = True
