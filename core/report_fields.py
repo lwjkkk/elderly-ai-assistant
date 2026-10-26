@@ -5,10 +5,25 @@ from decimal import Decimal, InvalidOperation
 NUMBER = r'[+-]?\d+(?:[.,]\s*\d+)?'
 INTERVAL = re.compile(rf'^\s*({NUMBER})\s*(?:--?|[~～〜—–]|至)\s*({NUMBER})\s*$')
 LIMIT = re.compile(rf'^\s*(<=|>=|[<>≤≥≦≧])\s*({NUMBER})\s*$')
-QUALITATIVE = re.compile(r'^(?:(?:阴性|陽性|阳性|陰性|弱阳性|弱陽性|[+-]{1,4}|\d+\+)(?:\s*[(（][^）)]*[)）])?|[(（]\s*[+-]{1,4}\s*[)）])$')
+SIGNS = r'+\-−－﹣‐‑‒–—＋'
+QUALITATIVE = re.compile(rf'^(?:(?:阴性|陽性|阳性|陰性|弱阳性|弱陽性|[{SIGNS}]{{1,4}}|\d+\+)(?:\s*[(（][^）)]*[)）])?|[(（]\s*[{SIGNS}一]{{1,4}}\s*[)）])$')
 CODE = re.compile(r'(?<![A-Za-z])(?:25[- ]?OH[- ]?D|HbA1c|eGFR|pH|[A-Za-z]/[A-Za-z]|[A-Za-z][A-Za-z0-9]{1,7}(?:[-/_][A-Za-z0-9]{1,6})?)[#%]?(?![A-Za-z])')
 METADATA = re.compile(r'姓名|性别|年龄|编号|病历|床号|科室|诊断|条码|时间|日期|检验者|检验师|检查人员|审核|送检|采样|接收|备注|声明|电话|地址|报告单|医院|标本(?:种类|来源|状态|类型|说明|编号|备注|[:：])|打印|水印|小红书|小结')
 UNITLESS = re.compile(r'^(?:pH|SG|AST/ALT|A/G|ABO|PH)$|比重|酸碱度|白蛋白.?球蛋白|谷草.?谷丙', re.I)
+
+
+def qualitative_key(text):
+    """Normalize real sign variants, but never guess that Han 一 means minus."""
+    value = re.sub(r'\s+', '', text).translate(str.maketrans('−－﹣‐‑‒–—＋', '--------+'))
+    if re.fullmatch(r'[(（]一+[)）]', value):
+        return None
+    if value and value[0] in '(（' and value[-1] in ')）':
+        value = value[1:-1]
+    if value=='-' or re.fullmatch(r'(?:阴性|陰性)(?:[(（][-一][)）])?',value):
+        return 'negative'
+    if value=='+' or re.fullmatch(r'(?:阳性|陽性)(?:[(（]\+[)）])?',value):
+        return 'positive'
+    return value if QUALITATIVE.fullmatch(value) else None
 
 
 def decimal(value):
@@ -63,10 +78,15 @@ def is_name(text):
     if re.fullmatch(r'[\d\W_]+', text):
         return False
     return bool(re.search(r'[\u4e00-\u9fff]{2,}', text) or CODE.fullmatch(text)
+                or re.fullmatch(r'[A-Za-z][A-Za-z0-9]{1,7}[-_]',text)
                 or re.fullmatch(r'[钾钠氯钙镁磷铁铜锌硒碘]',text))
 
 
 def metric_name(name, code):
+    prefix = re.fullmatch(r'([A-Za-z][A-Za-z0-9]{1,7})[-_]',code.strip())
+    suffix = re.search(r'[(（]([A-Za-z]{1,4})[)）]\s*$',name)
+    if prefix and suffix:
+        return prefix[1]+'-'+suffix[1]
     for token in code.split():
         token = token.lstrip('*#').strip('[]()（）')
         if CODE.fullmatch(token) and token.upper() not in ('HR', 'NULL', 'IFCC'):
@@ -114,6 +134,9 @@ def parse_cells(cells, *, evidence, alignment_ok=True):
     if not alignment_ok:
         reasons.append('单元格行归属不明确，请对照原图核对')
         review_fields.append('alignment')
+    if QUALITATIVE.fullmatch(result_text) and qualitative_key(result_text) is None:
+        reasons.append('括号内符号与汉字可能混淆，请对照原图核对')
+        review_fields.append('result')
     critical = [b for field in ('name', 'code', 'result', 'reference', 'unit') for b in evidence.get(field, [])]
     if not critical or any(b.get('confidence') is None or b['confidence'] < .90 for b in critical):
         reasons.append('关键字段OCR置信度不足，请核对原图')
@@ -133,13 +156,6 @@ def parse_cells(cells, *, evidence, alignment_ok=True):
         reasons.append('结果为界限值，不能当作精确数值自动比较')
         review_fields.append('result_bound')
     status = 'unparsed'
-    def qualitative_key(value):
-        value = value.strip('()（） ')
-        if value in ('-', '阴性', '陰性', '阴性(-)', '陰性(-)'):
-            return 'negative'
-        if value in ('+', '阳性', '陽性'):
-            return 'positive'
-        return value if QUALITATIVE.fullmatch(value) else None
     qualitative_match=bool(value is None and result_text and qualitative_key(result_text)
                            and qualitative_key(result_text)==qualitative_key(range_text))
     if qualitative_match and not review_fields:

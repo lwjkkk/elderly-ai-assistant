@@ -8,7 +8,7 @@ from core.ocr import (_decode_image, recognize_blocks, _reconstruct_table_rows,
                       OcrNoTextError)
 from core.report_parse import parse_metrics
 
-VERSION = "report-ocr-2.3"
+VERSION = "report-ocr-2.4"
 LOW_CONFIDENCE = 0.90  # Operational review threshold, not calibrated accuracy.
 MAX_RETRIES = 6
 MAX_RECOGNITION_CALLS = 12
@@ -85,23 +85,9 @@ def document_from_blocks(blocks, width, height):
             fields[field] = [b for b in fields.get(field, [])
                              if not re.fullmatch(r'[↑↓←→*ⅠIiTt]+', b['text'].strip())]
         cells = {role: text(value) for role, value in fields.items()}
-        # A text detector can join a reference condition and its adjacent unit.
-        # Split only an unambiguous complete grammar, retaining the shared box.
-        from core.report_fields import reference
-        from core.report_recovery import valid_reading
-        combined = cells.get('reference','')
-        splits = [(combined[:n].strip(),combined[n:].strip()) for n in range(1,len(combined))
-                  if (combined[n].isspace() or combined[n]=='%')
-                  and reference(combined[:n].strip()) and valid_reading('unit',combined[n:].strip())]
-        if len(splits)==1:
-            ref,unit = splits[0]
-            existing = cells.get('unit','')
-            if not existing:
-                cells['reference'],cells['unit'] = ref,unit
-                fields['unit'] = fields['reference']
-                row['joined_field_split'] = {'original':combined,'reference':ref,'unit':unit}
-            elif existing.replace(' ','')!=unit.replace(' ',''):
-                row['alignment_ok'] = False
+        from core.report_cells import split_reference_unit,split_code_result
+        split_reference_unit(row,cells,fields)
+        split_code_result(row,cells,fields)
         prepared.append({**row, 'cells': cells, 'text': ' | '.join(cells.get(k,'') for k in ('name','code','result','unit','reference')),
                          'blocks': [b for value in fields.values() for b in value], 'source_line': index})
     document = {'version': VERSION, 'width': width, 'height': height,
@@ -133,12 +119,14 @@ def refine_document(document, arr):
             current = row['fields'].get(field,[])
             low = any(b.get('confidence') is None or b['confidence']<LOW_CONFIDENCE for b in current)
             missing_result = field=='result' and not row['cells'].get('result')
+            invalid_result = (field=='result' and bool(current)
+                              and 'result' in metric['review_fields'])
             invalid_unit = field=='unit' and 'unit' in metric['review_fields'] and bool(current)
             ref_text = row['cells'].get('reference','')
             missing_ref = field=='reference' and not ref_text and metric.get('result_kind')=='numeric'
             invalid_ref = field=='reference' and bool(current) and not reference(ref_text) and not QUALITATIVE.fullmatch(ref_text)
-            if missing_result or invalid_unit or low or missing_ref or invalid_ref:
-                priority = 0 if missing_result else 1 if invalid_unit else 2 if missing_ref else 3 if low else 4
+            if missing_result or invalid_result or invalid_unit or low or missing_ref or invalid_ref:
+                priority = 0 if missing_result or invalid_result else 1 if invalid_unit else 2 if missing_ref else 3 if low else 4
                 tasks.append((priority,index,field))
     document['recognition_call_count'] = 0
     for _,index,field in sorted(tasks)[:MAX_RETRIES]:
@@ -189,6 +177,13 @@ def refine_document(document, arr):
                 observe(crop,variant)
         else:
             observe(crop,'enlarged')
+        edge_result = field=='result' and field in row.get('inferred_crop',{})
+        qualitative_result = field=='result' and any(QUALITATIVE.fullmatch(o['text']) for o in entry['observations'])
+        if field=='result' and (edge_result or qualitative_result):
+            observe(crop,'contrast')
+            readings = [o for o in entry['observations'] if valid_reading(field,o['text']) and o['confident']]
+            if len(readings)<2:
+                observe(crop,'original')
         merged_crop = merged_result_crop(row,crop) if field=='result' and not original else None
         if merged_crop and not any(valid_reading(field,o['text']) for o in entry['observations']):
             observe(merged_crop,'enlarged')
@@ -196,7 +191,7 @@ def refine_document(document, arr):
             entry['merged_name_candidate'] = True
         old_valid = valid_reading(field,original)
         chosen = choose_reading(field,entry['observations'],original,old_valid,
-                                require_agreement=field=='unit' or entry.get('merged_name_candidate',False))
+                                require_agreement=field=='unit' or edge_result or qualitative_result or entry.get('merged_name_candidate',False))
         entry['candidate'] = chosen['text'] if chosen else (entry['observations'][0]['text'] if entry['observations'] else '')
         entry['blocks'] = chosen['blocks'] if chosen else []
         alternatives = {canonical(field,o['text']) for o in entry['observations'] if valid_reading(field,o['text'])}
