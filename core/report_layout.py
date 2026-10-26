@@ -73,6 +73,49 @@ def gap(groups, default):
     return estimate if default*.30 < estimate < default*1.6 else default
 
 
+def separate_unit_neighbors(table_rows, selected):
+    """Exclude distant non-unit boxes only when the retained span is a unit.
+
+    Unknown units, nearby fragments and competing valid units stay unresolved.
+    Raw OCR boxes are never removed from the document.
+    """
+    from core.report_recovery import valid_reading
+    header = selected.get('unit')
+    if not header:
+        return
+    spacing = min((abs(h['cx']-header['cx']) for h in selected.values()
+                   if h['role']!='unit'), default=header['h']*4)
+    seeds = [b for row in table_rows for b in row['fields'].get('unit', [])
+             if b.get('confidence') is not None and b['confidence']>=.90
+             and valid_reading('unit', b['text'])
+             and abs(b['cx']-header['cx'])<max(header['h']*3,spacing*.7)]
+    if len(seeds)<4:
+        return
+    slopes = [(b['cx']-a['cx'])/(b['cy']-a['cy'])
+              for n,a in enumerate(seeds) for b in seeds[n+1:]
+              if abs(b['cy']-a['cy'])>max(a['h'],b['h'])*3
+              and abs((b['cx']-a['cx'])/(b['cy']-a['cy']))<.3]
+    slope = median(slopes or [0])
+    intercept = median(b['cx']-slope*b['cy'] for b in seeds)
+    widths = [max(p[0] for p in b['polygon'])-min(p[0] for p in b['polygon']) for b in seeds]
+    tolerance = max(20,median(b['h'] for b in seeds)*2,max(widths)*.9)
+    for row in table_rows:
+        original = row['fields'].get('unit', [])
+        excluded = [b for b in original if not valid_reading('unit',b['text'])
+                    and abs(b['cx']-slope*b['cy']-intercept)>tolerance]
+        kept = [b for b in original if b not in excluded]
+        if excluded and valid_reading('unit',text(kept)):
+            row['fields']['unit'] = kept
+            row.setdefault('field_exclusions',[]).append({'field':'unit','blocks':excluded,
+                'reason':'outside_calibrated_unit_column','calibration_samples':len(seeds)})
+        elif excluded and kept:
+            # The near-column text may itself be misrecognized. Keep the full
+            # reading unresolved, but retry only the calibrated unit region.
+            row.setdefault('field_crop_sources',{})['unit'] = kept
+            row.setdefault('field_crop_exclusions',[]).append({'field':'unit','blocks':excluded,
+                'reason':'retry_inside_calibrated_unit_column','calibration_samples':len(seeds)})
+
+
 def reconstruct(blocks, width, height):
     """Return rows with field boxes; unknown geometry never silently uses legacy guesses."""
     hs = headers(blocks)
@@ -219,5 +262,6 @@ def reconstruct(blocks, width, height):
                 else:
                     target['fields'][role]=g
                 target['alignment'][role]='ordered_grid' if dense else 'header_relative_position'
+        separate_unit_neighbors(table_rows, selected)
         rows.extend(table_rows)
     return rows,tables

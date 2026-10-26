@@ -2,14 +2,16 @@
 import re
 from statistics import median
 
-from core.report_fields import NUMBER, reference
+from core.report_fields import NUMBER, reference, QUALITATIVE, LIMIT, qualitative_key, is_name
 
 UNIT = re.compile(r'%|[fF][lL]|[pP][gG]|(?:10[\^eE]?(?:9|12))/[Ll]|(?:[μµu]?mol|mmol|[μu]?g|g|mg|ng|pg|[μu]?U|IU|mIU)/(?:[Ll]|d[Ll]|m[Ll])|(?:cell)?/[μu]?[Ll]|/HPF|/100WBC|mmHg|mm/h|L/L|m[lL]/min(?:/1\.73m[²2])?|mOsm/kgH?2?O?')
 
 
 def valid_reading(field, value):
     if field == 'result':
-        return bool(re.fullmatch(NUMBER, re.sub(r'\s*[↑↓↗↘]+\s*$', '', value)))
+        return bool(re.fullmatch(NUMBER, re.sub(r'\s*[↑↓↗↘]+\s*$', '', value))
+                    or LIMIT.fullmatch(value)
+                    or (QUALITATIVE.fullmatch(value) and qualitative_key(value) is not None))
     if field == 'reference':
         return bool(reference(value))
     return bool(UNIT.fullmatch(canonical(field,value)))
@@ -25,12 +27,14 @@ def canonical(field, value):
         plain = re.sub(r'[↑↓↗↘]+$', '', value)
         if re.fullmatch(NUMBER,plain):
             return str(decimal(plain).normalize())
+        if QUALITATIVE.fullmatch(value) and qualitative_key(value) is not None:
+            return 'qualitative:'+qualitative_key(value)
     return value
 
 
 def locate_crop(document, row, field):
     """Interpolate neighbouring cells within this table, including local tilt."""
-    current = row['fields'].get(field, [])
+    current = row.get('field_crop_sources',{}).get(field,row['fields'].get(field, []))
     if current:
         points = [p for b in current for p in b.get('polygon', [])]
         if not points:
@@ -44,7 +48,39 @@ def locate_crop(document, row, field):
     before = [p for p in neighbours if p[0] < row['row_index']]
     after = [p for p in neighbours if p[0] > row['row_index']]
     if not before or not after:
-        return None  # Do not extrapolate first/last rows into a header/footer.
+        # Edge recovery is allowed only for an actual, clear name anchor and a
+        # nearby populated column. Never manufacture a new row or cross tables.
+        anchors = row['fields'].get('name',[]) or row['fields'].get('code',[])
+        if (len(neighbours)<4 or not anchors
+                or not is_name(' '.join(b['text'] for b in anchors))
+                or any(b.get('confidence') is None or b['confidence']<.90 for b in anchors)
+                or min(abs(i-row['row_index']) for i,_ in neighbours)>3):
+            return None
+        peer_rows = [r for r in document['rows'] if r['table_id']==row['table_id']]
+        paired = [(r,r['fields'].get(field,[]),r['fields'].get('name',[]) or r['fields'].get('code',[]))
+                  for r in peer_rows if r['fields'].get(field)
+                  and (r['fields'].get('name') or r['fields'].get('code'))]
+        if len(paired)<4:
+            return None
+        paired = sorted(paired,key=lambda x:abs(x[0]['row_index']-row['row_index']))[:6]
+        offset = median(median(b['cy'] for b in fields)-median(b['cy'] for b in names)
+                        for _,fields,names in paired)
+        cy = median(b['cy'] for b in anchors)+offset
+        positions = sorted((r['row_index'],median(b['cy'] for b in (r['fields'].get('name',[]) or r['fields'].get('code',[]))))
+                           for r in peer_rows if r['fields'].get('name') or r['fields'].get('code'))
+        steps = [(yb-ya)/(ib-ia) for (ia,ya),(ib,yb) in zip(positions,positions[1:]) if ib>ia and yb>ya]
+        if not steps:
+            return None
+        step = median(steps)
+        peers = [b for _,fields,_ in paired for b in fields]
+        cx = median(b['cx'] for b in peers)
+        half_width = max(16,median(max(p[0] for p in b['polygon'])-min(p[0] for p in b['polygon']) for b in peers)*.65)
+        half_height = min(step*.48,max(step*.43,median(b['h'] for b in anchors)*.55))
+        table = next((t for t in document.get('tables',[]) if t['id']==row['table_id']),None)
+        if not table or cy-half_height<table['bbox'][1] or cy+half_height>table['bbox'][3]:
+            return None
+        row.setdefault('inferred_crop',{})[field] = 'bounded_edge_from_existing_name_anchor'
+        return [int(cx-half_width),int(cy-half_height),int(cx+half_width),int(cy+half_height)]
     a, ba = max(before, key=lambda p:p[0])
     b, bb = min(after, key=lambda p:p[0])
     fraction = (row['row_index']-a)/(b-a)
