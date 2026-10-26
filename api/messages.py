@@ -23,8 +23,16 @@ AUDIO_TYPES = {'.m4a': 'audio/mp4', '.wav': 'audio/wav', '.mp3': 'audio/mpeg',
 
 
 def _out(message: FamilyMessage) -> dict:
+    # Earlier medication notices used the symptom-emergency kind. Old clients
+    # replace that kind's text with symptom/120 templates; medication check-in
+    # absence is not proof of a medical emergency. Normalize only our own type.
+    kind = message.kind
+    content = message.content or {}
+    if (kind == 'emergency_alert' and content.get('origin') == 'system'
+            and content.get('type') == 'medication_missed'):
+        kind = 'health'
     return {'id': message.id, 'binding_id': message.binding_id,
-            'sender_id': message.sender_id, 'kind': message.kind,
+            'sender_id': message.sender_id, 'kind': kind,
             'content': message.content,
             'created_at': message.created_at.isoformat() if message.created_at else None}
 
@@ -102,17 +110,7 @@ def list_messages(binding_id: int,
                 continue
             raise
         visible.append(m)
-    return [
-        {
-            "id": m.id,
-            "binding_id": m.binding_id,
-            "sender_id": m.sender_id,
-            "kind": m.kind,
-            "content": m.content,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-        }
-        for m in visible
-    ]
+    return [_out(m) for m in visible]
 
 
 @router.post("/{binding_id}")

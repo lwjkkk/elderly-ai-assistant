@@ -72,7 +72,7 @@ def stage(db, med, day, slot, kind, grace_minutes):
                 db.add(notice);db.flush()
                 if binding_id is not None:
                     db.add(FamilyMessage(binding_id=binding_id, sender_id=elder.id,
-                        kind="health" if is_due else "emergency_alert",
+                        kind="health",
                         content={"type":kind, "origin":"system", "elder_id":elder.id,
                                  "medication_id":med.id, "date":day, "slot":slot,
                                  "title":title, "message":message, "lines":[message],
