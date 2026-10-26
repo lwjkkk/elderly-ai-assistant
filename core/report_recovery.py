@@ -3,9 +3,7 @@ import re
 from statistics import median
 
 from core.report_fields import NUMBER, reference, QUALITATIVE, LIMIT, qualitative_key, is_name
-
-UNIT = re.compile(r'%|[fF][lL]|[pP][gG]|(?:10[\^eE]?(?:9|12))/[Ll]|(?:[μµu]?mol|mmol|[μu]?g|g|mg|ng|pg|[μu]?U|IU|mIU)/(?:[Ll]|d[Ll]|m[Ll])|(?:cell)?/[μu]?[Ll]|/HPF|/100WBC|mmHg|mm/h|L/L|m[lL]/min(?:/1\.73m[²2])?|mOsm/kgH?2?O?')
-
+from core.report_units import UNIT, normalize_unit, valid_unit
 
 def valid_reading(field, value):
     if field == 'result':
@@ -14,14 +12,21 @@ def valid_reading(field, value):
                     or (QUALITATIVE.fullmatch(value) and qualitative_key(value) is not None))
     if field == 'reference':
         return bool(reference(value))
-    return bool(UNIT.fullmatch(canonical(field,value)))
+    if field == 'name':
+        return is_name(value)
+    if field == 'code':
+        from core.report_fields import CODE
+        return bool(CODE.fullmatch(value.strip()))
+    return valid_unit(value)
 
 
 def canonical(field, value):
+    if field=='unit':
+        return normalize_unit(value)
     value = re.sub(r'\s+', '', value).replace('µ', 'μ')
-    if field == 'unit':
-        value = re.sub(r'^[*×](?=10)', '', value)
-        return re.sub(r'^10(?:\^|[eE])?(9|12)/([Ll])$', r'10^\1/\2', value)
+    if field in ('name','code'):
+        from core.report_fields import clean_name
+        return clean_name(value).upper()
     if field == 'result':
         from core.report_fields import decimal
         plain = re.sub(r'[↑↓↗↘]+$', '', value)
@@ -29,6 +34,10 @@ def canonical(field, value):
             return str(decimal(plain).normalize())
         if QUALITATIVE.fullmatch(value) and qualitative_key(value) is not None:
             return 'qualitative:'+qualitative_key(value)
+        limit = LIMIT.fullmatch(value)
+        if limit:
+            operator = {'≤':'<=','≦':'<=','≥':'>=','≧':'>='}.get(limit[1],limit[1])
+            return operator+str(decimal(limit[2]).normalize())
     return value
 
 
@@ -114,6 +123,33 @@ def merged_result_crop(row, crop):
     # extraction. The original name and evidence are retained for review.
     width = crop[2]-crop[0]
     return [int(crop[0]+width*.20), crop[1], crop[2], crop[3]]
+
+
+def merged_name_crop(row, result_blocks, result_text):
+    """Locate the other side of a merged boundary; suffix text is only a hypothesis."""
+    name = row['cells'].get('name','')
+    match = re.search(r'([+-]?\d+(?:[.,]\d+)?)\s*$', name)
+    names = row['fields'].get('name',[])
+    if not match or not names or not result_blocks:
+        return None
+    if canonical('result',match[1])!=canonical('result',result_text):
+        return None
+    expected = name[:match.start()].rstrip()
+    if not is_name(expected):
+        return None
+    points = [p for b in names for p in b['polygon']]
+    xs,ys = zip(*points)
+    right = min(p[0] for b in result_blocks for p in b['polygon'])-1
+    pad = max(3,int(median(b['h'] for b in names)*.15))
+    if right-min(xs)<max(10,median(b['h'] for b in names)):
+        return None
+    return [int(min(xs))-pad,int(min(ys))-pad,int(min(right,max(xs))),int(max(ys))+pad],expected
+
+
+def name_boundary_confirmed(expected, observations):
+    valid = [o for o in observations if valid_reading('name',o['text'])]
+    return (len([o for o in valid if o['confident']])>=2
+            and all(canonical('name',o['text'])==canonical('name',expected) for o in valid))
 
 
 def choose_reading(field, observations, original, original_valid, require_agreement=False):
