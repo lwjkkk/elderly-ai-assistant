@@ -93,6 +93,23 @@ def adapter_name() -> str:
     return _active.name
 
 
+def capabilities() -> dict:
+    """No permission flag, memory record or credentials alone proves phone delivery."""
+    if isinstance(_active, MemoryPushAdapter):
+        state = "not_configured"
+        reason = "当前仅记录通知，未接入真实远程推送服务"
+    elif isinstance(_active, RealPushAdapter):
+        state = "not_implemented" if _active._ready else "not_configured"
+        reason = "真实推送端点尚未接入" if _active._ready else "真实推送服务凭证、设备令牌或发送通道未就绪"
+    else:
+        state = "unverified"
+        reason = "自定义推送通道尚未提供可核验的能力状态"
+    return {"adapter": _active.name, "state": state, "ready": False,
+            "delivery_guaranteed": False, "reason": reason,
+            "recorded_means": "服务端已记录，不代表手机收到通知",
+            "submitted_means": "通道已受理，不代表设备已送达"}
+
+
 def clear_sent() -> None:
     """清空内存记录（测试用）。"""
     if isinstance(_active, MemoryPushAdapter):

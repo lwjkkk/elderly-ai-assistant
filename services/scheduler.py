@@ -7,21 +7,39 @@
 
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 from db.database import SessionLocal, engine
-from db.models import Medication, MedicationLog, FamilyBinding
-from services import push
+from db.models import Medication, MedicationLog, NotificationOutbox
+from services.medication_notifications import stage
+from config.settings import MEDICATION_CHECKIN_GRACE_MINUTES
 
 logger = logging.getLogger(__name__)
 
 # 超过服药时间多少分钟仍未打卡，判定为漏服
-GRACE_MINUTES = 30
+GRACE_MINUTES = MEDICATION_CHECKIN_GRACE_MINUTES
 
 _scheduler = None
 _LOCK_PATH = os.path.join(os.path.dirname(__file__), ".scheduler.lock")
+
+
+def _slots(med):
+    """Malformed legacy schedules must not stop reminders for all other records."""
+    if not isinstance(med.times, list):
+        logger.warning("跳过无效用药时间列表 medication_id=%s", med.id)
+        return []
+    slots = []
+    for value in med.times:
+        if not isinstance(value, str) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+            logger.warning("跳过无效用药时间点 medication_id=%s", med.id)
+            continue
+        if value not in slots:
+            slots.append(value)
+    return slots
 
 
 def _beijing_now(now: datetime | None = None) -> datetime:
@@ -48,11 +66,11 @@ def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -
     log = MedicationLog(
         medication_id=med.id, elder_id=med.elder_id,
         date=date, slot=slot, status=status)
-    db.add(log)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.add(log)
+            db.flush()
     except IntegrityError:
-        db.rollback()
         log = (
             db.query(MedicationLog)
             .filter(MedicationLog.medication_id == med.id)
@@ -64,91 +82,78 @@ def _get_or_create_log(db, med: Medication, date: str, slot: str, status: str) -
 
 
 def run_reminder_cycle(now: datetime | None = None) -> list[dict]:
-    """扫描当前分钟应服用的药，推送提醒给老人和绑定家属。"""
+    """Persist due notices before dispatch, catching up within the check-in window."""
     now = _beijing_now(now)
-    date = now.strftime("%Y-%m-%d")
-    hm = now.strftime("%H:%M")
-
+    ids = []
     db = SessionLocal()
-    pushed = []
     try:
-        meds = db.query(Medication).all()
-        for med in meds:
-            if med.start_date and date < med.start_date:
-                continue
-            if hm not in med.times:
-                continue
-            # 已推送过则跳过，避免同一分钟内重复推送
-            existing_log = (
-                db.query(MedicationLog)
-                .filter(MedicationLog.medication_id == med.id)
-                .filter(MedicationLog.date == date)
-                .filter(MedicationLog.slot == hm)
-                .first()
-            )
-            if existing_log:
-                continue
-            _get_or_create_log(db, med, date, hm, "pending")
-            msg = f"该服用 {med.name}（{med.dosage}）了"
-            pushed.append(push.send_push(med.elder_id, "用药提醒", msg))
-            # 同步通知所有绑定家属
-            bindings = (
-                db.query(FamilyBinding)
-                .filter(FamilyBinding.elder_id == med.elder_id)
-                .filter(FamilyBinding.status == "active")
-                .all()
-            )
-            for b in bindings:
-                pushed.append(push.send_push(b.family_id, "老人用药提醒", msg))
+        if db.bind.dialect.name == "sqlite":
+            # Keep SAVEPOINT releases inside a real parent transaction on sqlite3.
+            db.execute(text("BEGIN IMMEDIATE"))
+        for med in db.query(Medication).all():
+            for offset in (1, 0):
+                day = (now-timedelta(days=offset)).strftime("%Y-%m-%d")
+                if med.start_date and day < med.start_date:
+                    continue
+                for slot in _slots(med):
+                    due = datetime.strptime(day+" "+slot, "%Y-%m-%d %H:%M")
+                    if not timedelta(0) <= now-due <= timedelta(minutes=GRACE_MINUTES):
+                        continue
+                    log = _get_or_create_log(db, med, day, slot, "pending")
+                    if log.status == "pending":
+                        ids.extend(stage(db,med,day,slot,"medication_due",GRACE_MINUTES))
         db.commit()
     finally:
         db.close()
-    return pushed
+    _dispatch(now)
+    with SessionLocal() as db:
+        return [{"receiver_id":row.receiver_id, "title":row.title, "content":row.content,
+                 "status":row.status, "channel":row.channel}
+                for row in db.query(NotificationOutbox).filter(NotificationOutbox.id.in_(ids)).all()]
+
+
+def _dispatch(now):
+    # A transport failure must not roll back persisted schedules/cards or other meds.
+    from services.notification_outbox import process_pending
+    try:
+        return process_pending(SessionLocal, now=now.replace(tzinfo=timezone(timedelta(hours=8))))
+    except Exception:
+        logger.exception("用药通知派发失败；已提交的记录保留，等待后续任务重试")
+        return None
 
 
 def run_missed_cycle(now: datetime | None = None, grace: int = GRACE_MINUTES) -> list[dict]:
-    """把已过宽限期仍未打卡的时间点标记为漏服。"""
+    """Mark missing check-ins, not proof of missed doses. Includes midnight rollover."""
     now = _beijing_now(now)
-    date = now.strftime("%Y-%m-%d")
-    hm = now.strftime("%H:%M")
-
     db = SessionLocal()
     missed = []
     try:
-        meds = db.query(Medication).all()
-        for med in meds:
-            if med.start_date and date < med.start_date:
-                continue
-            for slot in med.times:
-                # HH:MM 字符串可直接比较先后；只处理今天已过的时间点
-                if slot >= hm:
+        if db.bind.dialect.name == "sqlite":
+            db.execute(text("BEGIN IMMEDIATE"))
+        for med in db.query(Medication).all():
+            for offset in (1, 0):
+                day = (now-timedelta(days=offset)).strftime("%Y-%m-%d")
+                if med.start_date and day < med.start_date:
                     continue
-                log = (
-                    db.query(MedicationLog)
-                    .filter(MedicationLog.medication_id == med.id)
-                    .filter(MedicationLog.date == date)
-                    .filter(MedicationLog.slot == slot)
-                    .first()
-                )
-                if log and log.status != "pending":
-                    continue  # 已服或已处理过
-
-                hour, minute = map(int, slot.split(":"))
-                due = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                if now - due <= timedelta(minutes=grace):
-                    continue  # 还在宽限期内
-
-                if log:
-                    log.status = "missed"
-                else:
-                    log = MedicationLog(
-                        medication_id=med.id, elder_id=med.elder_id,
-                        date=date, slot=slot, status="missed")
-                    db.add(log)
-                missed.append({"medication_id": med.id, "slot": slot, "status": "missed"})
+                for slot in _slots(med):
+                    due = datetime.strptime(day+" "+slot, "%Y-%m-%d %H:%M")
+                    if offset and (due+timedelta(minutes=grace)).date() < now.date():
+                        continue  # Yesterday is only for windows that cross midnight, not bulk backfill.
+                    if now-due <= timedelta(minutes=grace):
+                        continue
+                    log = _get_or_create_log(db,med,day,slot,"pending")
+                    # Conditional update serializes with a competing taken check-in.
+                    changed = db.query(MedicationLog).filter_by(id=log.id,status="pending").update(
+                        {"status":"missed"},synchronize_session=False)
+                    if not changed:
+                        continue
+                    db.flush()
+                    stage(db,med,day,slot,"medication_missed",grace)
+                    missed.append({"medication_id":med.id,"date":day,"slot":slot,"status":"missed"})
         db.commit()
     finally:
         db.close()
+    _dispatch(now)
     return missed
 
 

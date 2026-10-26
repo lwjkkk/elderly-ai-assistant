@@ -11,23 +11,28 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, and_, update
 
-from db.models import NotificationOutbox, User, FamilyBinding, VitalAlert, Vitals
-from core import age
+from db.models import NotificationOutbox, User, VitalAlert, Vitals
 from services import push
+from services.medication_notifications import family_allowed, source_current, KINDS
 
 logger = logging.getLogger(__name__)
 
 
-def process_pending(session_factory, limit: int = 50, alert_id: int | None = None) -> dict:
+def process_pending(session_factory, limit: int = 50, alert_id: int | None = None,
+                    now: datetime | None = None) -> dict:
     db = session_factory()
     processed = recorded = submitted = failed = 0
     suppressed = 0
     try:
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is not None:
+            now = now.astimezone(timezone.utc).replace(tzinfo=None)
         claimable = or_(
-            NotificationOutbox.status.in_(("pending", "failed")),
+            NotificationOutbox.status == "pending",
+            and_(NotificationOutbox.status == "failed", NotificationOutbox.retry_count < 5),
             and_(NotificationOutbox.status == "processing",
-                 NotificationOutbox.claimed_at < now - timedelta(minutes=5)),
+                 or_(NotificationOutbox.claimed_at.is_(None),
+                     NotificationOutbox.claimed_at < now - timedelta(minutes=5))),
         )
         query = db.query(NotificationOutbox).filter(
             claimable
@@ -45,32 +50,34 @@ def process_pending(session_factory, limit: int = 50, alert_id: int | None = Non
             db.refresh(row)
             processed += 1
             # 重试时授权可能已撤回，不能把之前积压的健康信息继续发给家属。
-            elder = db.get(User, row.elder_id)
-            receiver = db.get(User, row.receiver_id)
-            binding = db.query(FamilyBinding).filter_by(
-                elder_id=row.elder_id, family_id=row.receiver_id, status="active").first()
-            tier = age.age_tier(elder.birth_ym) if elder else age.TIER_UNKNOWN
-            allowed = bool(elder and receiver and binding and receiver.role == "family"
-                           and (tier == age.TIER_SENIOR or
-                                (tier == age.TIER_YOUNGER and elder.sync_summary_to_family)))
+            owner_notice = (row.kind in KINDS and row.receiver_id == row.elder_id
+                            and db.get(User, row.elder_id) is not None)
+            allowed = (owner_notice or family_allowed(db, row.elder_id, row.receiver_id))
+            allowed = allowed and source_current(db, row, now)
             if row.alert_id is not None:
                 alert = db.get(VitalAlert, row.alert_id)
                 allowed = allowed and bool(alert and alert.elder_id == row.elder_id
                                            and (alert.vital_id is None or db.get(Vitals, alert.vital_id)))
             if not allowed:
                 row.status = "suppressed"
-                row.last_error = "当前绑定、共享授权或来源事件已失效"
+                row.last_error = "当前绑定、共享授权、来源记录或提醒时限已失效"
                 suppressed += 1
                 db.commit()
                 continue
             try:
-                push.send_push(row.receiver_id, row.title, row.content)
+                result = push.send_push(row.receiver_id, row.title, row.content)
+                if push.adapter_name() != "memory" and not (
+                    isinstance(result, dict) and result.get("status") in ("accepted", "submitted")
+                ):
+                    raise ValueError("推送通道未返回明确受理结果，不能标记为已提交")
                 row.retry_count += 1
                 row.last_error = None
                 if push.adapter_name() == "memory":
+                    row.channel = "in_app"
                     row.status = "recorded"
                     recorded += 1
                 else:
+                    row.channel = "push"
                     row.status = "submitted"
                     submitted += 1
             except Exception as exc:

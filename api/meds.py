@@ -6,6 +6,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from db.database import get_db
 from db.models import User, FamilyBinding, Medication, MedicationLog
@@ -14,6 +15,7 @@ from db.schemas import (
 )
 from core.security import get_current_user
 from core import age as age_mod
+from config.settings import MEDICATION_CHECKIN_GRACE_MINUTES
 
 router = APIRouter(prefix="/api/meds", tags=["用药"])
 
@@ -63,6 +65,8 @@ def _checkin_time(med: Medication, slot: str, date: str | None) -> str:
         raise HTTPException(status_code=400, detail="尚未到开始用药日期")
     if scheduled > now:
         raise HTTPException(status_code=400, detail="尚未到服药时间，请到时间后再打卡")
+    if now - scheduled > timedelta(minutes=MEDICATION_CHECKIN_GRACE_MINUTES):
+        raise HTTPException(status_code=400, detail="已超过服药时间1小时，本次打卡已关闭；未打卡不代表实际未服药")
     return day
 
 
@@ -133,7 +137,7 @@ def create_med(payload: MedicationCreate,
         name=payload.name,
         dosage=payload.dosage,
         frequency=payload.frequency,
-        times=payload.times,
+        times=[slot.strip() for slot in payload.times],
         start_date=payload.start_date or None,
     )
     db.add(med)
@@ -169,7 +173,7 @@ def update_med(med_id: int, payload: MedicationUpdate,
         med.frequency = payload.frequency
     if payload.times is not None:
         _validate_times(payload.times)
-        med.times = payload.times
+        med.times = [slot.strip() for slot in payload.times]
     if payload.clear_start_date:
         med.start_date = None
     elif payload.start_date is not None:
@@ -196,6 +200,17 @@ def delete_med(med_id: int,
     return {"detail": "已删除"}
 
 
+@router.get("/reminder-policy")
+def reminder_policy(current: User = Depends(get_current_user)):
+    """Server policy/capability only; never infers Android permissions or delivery."""
+    from services.push import capabilities
+    return {"timezone": "Asia/Shanghai", "checkin_grace_minutes": MEDICATION_CHECKIN_GRACE_MINUTES,
+            "checkin_deadline_inclusive": True, "missed_means": "未在时限内打卡，不证明实际未服药",
+            "local_reminder": {"managed_by": "app", "permission_status": "unknown_to_server",
+                               "exact_alarm_status": "unknown_to_server"},
+            "remote_push": capabilities()}
+
+
 @router.get("/today", response_model=list[TodayMedication])
 def today_meds(elder_id: int | None = None,
                date: str | None = None,
@@ -204,6 +219,7 @@ def today_meds(elder_id: int | None = None,
     """今日用药清单：每个药品展开时间点及状态（未打卡为 pending）。"""
     target = resolve_elder_id(db, current, elder_id)
     date = date or datetime.now(_SHANGHAI).strftime("%Y-%m-%d")
+    _validate_start_date(date)
 
     meds = db.query(Medication).filter(Medication.elder_id == target).all()
     result = []
@@ -250,6 +266,16 @@ def check_in(payload: CheckInRequest,
         db.add(log)
     else:
         log.status = "taken"
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Another request/scan may have created the unique medication/date/slot.
+        log = db.query(MedicationLog).filter_by(
+            medication_id=med.id, date=date, slot=payload.slot).first()
+        if log is None:
+            raise
+        log.status = "taken"
+        db.commit()
     db.refresh(log)
     return log
