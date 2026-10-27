@@ -16,6 +16,7 @@ _RISK_PATTERN = re.compile(r"RISK[:：]\s*(green|yellow|red)", re.IGNORECASE)
 
 SYMPTOM_SYSTEM_PROMPT = (
     "你是面向老年人的健康风险提示助手，只做风险判断和就医建议，不做疾病诊断。"
+    "用户描述的部位、性质、程度、时间、主体及否认条件按原话保留，不用风险类别、近义症状或急救示例替代或补造。"
     "请根据老人描述的症状，用大白话说明：可能的方向、现在可以怎么做、什么情况下必须就医。"
     "并按以下标准判断风险等级："
     "green=症状轻微、常见，可先居家观察（如轻微鼻塞、偶尔咳嗽）；"
@@ -61,6 +62,7 @@ def symptom_assessment(input_text: str) -> dict:
     from core.agent import _retrieve_references, _source_payload
     from core.evidence import attach_evidence
     from core.emergency_triage import assess, policy
+    from core.emergency_presentation import emergency_metadata
     assessment = assess(input_text)
 
     def finish(advice, risk, refs=(), channel='none', origin='llm'):
@@ -68,7 +70,8 @@ def symptom_assessment(input_text: str) -> dict:
             'sources': _source_payload(list(refs), channel),
             'retrieval_channel': channel, 'answer_origin': origin,
             'triage':assessment, 'emergency_types':assessment['emergency_types'],
-            'urgent_review_required':assessment['needs_review']})
+            'urgent_review_required':assessment['needs_review'],
+            **emergency_metadata(input_text, assessment['emergency_types'])})
 
     guarded = policy(assessment)
     if guarded:
