@@ -60,11 +60,20 @@ def symptom_assessment(input_text: str) -> dict:
     from core import query_policy
     from core.agent import _retrieve_references, _source_payload
     from core.evidence import attach_evidence
+    from core.emergency_triage import assess, policy
+    assessment = assess(input_text)
 
     def finish(advice, risk, refs=(), channel='none', origin='llm'):
         return attach_evidence({'advice_text': advice, 'risk': risk, 'module': 'health',
             'sources': _source_payload(list(refs), channel),
-            'retrieval_channel': channel, 'answer_origin': origin})
+            'retrieval_channel': channel, 'answer_origin': origin,
+            'triage':assessment, 'emergency_types':assessment['emergency_types'],
+            'urgent_review_required':assessment['needs_review']})
+
+    guarded = policy(assessment)
+    if guarded:
+        return finish(guarded['answer'],RISK_RED if assessment['status']=='urgent' else RISK_YELLOW,
+                      origin='safety_rule')
 
     urgent=query_policy.decision(input_text)
     if urgent and urgent.get('emergency_types'):
@@ -90,6 +99,10 @@ def symptom_assessment(input_text: str) -> dict:
 
     match = _RISK_PATTERN.search(raw)
     risk = match.group(1).lower() if match else RISK_YELLOW
+    if risk == RISK_RED and not assessment['emergency_types']:
+        assessment = {**assessment,'status':'urgent','emergency_types':['emergency_other'],
+                      'source':'generation_safety','reason':'red_risk_generated','needs_review':False}
+        return finish(policy(assessment)['answer'],RISK_RED,origin='safety_rule')
 
     # 去掉结尾的 RISK 行，只保留给用户看的建议
     advice = _RISK_PATTERN.sub("", raw).strip()

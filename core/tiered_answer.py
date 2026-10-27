@@ -23,13 +23,8 @@ _TAG = re.compile(r"【(关注点|是什么意思|下一步|结论|建议|就医
 
 # 紧急红旗症状：命中即强制前置"立即拨打120/急诊"提示，不与一般不适混为一谈。
 # 依据常见急救分级：胸痛/胸闷压榨感、呼吸困难、意识不清、中风征象（口角歪斜/一侧无力/说话不清）、大出血。
-_EMERGENCY_PATTERNS = [
-    re.compile(r"胸痛|胸闷|胸口发紧|胸部压迫|胸口压(榨|抑)|心口痛|胸口闷痛"),
-    re.compile(r"呼吸困难|喘不上气|喘不过气|呼吸急促|窒息感"),
-    re.compile(r"意识(模糊|不清|丧失)|昏迷|叫不醒|突然晕倒"),
-    re.compile(r"口角歪斜|嘴歪|一侧(肢体|手|脚)(麻木|无力|不能动)|说话(不清|含糊)|吐字不清"),
-    re.compile(r"大?出血|呕血|咯血|便血|黑便"),
-]
+from core.emergency_rules import LABELS as _SHARED_EMERGENCY_LABELS
+_EMERGENCY_PATTERNS = [pattern for _,pattern,_ in _SHARED_EMERGENCY_LABELS]
 _EMERGENCY_SEEK_PREFIX = (
     "如出现胸痛胸闷、呼吸困难、意识不清、口角歪斜或一侧肢体无力等紧急情况，"
     "请立即拨打120或前往急诊，不要自行观察等待。"
@@ -151,7 +146,8 @@ def _has_emergency(text: str) -> bool:
     """检测文本中是否出现红旗紧急症状（胸痛/呼吸困难/意识异常/中风征象/大出血）。"""
     if not text:
         return False
-    return any(p.search(text) for p in _EMERGENCY_PATTERNS)
+    from core.emergency_rules import fast_types
+    return bool(fast_types(text))
 
 
 def generation_prompt(module: str) -> str:
