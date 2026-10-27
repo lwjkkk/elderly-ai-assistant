@@ -23,22 +23,9 @@ def normalize(text):
 
 
 def emergency_types(text):
-    q=normalize(text)
-    # 咨询预防/定义和否认症状不触发本人紧急告警。
-    q=re.sub(r'(?:没有|无|不伴有|不伴|并无)(?:胸痛|胸闷|呼吸困难|嘴歪|口角歪斜|出血)', '', q)
-    if re.search(r'预防|科普|什么是|有哪些症状|如何识别|怎么识别',q) and not re.search(r'现在|突然|已经|持续|说不出|喘不过',q):
-        return []
-    hits=[]
-    if re.search(r'噎|卡喉|喉咙.{0,5}卡|气道.{0,4}(?:堵|梗阻)',q) and re.search(r'说不出|不能说话|咳不出|喘|发紫|呼吸|噎住',q):
-        hits.append('choking')
-    if re.search(r'嘴(?:角|巴)?歪|口角歪斜|一侧.{0,5}(?:无力|麻木|发麻|不能动)|(?:一边|左边|右边|一只).{0,5}(?:胳膊|手|脚|肢体).{0,6}(?:无力|麻木|发麻|抬不起|不能动)|说话(?:含糊|不清)|吐字不清|突然.{0,8}胳膊.{0,5}抬不起',q):
-        hits.append('stroke')
-    if re.search(r'胸痛|胸闷|胸前区.{0,4}(?:痛|闷)|胸口.{0,4}(?:痛|闷)|心口.{0,4}(?:痛|闷)',q):
-        hits.append('chest_pain')
-    if re.search(r'呼吸困难|喘不过气|喘不上气|喘不上来|窒息',q): hits.append('breath')
-    if re.search(r'意识(?:不清|模糊)|昏迷|叫不醒|突然晕倒',q): hits.append('consciousness')
-    if re.search(r'大量出血|呕血|吐血|咯血|便血|黑便',q): hits.append('bleeding')
-    return hits
+    # Shared context-aware fast rules; no model/network call in this pure helper.
+    from core.emergency_rules import fast_types
+    return fast_types(text)
 
 
 def medical_intent(q):

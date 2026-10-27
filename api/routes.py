@@ -19,16 +19,39 @@ from api.meds import resolve_elder_id
 router = APIRouter()
 
 
+def _prepare_result(question, result):
+    # Empty tags from a legacy generator do not prove screening was performed.
+    from core.emergency_triage import assess, policy, VERSION
+    if not isinstance(result.get('triage'),dict) or result['triage'].get('version') != VERSION:
+        assessment = assess(question)
+        guarded = policy(assessment)
+        if guarded:
+            from core.agent import _policy_response
+            result = _policy_response(guarded)
+        result.update(triage=assessment,emergency_types=assessment['emergency_types'],
+                      urgent_review_required=assessment['needs_review'])
+    return attach_evidence(result)
+
+
 def _run_chat_side_effects(question: str, result: dict, current: User | None, db: Session) -> list[str]:
     """共享普通问答与三段式接口的摘要和紧急事件副作用，单次请求只调用一次。"""
     emergency_types: list[str] = list(result.get('emergency_types') or [])
     factory = sessionmaker(bind=db.get_bind())
     if current is not None and current.role == "elder":
-        from core.emergency_alert import detect_emergency, notify_family_async
-        if 'emergency_types' not in result:
-            emergency_types = detect_emergency(question)
+        from core.emergency_alert import notify_family_async
         if emergency_types:
-            notify_family_async(factory, current, question, emergency_types)
+            from core import age
+            from db.models import FamilyBinding
+            tier = age.age_tier(current.birth_ym)
+            if tier == age.TIER_UNKNOWN:
+                result['family_notification_status'] = 'profile_incomplete'
+            elif tier == age.TIER_YOUNGER and not current.sync_summary_to_family:
+                result['family_notification_status'] = 'sharing_disabled'
+            else:
+                notify_family_async(factory, current, question, emergency_types)
+                bound = db.query(FamilyBinding.id).filter_by(elder_id=current.id,status='active').filter(
+                    FamilyBinding.family_id.isnot(None)).first()
+                result['family_notification_status'] = 'queued' if bound else 'no_recipients'
 
     from core.age import is_senior
     if (current is not None and current.role == "elder"
@@ -54,7 +77,7 @@ def chat(request: ChatRequest,
     """日常问答。老人登录时，对属于 drug/med/selfcheck/consult 的问答后台提炼摘要落库。
     未登录也能用（可选鉴权），此时不落库。
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警。"""
-    result = attach_evidence(get_agent_answer(request.question))
+    result = _prepare_result(request.question,get_agent_answer(request.question))
 
     emergency_types = _run_chat_side_effects(request.question, result, current, db)
     result["emergency"] = bool(emergency_types)
@@ -77,7 +100,7 @@ def chat_tiered(request: TieredRequest,
     10.20 起：老人提问命中红旗紧急症状时，后台异步给授权家属发紧急告警，
     响应里带 emergency=true 供老人端显示红色横幅。
     """
-    result = attach_evidence(get_agent_answer(request.question, structured_health=True))
+    result = _prepare_result(request.question,get_agent_answer(request.question, structured_health=True))
     from core.tiered_answer import build
     role = current.role if current and current.role in ("elder", "family") else "elder"
     tiered = build(request.question, result.get("answer", ""), role, generated=True,
@@ -118,6 +141,9 @@ def chat_tiered(request: TieredRequest,
         "display_notice": tiered["display_notice"],
         "emergency": bool(emergency_types),
         "emergency_types": emergency_types,
+        "triage": result.get('triage'),
+        "urgent_review_required": result.get('urgent_review_required',False),
+        "family_notification_status": result.get('family_notification_status','not_queued'),
     }
 
 

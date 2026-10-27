@@ -44,7 +44,15 @@ def _module_from_dir(dir_path: str) -> str:
 
 def get_agent_answer(question: str, *, structured_health: bool = False) -> dict:
     from core.evidence import attach_evidence
-    return attach_evidence(_generate_agent_answer(question, structured_health=structured_health))
+    from core.emergency_triage import assess, policy
+    assessment = assess(question)
+    guarded = policy(assessment)
+    result = (_policy_response(guarded) if guarded else
+              _generate_agent_answer(question, structured_health=structured_health))
+    result.update(triage=assessment, emergency_types=assessment['emergency_types'],
+                  emergency=assessment['status']=='urgent',
+                  urgent_review_required=assessment['needs_review'])
+    return attach_evidence(result)
 
 
 def _generate_agent_answer(question: str, *, structured_health: bool = False) -> dict:

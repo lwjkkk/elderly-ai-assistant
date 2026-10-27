@@ -1,6 +1,6 @@
 # 症状自查接口：输入症状 -> AI 建议 + 风险分级（绿黄红），家属可代提交、查看
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from db.database import get_db
 from db.models import User, SymptomCheck
@@ -34,6 +34,18 @@ def check_symptom(payload: SymptomCreate,
     db.add(rec)
     db.commit()
     db.refresh(rec)
+    if result.get('emergency_types'):
+        from db.models import FamilyBinding
+        from services.medication_notifications import family_allowed
+        # Explicitly preserve current active binding, birth/age sharing policy,
+        # and recipient-role checks. The worker rechecks these before writing.
+        bindings = db.query(FamilyBinding).filter_by(elder_id=elder_id,status='active').all()
+        eligible = any(b.family_id and family_allowed(db,elder_id,b.family_id) for b in bindings)
+        target = db.get(User,elder_id)
+        if eligible and target is not None and target.role=='elder':
+            from core.emergency_alert import notify_family_async
+            notify_family_async(sessionmaker(bind=db.get_bind()),target,payload.input_text,
+                                result['emergency_types'])
     return rec
 
 
