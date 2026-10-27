@@ -15,6 +15,7 @@ from db.database import get_db
 from db.models import User, ChatSummary
 from db.schemas import ChatSummaryOut
 from api.meds import resolve_elder_id
+from core.emergency_presentation import emergency_metadata
 
 router = APIRouter()
 
@@ -82,6 +83,7 @@ def chat(request: ChatRequest,
     emergency_types = _run_chat_side_effects(request.question, result, current, db)
     result["emergency"] = bool(emergency_types)
     result["emergency_types"] = emergency_types
+    result.update(emergency_metadata(request.question, emergency_types))
     return result
 
 
@@ -141,6 +143,7 @@ def chat_tiered(request: TieredRequest,
         "display_notice": tiered["display_notice"],
         "emergency": bool(emergency_types),
         "emergency_types": emergency_types,
+        **emergency_metadata(request.question, emergency_types),
         "triage": result.get('triage'),
         "urgent_review_required": result.get('urgent_review_required',False),
         "family_notification_status": result.get('family_notification_status','not_queued'),

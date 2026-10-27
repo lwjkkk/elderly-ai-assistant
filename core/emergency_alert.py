@@ -10,6 +10,7 @@ from core.emergency_rules import LABELS as _EMERGENCY_LABELS, LABEL_MAP
 from core.tiered_answer import _EMERGENCY_SEEK_PREFIX
 from services import push as push_svc
 from services.medication_notifications import family_allowed
+from core.emergency_presentation import category_labels
 
 logger = logging.getLogger(__name__)
 _last_notify: dict[int, datetime] = {}  # Compatibility only; dedupe is durable.
@@ -28,7 +29,7 @@ def _llm_judge_emergency(text: str) -> list[str]:
 
 
 def _labels_for(keys: list[str]) -> list[str]:
-    return [LABEL_MAP[key] for key in keys if key in LABEL_MAP]
+    return category_labels(keys)
 
 
 def notify_family_async(db_session_factory, elder_user, question: str, types: list[str]) -> threading.Thread:
@@ -68,7 +69,7 @@ def notify_family_async(db_session_factory, elder_user, question: str, types: li
                         db.add(NotificationOutbox(elder_id=elder_id,receiver_id=binding.family_id,
                             kind='emergency_chat',channel='in_app' if push_svc.adapter_name()=='memory' else 'push',
                             status='pending',title='紧急情况提醒',
-                            content=f'老人描述了{LABEL_MAP[key]}，请立即联系老人或拨打120求助。',
+                            content=f'提醒类别：{category_labels([key])[0]}。请立即联系老人或拨打120求助。',
                             created_at=now,
                             dedupe_key=prefix+f'bucket:{int(now.replace(tzinfo=timezone.utc).timestamp()//300)}'))
                 if fresh:
@@ -76,6 +77,7 @@ def notify_family_async(db_session_factory, elder_user, question: str, types: li
                     db.add(FamilyMessage(binding_id=binding.id,sender_id=elder_id,kind='emergency_alert',
                         content={'type':'emergency_chat','origin':'system','elder_id':elder_id,
                                  'emergency_types':fresh,'emergency_labels':labels,'question':question[:200],
+                                 'reported_question':question,
                                  'advice':'老人可能出现紧急症状，请立即联系老人或拨打120求助。',
                                  'seek_prefix':_EMERGENCY_SEEK_PREFIX}))
             db.commit()
