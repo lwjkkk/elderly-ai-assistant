@@ -25,6 +25,7 @@ from api.sync import router as sync_router
 from api.privacy import router as privacy_router
 from api.users import router as users_router
 from api.messages import router as messages_router
+from api.speech import router as speech_router
 from db.database import init_db
 from services.scheduler import start_scheduler
 from config.settings import HOST, PORT
@@ -88,6 +89,7 @@ app.include_router(sync_router)     # 增量同步 /api/sync
 app.include_router(privacy_router)  # 隐私开关 /api/privacy
 app.include_router(users_router)    # 用户资料 /api/users
 app.include_router(messages_router)  # 家人消息 /api/messages
+app.include_router(speech_router)    # 短录音转写 /api/speech
 
 
 @app.get("/")

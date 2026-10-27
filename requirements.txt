@@ -7,7 +7,8 @@ pydantic-settings>=2.6,<3.0
 # AI 模型与接口
 transformers>=4.45,<5.0
 torch>=2.4,<3.0
-openai>=1.50,<2.0
+openai>=1.52,<2.0
+imageio-ffmpeg==0.6.0  # 短录音校验/统一为16kHz单声道WAV；包含FFmpeg运行程序
 
 # LangChain 与 RAG
 # 10.26 核实：RAG 为自写（core/rag_hybrid.py 用本地 bge-small-zh + SQLite 向量库），
