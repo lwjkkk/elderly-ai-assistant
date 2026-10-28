@@ -33,7 +33,7 @@
 
 本地整理阶段从已经验证过的 `5f21dfa` 创建 `codex/frontend-cleanup-20261028`，先建立空检查点提交 `c995cec`。开始时本地 `main` 与 `origin/main` 已分叉，已有 `frontend` 分支也是另一条历史线；这一阶段未合并、重置、重命名或删除这些分支，也未推送远端。
 
-用户随后明确要求直接修改 GitHub。发布以远端 `main` 的 `acbccb7` 为父提交，只替换 `app_flutter/` 子树，其他路径沿用远端原树。发布前保存备份分支 `codex/backup-main-before-frontend-cleanup-20261028`；更新 `main` 时核对预期旧提交，不强制覆盖他人提交。GitHub 发布记录见 [发布说明](github-publication-20261028.md)。
+用户随后明确要求直接修改 GitHub。发布以远端 `main` 的 `acbccb7` 为父提交，只替换 `app_flutter/` 子树，其他路径沿用远端原树。发布时曾创建临时备份分支，用户随后指出旧前端分支仍未清理。本次将相关历史完整归档到本地 Git bundle 后，清理旧 `frontend`、旧前端修复分支和临时备份分支；远端交付入口统一为 `main`。发布与分支处理分别见 [发布说明](github-publication-20261028.md) 和 [分支清理记录](branch-cleanup-20261028.md)。
 
 GitHub 发布后，后续前端改动应从最新 `origin/main` 创建任务分支，提交范围显式限定到前端。本地旧 `main` 和旧 `frontend` 不作为新任务起点：
 
