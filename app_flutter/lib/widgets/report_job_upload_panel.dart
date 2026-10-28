@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../services/api.dart';
-import '../services/report_job_tracker.dart';
-import '../services/report_retake.dart';
-import '../pages/tabs/report_details.dart';
+import '../services/reports/report_job_tracker.dart';
+import '../services/reports/report_retake.dart';
+import 'package:elderly_ai_assistant/pages/health/report_details.dart';
 
 class ReportJobUploadPanel extends StatefulWidget {
   final bool mine;

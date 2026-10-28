@@ -3,10 +3,10 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
-import 'medication_time.dart';
-import 'medication_name.dart';
-import 'vital_validation.dart';
-import 'report_retake.dart';
+import 'medication/medication_time.dart';
+import 'medication/medication_name.dart';
+import 'health/vital_validation.dart';
+import 'reports/report_retake.dart';
 
 /// B 前端接口层：严格按 C v2.0《API接口文档》实现，以 backend 分支为准。
 class ApiService {

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/api.dart';
-import 'services/location_access.dart';
-import 'services/medication_notification_service.dart';
+import 'services/platform/location_access.dart';
+import 'services/medication/medication_notification_service.dart';
 import 'theme.dart';
-import 'pages/login_page.dart';
-import 'pages/elder_home.dart';
-import 'pages/family_home.dart';
+import 'package:elderly_ai_assistant/pages/auth/login_page.dart';
+import 'package:elderly_ai_assistant/pages/home/elder_home.dart';
+import 'package:elderly_ai_assistant/pages/home/family_home.dart';
 import 'pages/tabs/hub_pages.dart' show chatScale;
 
 void main() {

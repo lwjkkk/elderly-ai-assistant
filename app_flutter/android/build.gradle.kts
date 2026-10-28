@@ -1,6 +1,11 @@
 allprojects {
     repositories {
-        google()
+        val googleMavenMirror = providers.gradleProperty("googleMavenMirror").orNull
+        if (googleMavenMirror != null) {
+            maven { url = uri(googleMavenMirror) }
+        } else {
+            google()
+        }
         mavenCentral()
     }
 }
