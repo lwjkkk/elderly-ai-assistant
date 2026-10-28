@@ -1,0 +1,4 @@
+# Optional Gradio demonstration page, not needed by main.py.
+-r ../requirements.txt
+gradio>=4,<7
+requests>=2.31,<3
