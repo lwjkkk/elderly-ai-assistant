@@ -35,10 +35,10 @@ class _BindPageState extends State<BindPage> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (widget.role == 'elder') ...[
-ElevatedButton(
+      padding: const EdgeInsets.all(24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (widget.role == 'elder') ...[
+          ElevatedButton(
             onPressed: () async {
               try {
                 inviteCode = await ApiService.createInvite();
@@ -50,11 +50,18 @@ ElevatedButton(
             child: const Text('生成邀请码（长辈点我）'),
           ),
           if (inviteCode.isNotEmpty)
-            SelectableText('邀请码：$inviteCode', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
-          ],
+            SelectableText('邀请码：$inviteCode',
+                style:
+                    const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
+        ],
+        if (widget.role == 'family') ...[
           const SizedBox(height: 16),
-          const Text('输入邀请码绑定（家属填）：', style: TextStyle(fontSize: 20)),
-          TextField(controller: codeCtrl, style: const TextStyle(fontSize: 24), decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '6位邀请码')),
+          const Text('输入邀请码绑定：', style: TextStyle(fontSize: 20)),
+          TextField(
+              controller: codeCtrl,
+              style: const TextStyle(fontSize: 24),
+              decoration: const InputDecoration(
+                  border: OutlineInputBorder(), hintText: '6位邀请码')),
           const SizedBox(height: 12),
           ElevatedButton(
             onPressed: () async {
@@ -68,18 +75,32 @@ ElevatedButton(
             },
             child: const Text('确认绑定'),
           ),
-          const SizedBox(height: 16),
-          ElevatedButton(onPressed: _refresh, child: const Text('刷新绑定列表')),
-          ...binds.map((b) {
-            final m = b is Map ? Map<String, dynamic>.from(b as Map) : <String, dynamic>{};
-            final name = (m['other_nickname'] ?? m['elder_nickname'] ?? m['family_nickname'] ?? m['nickname'] ?? b.toString()).toString();
-            final phone = (m['elder_phone'] ?? m['family_phone'] ?? m['phone'] ?? '').toString();
-            final status = (m['status'] ?? '').toString();
-            return Card(child: ListTile(title: Text('$name $phone', style: const TextStyle(fontSize: 20)), subtitle: status.isEmpty ? null : Text(status)));
-          }),
-          const SizedBox(height: 12),
-          Text(msg, style: const TextStyle(fontSize: 20)),
-        ]),
+        ],
+        const SizedBox(height: 16),
+        ElevatedButton(onPressed: _refresh, child: const Text('刷新绑定列表')),
+        ...binds.map((b) {
+          final m = b is Map
+              ? Map<String, dynamic>.from(b as Map)
+              : <String, dynamic>{};
+          final name = (m['other_nickname'] ??
+                  m['elder_nickname'] ??
+                  m['family_nickname'] ??
+                  m['nickname'] ??
+                  b.toString())
+              .toString();
+          final phone =
+              (m['elder_phone'] ?? m['family_phone'] ?? m['phone'] ?? '')
+                  .toString();
+          final status = (m['status'] ?? '').toString();
+          return Card(
+              child: ListTile(
+                  title: Text('$name $phone',
+                      style: const TextStyle(fontSize: 20)),
+                  subtitle: status.isEmpty ? null : Text(status)));
+        }),
+        const SizedBox(height: 12),
+        Text(msg, style: const TextStyle(fontSize: 20)),
+      ]),
     );
   }
 }

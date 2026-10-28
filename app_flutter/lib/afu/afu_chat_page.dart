@@ -5,7 +5,8 @@ import 'afu_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api.dart';
-import '../services/location_access.dart';
+import '../services/contest_answer.dart';
+import '../widgets/answer_evidence.dart';
 
 /// 图片资源说明：
 /// - 欢迎卡助手形象：assets/assistant.png（透明底全身像，pubspec.yaml 已注册）
@@ -22,14 +23,21 @@ class AfuMessage {
   final String text;
   final bool isMe;
   final bool thinking;
+  final bool emergency;
+  final Map<String, dynamic>? answerData;
   const AfuMessage(
-      {required this.text, required this.isMe, this.thinking = false});
+      {required this.text,
+      required this.isMe,
+      this.thinking = false,
+      this.answerData,
+      this.emergency = false});
 }
 
 /// 一级 Tab【问事】AI 问答主页（纯 UI，不调接口）。
 class AfuElderChatPage extends StatefulWidget {
   final List<AfuMessage> messages;
   final bool busy;
+  final bool sendingBlocked;
   final double textScale;
   final ValueChanged<String> onSend;
   final VoidCallback onVoiceStart;
@@ -41,7 +49,7 @@ class AfuElderChatPage extends StatefulWidget {
   final TextEditingController? inputController;
   final ValueChanged<int>? onQuickEntry;
   final VoidCallback? onTipMore;
-  final ValueChanged<int>? onToggleSpeech;
+  final void Function(int index, String text)? onToggleSpeech;
   final int? speakingMessage;
   final bool speechPaused;
 
@@ -61,6 +69,7 @@ class AfuElderChatPage extends StatefulWidget {
     this.speakingMessage,
     this.speechPaused = false,
     this.busy = false,
+    this.sendingBlocked = false,
     this.textScale = 1.0,
     this.header,
   });
@@ -118,7 +127,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
 
   void _submit() {
     final t = _input.text.trim();
-    if (t.isEmpty || widget.busy) return;
+    if (t.isEmpty || widget.busy || widget.sendingBlocked) return;
     _input.clear();
     widget.onSend(t);
   }
@@ -160,11 +169,13 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
                             ? _UserRow(text: m.text)
                             : _AiRow(
                                 text: m.text,
+                                answerData: m.answerData,
+                                emergency: m.emergency,
                                 speaking: widget.speakingMessage == i &&
                                     !widget.speechPaused,
                                 onToggleSpeech: widget.onToggleSpeech == null
                                     ? null
-                                    : () => widget.onToggleSpeech!(i),
+                                    : (text) => widget.onToggleSpeech!(i, text),
                               );
                       },
                     ),
@@ -172,6 +183,7 @@ class _AfuElderChatPageState extends State<AfuElderChatPage> {
             _InputBar(
               controller: _input,
               busy: widget.busy,
+              sendBusy: widget.sendingBlocked,
               onSubmit: _submit,
               onVoiceStart: widget.onVoiceStart,
               onVoiceEnd: widget.onVoiceEnd,
@@ -211,7 +223,7 @@ class _PrivacyDialog extends StatelessWidget {
             style: TextStyle(
                 fontSize: 24, fontWeight: FontWeight.w800, color: _kInk)),
         const SizedBox(height: 10),
-        const Text('对话已开启隐私保护，您的提问仅用于本次解答',
+        const Text('健康对话可能调用云端模型。家属可见范围取决于您的年龄分层、绑定关系和服务端共享设置，请在个人中心查看。',
             style: TextStyle(fontSize: 19, color: _kSub, height: 1.5),
             textAlign: TextAlign.center),
       ]),
@@ -521,20 +533,55 @@ class _WelcomeCard extends StatelessWidget {
 
 class _AiRow extends StatefulWidget {
   final String text;
-  final VoidCallback? onToggleSpeech;
+  final Map<String, dynamic>? answerData;
+  final ValueChanged<String>? onToggleSpeech;
   final bool speaking;
+  final bool emergency;
   const _AiRow(
-      {required this.text, this.onToggleSpeech, this.speaking = false});
+      {required this.text,
+      this.answerData,
+      this.onToggleSpeech,
+      this.speaking = false,
+      this.emergency = false});
   @override
   State<_AiRow> createState() => _AiRowState();
 }
 
 class _AiRowState extends State<_AiRow> {
-  static const _limit = 300;
-  bool _open = false;
+  bool _detailed = false;
+
+  void _selectView(bool detailed) {
+    if (_detailed == detailed) return;
+    setState(() => _detailed = detailed);
+    if (widget.speaking && widget.answerData != null) {
+      widget.onToggleSpeech
+          ?.call(answerText(widget.answerData!, detailed: detailed));
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _detailed = answerDefaultsToDetailedView(widget.answerData ?? {});
+  }
+
+  @override
+  void didUpdateWidget(covariant _AiRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.answerData?['role'] != widget.answerData?['role']) {
+      _detailed = answerDefaultsToDetailedView(widget.answerData ?? {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final data = widget.answerData;
+    final distinct = data != null && hasDistinctAnswerViews(data);
+    final emergency =
+        widget.emergency || (data != null && answerIsEmergency(data));
+    final selectedText =
+        data != null ? answerText(data, detailed: _detailed) : widget.text;
+    final text = selectedText.isEmpty ? widget.text : selectedText;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
       duration: AfuMotion.bubbleIn,
@@ -557,37 +604,49 @@ class _AiRowState extends State<_AiRow> {
               margin: const EdgeInsets.only(right: 4),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               decoration: BoxDecoration(
-                color: _kBubbleAi,
+                color: emergency ? const Color(0xFFFDECEC) : _kBubbleAi,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFD8E6F3)),
+                border: Border.all(
+                    color: emergency
+                        ? const Color(0xFFD93025)
+                        : const Color(0xFFD8E6F3)),
               ),
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      !_open && widget.text.length > _limit
-                          ? '${widget.text.substring(0, _limit)}……'
-                          : widget.text,
-                      style: const TextStyle(
-                          fontSize: 19, color: _kInk, height: 1.5),
-                    ),
-                    if (widget.text.length > _limit)
-                      GestureDetector(
-                        onTap: () => setState(() => _open = !_open),
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(_open ? '收起 ▲' : '展开全文 ▼',
-                              style:
-                                  const TextStyle(fontSize: 18, color: _kDeep)),
-                        ),
+                    if (distinct)
+                      Wrap(spacing: 8, children: [
+                        ChoiceChip(
+                            label: const Text('老人简版'),
+                            selected: !_detailed,
+                            onSelected: (_) => _selectView(false)),
+                        ChoiceChip(
+                            label: const Text('家属详版'),
+                            selected: _detailed,
+                            onSelected: (_) => _selectView(true)),
+                      ]),
+                    if (data != null && answerNeedsUrgentReview(data))
+                      const AnswerUncertainBanner(),
+                    if (emergency)
+                      AnswerEmergencyBanner(
+                        data: data ?? const {},
+                        fallbackText: widget.text,
+                        detailed: _detailed,
+                      )
+                    else
+                      Text(
+                        text,
+                        style: const TextStyle(
+                            fontSize: 19, color: _kInk, height: 1.5),
                       ),
+                    if (data != null) AnswerEvidence(data: data),
                   ]),
             ),
           ),
           if (widget.onToggleSpeech != null)
             IconButton(
               tooltip: widget.speaking ? '暂停语音' : '播放语音',
-              onPressed: widget.onToggleSpeech,
+              onPressed: () => widget.onToggleSpeech?.call(text),
               style: IconButton.styleFrom(
                 backgroundColor: const Color(0xFFE5E7EB),
                 foregroundColor: const Color(0xFF6B7280),
@@ -681,6 +740,7 @@ class _ThinkingRow extends StatelessWidget {
 class _InputBar extends StatefulWidget {
   final TextEditingController controller;
   final bool busy;
+  final bool sendBusy;
   final VoidCallback onSubmit;
   final VoidCallback onVoiceStart;
   final VoidCallback onVoiceEnd;
@@ -689,6 +749,7 @@ class _InputBar extends StatefulWidget {
   const _InputBar({
     required this.controller,
     required this.busy,
+    this.sendBusy = false,
     required this.onSubmit,
     required this.onVoiceStart,
     required this.onVoiceEnd,
@@ -791,15 +852,17 @@ class _InputBarState extends State<_InputBar> {
         ),
         const SizedBox(width: 8),
         AfuPressable(
-          onTap: widget.busy ? null : widget.onSubmit,
+          onTap: widget.busy || widget.sendBusy ? null : widget.onSubmit,
           borderRadius: 28,
           child: Container(
             width: 56,
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: widget.busy ? const Color(0xFF6B7280) : _kDeep,
-              boxShadow: widget.busy
+              color: widget.busy || widget.sendBusy
+                  ? const Color(0xFF6B7280)
+                  : _kDeep,
+              boxShadow: widget.busy || widget.sendBusy
                   ? null
                   : [
                       BoxShadow(
@@ -808,7 +871,7 @@ class _InputBarState extends State<_InputBar> {
                           offset: const Offset(0, 3))
                     ],
             ),
-            child: widget.busy
+            child: widget.busy || widget.sendBusy
                 ? const Padding(
                     padding: EdgeInsets.all(17),
                     child: CircularProgressIndicator(

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 /// 天气和咨询录音共用权限申请，避免启动时同时弹出多个请求。
 class LocationAccess {
   static Future<LocationPermission>? _request;
+  static Position? _cachedPosition;
 
   static Future<LocationPermission> ensurePermission() =>
       _request ??= _ensure().whenComplete(() => _request = null);
@@ -66,9 +67,27 @@ class LocationAccess {
       if (!await Geolocator.isLocationServiceEnabled()) {
         return '请开启手机定位，或手动填写地址';
       }
-      final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 10));
+      Position? recent = _cachedPosition;
+      try {
+        final systemRecent = await Geolocator.getLastKnownPosition()
+            .timeout(const Duration(seconds: 2));
+        if (systemRecent != null &&
+            (recent == null ||
+                systemRecent.timestamp.isAfter(recent.timestamp))) {
+          recent = systemRecent;
+        }
+      } catch (_) {}
+
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 10));
+        _cachedPosition = position;
+      } catch (_) {
+        if (_isRecent(recent)) position = recent;
+      }
+      if (position == null) return '定位暂不可用，请手动填写地址';
       final places =
           await placemarkFromCoordinates(position.latitude, position.longitude)
               .timeout(const Duration(seconds: 8));
@@ -87,5 +106,11 @@ class LocationAccess {
     } catch (_) {
       return '定位暂不可用，请手动填写地址';
     }
+  }
+
+  static bool _isRecent(Position? position) {
+    if (position == null) return false;
+    final age = DateTime.now().difference(position.timestamp);
+    return !age.isNegative && age <= const Duration(minutes: 30);
   }
 }

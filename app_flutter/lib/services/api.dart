@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config.dart';
 import 'medication_time.dart';
 import 'medication_name.dart';
 import 'vital_validation.dart';
+import 'report_retake.dart';
 
 /// B 前端接口层：严格按 C v2.0《API接口文档》实现，以 backend 分支为准。
 class ApiService {
@@ -334,8 +334,10 @@ class ApiService {
   }
 
   /// v2.0：GET /api/meds/today?elder_id&date，每项含 slots[{slot,status}]。
-  static Future<List> medsToday({String? date, bool mine = false}) async {
+  static Future<List> medsToday(
+      {String? date, bool mine = false, int? elderId}) async {
     final q = await withElder({if (date != null) 'date': date}, mine);
+    if (elderId != null) q['elder_id'] = elderId;
     final res = await _dio.get('/api/meds/today', queryParameters: q);
     return res.data is List
         ? [
@@ -351,8 +353,13 @@ class ApiService {
 
   static Future<Map<String, dynamic>> checkin(int medId, String slot,
       {String? date}) async {
-    if (!medicationSlotDue(slot, date: date)) {
-      throw StateError('尚未到服药时间，请到时间后再打卡');
+    final window = medicationSlotWindow(slot, date: date);
+    if (window != MedicationSlotWindow.due) {
+      throw StateError(switch (window) {
+        MedicationSlotWindow.notDue => '尚未到服药时间，请到时间后再打卡',
+        MedicationSlotWindow.expired => '已超过服药时间1小时，本次打卡已关闭',
+        _ => '服药时间无效，请刷新后重试',
+      });
     }
     final res = await _dio.post('/api/meds/checkin', data: {
       'medication_id': medId,
@@ -400,6 +407,7 @@ class ApiService {
       int? diastolic,
       double? value,
       String? measuredAt,
+      String? measurementContext,
       bool mine = false}) async {
     final error = validateVitalValues(type,
         systolic: systolic, diastolic: diastolic, value: value);
@@ -411,22 +419,10 @@ class ApiService {
       if (value != null) 'value': value,
       if (measuredAt != null && measuredAt.isNotEmpty)
         'measured_at': measuredAt,
+      if (type == 'bs' && measurementContext != null)
+        'measurement_context': measurementContext,
     }, mine);
     final res = await _dio.post('/api/vitals', data: body);
-    return Map<String, dynamic>.from(res.data);
-  }
-
-  /// 体征拍照识别：POST /api/vitals/recognize，返回 {type, systolic?, diastolic?,
-  /// value?, unit?, confidence?, ocr_text}，只识别不落库。
-  static Future<Map<String, dynamic>> recognizeVital(List<int> bytes,
-      {String? vitalType, bool mine = false}) async {
-    final body = await withElder({
-      'image_base64': base64Encode(bytes),
-      if (vitalType != null) 'vital_type': vitalType,
-    }, mine);
-    final res = await _dio.post('/api/vitals/recognize',
-        data: body,
-        options: Options(receiveTimeout: const Duration(minutes: 10)));
     return Map<String, dynamic>.from(res.data);
   }
 
@@ -511,6 +507,68 @@ class ApiService {
     return Map<String, dynamic>.from(res.data);
   }
 
+  /// 短录音转写只返回可编辑文字；不会提交聊天、保存体征或发送家属消息。
+  static Future<String> transcribeAudio(List<int> bytes, String fileName,
+      {required String purpose,
+      CancelToken? cancelToken,
+      String? expectedToken}) async {
+    if (purpose != 'chat' && purpose != 'vitals') {
+      throw ArgumentError.value(purpose, 'purpose', '必须是 chat 或 vitals');
+    }
+    final token = await getToken();
+    if (token == null ||
+        token.isEmpty ||
+        (expectedToken != null && expectedToken != token)) {
+      throw StateError('登录状态已变化，请重新登录后再录音。');
+    }
+    if (bytes.isEmpty) throw StateError('没有录到声音，请重新录音。');
+    if (bytes.length > 8 * 1024 * 1024) throw StateError('录音超过8MiB，请缩短后重试。');
+    final lower = fileName.toLowerCase();
+    final mime = lower.endsWith('.wav')
+        ? 'audio/wav'
+        : lower.endsWith('.m4a')
+            ? 'audio/mp4'
+            : lower.endsWith('.aac')
+                ? 'audio/aac'
+                : lower.endsWith('.mp3')
+                    ? 'audio/mpeg'
+                    : 'application/octet-stream';
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes,
+          filename: fileName, contentType: DioMediaType.parse(mime)),
+      'purpose': purpose,
+    });
+    final res = await _dio.post('/api/speech/transcribe',
+        data: form,
+        cancelToken: cancelToken,
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          contentType: 'multipart/form-data',
+          sendTimeout: const Duration(seconds: 60),
+          receiveTimeout: const Duration(seconds: 60),
+        ));
+    final data = res.data;
+    if (await getToken() != token) throw StateError('登录状态已变化，本次转写结果已丢弃。');
+    if (data is! Map) throw StateError('语音识别返回格式异常，请改用文字输入。');
+    if (data['requires_confirmation'] != true) {
+      throw StateError('语音结果未通过确认保护，请改用文字输入。');
+    }
+    if (data['transcript'] is! String ||
+        (data['transcript'] as String).trim().isEmpty) {
+      throw StateError('没有识别到清楚的语音，请重新录音或使用文字输入。');
+    }
+    return data['transcript'] as String;
+  }
+
+  static Future<Map<String, dynamic>> speechCapabilities() async {
+    final token = await getToken();
+    if (token == null || token.isEmpty) throw StateError('请先登录后再使用语音转写。');
+    final res = await _dio.get('/api/speech/capabilities',
+        options: Options(headers: {'Authorization': 'Bearer $token'}));
+    if (res.data is! Map) throw StateError('无法读取语音配置，请使用文字输入。');
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
   /// audio_url 是相对路径，前端拼 baseUrl。
   static Future<List<int>> avatarBytes(String url) async {
     final res =
@@ -587,6 +645,16 @@ class ApiService {
     return res.data is List ? res.data : [];
   }
 
+  static Future<List> chatSummaries(
+      {String? category, int limit = 20, bool mine = false}) async {
+    final q = await withElder({
+      if (category != null && category.isNotEmpty) 'category': category,
+      'limit': limit,
+    }, mine);
+    final res = await _dio.get('/api/chat/summaries', queryParameters: q);
+    return res.data is List ? res.data : [];
+  }
+
   // ---------- 5.8 体检报告 ----------
   static Future<List> reportList({bool mine = false}) async {
     final q = await withElder({}, mine);
@@ -608,10 +676,47 @@ class ApiService {
           filename: fileName, contentType: DioMediaType.parse(mime)),
       ...(await withElder({}, mine)),
     });
-    final res = await _dio.post('/api/reports/upload',
+    try {
+      final res = await _dio.post('/api/reports/upload',
+          data: form,
+          options: Options(receiveTimeout: const Duration(minutes: 10)));
+      return Map<String, dynamic>.from(res.data);
+    } on DioException catch (error) {
+      final retake = ReportRetake.fromError(
+          error, 'upload-${DateTime.now().microsecondsSinceEpoch}');
+      if (retake != null) throw ReportRetakeException(retake);
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> createReportJob(
+      List<int> bytes, String fileName,
+      {bool mine = false}) async {
+    final extension = fileName.toLowerCase().split('.').last;
+    final mime = extension == 'png'
+        ? 'image/png'
+        : extension == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes,
+          filename: fileName, contentType: DioMediaType.parse(mime)),
+      ...(await withElder({}, mine)),
+    });
+    final res = await _dio.post('/api/reports/jobs',
         data: form,
-        options: Options(receiveTimeout: const Duration(minutes: 10)));
-    return Map<String, dynamic>.from(res.data);
+        options: Options(receiveTimeout: const Duration(minutes: 2)));
+    if (res.statusCode != 202 || res.data is! Map) {
+      throw StateError('报告任务提交失败，请稍后重试。');
+    }
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<Map<String, dynamic>> reportJobStatus(String jobId) async {
+    final res =
+        await _dio.get('/api/reports/jobs/${Uri.encodeComponent(jobId)}');
+    if (res.data is! Map) throw StateError('报告任务状态格式异常');
+    return Map<String, dynamic>.from(res.data as Map);
   }
 
   static String reportImageUrl(String imageUrl) {
@@ -666,8 +771,76 @@ class ApiService {
   }
 
   static Future<bool> getPrivacy() async {
+    return (await privacyState())['sync_summary_to_family'] == true;
+  }
+
+  static Future<Map<String, dynamic>> privacyState() async {
     final res = await _dio.get('/api/privacy');
-    return res.data['sync_summary_to_family'] == true;
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<Map<String, dynamic>> spokenVitalTurn(String text,
+      {int? sessionId, bool mine = true}) async {
+    final res = await _dio.post('/api/vitals/draft-conversations',
+        data: await withElder({
+          'text': text,
+          if (sessionId != null) 'session_id': sessionId,
+        }, mine));
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<Map<String, dynamic>> getVitalDraft(int sessionId,
+      {bool mine = true}) async {
+    final res = await _dio.get('/api/vitals/draft-conversations/$sessionId',
+        queryParameters: await withElder({}, mine));
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<Map<String, dynamic>> confirmVitalDraft(int sessionId,
+      {bool mine = true}) async {
+    final res =
+        await _dio.post('/api/vitals/draft-conversations/$sessionId/confirm',
+            queryParameters: await withElder({}, mine),
+            options: Options(headers: {
+              // Retried requests for the same draft must resolve to the same confirmation.
+              'Idempotency-Key': 'vital-draft-confirm-$sessionId',
+            }));
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<void> cancelVitalDraft(int sessionId,
+      {bool mine = true}) async {
+    await _dio.delete('/api/vitals/draft-conversations/$sessionId',
+        queryParameters: await withElder({}, mine));
+  }
+
+  static Future<Map<String, dynamic>> updateVitalDraft(
+      int sessionId, Map<String, dynamic> fields,
+      {bool mine = true}) async {
+    final res = await _dio.patch('/api/vitals/draft-conversations/$sessionId',
+        data: fields, queryParameters: await withElder({}, mine));
+    return Map<String, dynamic>.from(res.data as Map);
+  }
+
+  static Future<List> vitalAlerts({bool mine = true}) async {
+    final res = await _dio.get('/api/vitals/alerts',
+        queryParameters: await withElder({'days': 90}, mine));
+    if (res.data is! List) throw StateError('提醒数据格式异常，请稍后重试');
+    return res.data as List;
+  }
+
+  static Future<Map<String, dynamic>> tieredChat(String question) async {
+    try {
+      final res = await _dio.post('/api/chat/tiered',
+          data: {'question': question},
+          options: Options(receiveTimeout: const Duration(minutes: 10)));
+      return Map<String, dynamic>.from(res.data as Map);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 405) {
+        return chat(question);
+      }
+      rethrow;
+    }
   }
 
   static Future<bool> updatePrivacy(bool value) async {

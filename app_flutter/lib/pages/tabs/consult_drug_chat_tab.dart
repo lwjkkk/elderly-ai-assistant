@@ -6,12 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
 import '../../widgets/consult_summary_cell.dart';
 import '../../services/answer_speech.dart';
-import '../../services/drug_question.dart';
+import '../../services/voice_transcription.dart';
+import '../../services/voice_transcription_ui.dart';
 import '../../services/location_access.dart';
 import '../../services/chat_archive.dart';
 import '../chat_history_page.dart';
@@ -22,6 +22,10 @@ import 'hub_pages.dart';
 import 'vitals_tab.dart';
 import 'health_record_style.dart';
 import 'report_details.dart';
+import '../../widgets/report_job_upload_panel.dart';
+import 'vital_draft_page.dart';
+import '../../services/contest_answer.dart';
+import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 
 /// Day3咨询记录（audio_url相对路径需拼baseUrl）+ Day4查药/症状/报告/天气 + Day5问答
@@ -472,9 +476,13 @@ class _SymptomTabState extends State<SymptomTab> {
 
   Future<void> submit() async {
     if (c.text.trim().isEmpty || busy) return;
+    final submitted = c.text.trim();
     setState(() => busy = true);
     try {
-      last = await ApiService.symptomCheck(c.text.trim());
+      last = {
+        ...await ApiService.symptomCheck(submitted),
+        'input_text': submitted,
+      };
       loadHistory();
     } catch (e) {
       if (mounted) {
@@ -513,6 +521,9 @@ class _SymptomTabState extends State<SymptomTab> {
                             fontWeight: FontWeight.bold,
                             color:
                                 riskColor((last!['risk'] ?? '').toString()))),
+                    const SizedBox(height: 8),
+                    Text('您描述：${last!['input_text']}',
+                        style: const TextStyle(fontSize: 20)),
                     const SizedBox(height: 8),
                     Text((last!['advice_text'] ?? '').toString(),
                         style: const TextStyle(fontSize: 20)),
@@ -561,7 +572,6 @@ class ReportTab extends StatefulWidget {
 class _ReportTabState extends State<ReportTab> {
   List items = [];
   bool loading = true;
-  bool busy = false;
   String? error;
 
   @override
@@ -586,28 +596,6 @@ class _ReportTabState extends State<ReportTab> {
     }
   }
 
-  Future<void> upload(ImageSource source) async {
-    if (busy) return;
-    setState(() => busy = true);
-    try {
-      final file =
-          await ImagePicker().pickImage(source: source, maxWidth: 2000);
-      if (file == null) return;
-      await ApiService.uploadReport(await file.readAsBytes(), file.name,
-          mine: widget.mine);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('报告已上传并完成解读')));
-      await refresh();
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
   Future<void> _deleteReport(Map<String, dynamic> item) async {
     final id = (item['id'] as num?)?.toInt();
     if (id == null || !await showDeleteConfirm(context, '这份报告')) return;
@@ -629,31 +617,15 @@ class _ReportTabState extends State<ReportTab> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
             children: [
-              Row(children: [
-                Expanded(
-                    child: HealthRecordStyle.button(
-                        busy ? '处理中…' : '拍照上传',
-                        Icons.camera_alt_outlined,
-                        busy ? null : () => upload(ImageSource.camera))),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: HealthRecordStyle.button(
-                        '相册上传',
-                        Icons.photo_library_outlined,
-                        busy ? null : () => upload(ImageSource.gallery))),
-              ]),
+              ReportJobUploadPanel(
+                key: ValueKey('report-jobs-${widget.mine}'),
+                mine: widget.mine,
+                primary: HealthRecordStyle.primary,
+                soft: HealthRecordStyle.soft,
+                onReportSaved: refresh,
+                onOpenReport: (report) => showReportDetails(context, report),
+              ),
               const SizedBox(height: 16),
-              if (busy)
-                const Padding(
-                    padding: EdgeInsets.only(bottom: 16),
-                    child: Column(children: [
-                      LinearProgressIndicator(
-                          color: HealthRecordStyle.primary,
-                          backgroundColor: HealthRecordStyle.soft),
-                      SizedBox(height: 8),
-                      Text('正在识别并解读报告，请稍候',
-                          style: TextStyle(color: HealthRecordStyle.secondary)),
-                    ])),
               HealthRecordStyle.panel(loading
                   ? const SizedBox(
                       height: 190,
@@ -737,24 +709,20 @@ class _ReportTabState extends State<ReportTab> {
 
 /// Day5 问事助手：柔和风 UI（AfuElderChatPage），逻辑复用原有 send/语音/天气。
 class ChatTab extends StatefulWidget {
-  const ChatTab({super.key});
+  final VoiceTranscriptionRecorder Function()? voiceRecorderFactory;
+  const ChatTab({super.key, this.voiceRecorderFactory});
   @override
   State<ChatTab> createState() => _ChatTabState();
 }
-
-final re_step = RegExp('第[一二三四五六七八九十]+步|步骤');
 
 class _ChatTabState extends State<ChatTab> {
   final msgs = <Map<String, String>>[];
   final inputC = TextEditingController();
   bool busy = false;
-  bool listening = false;
   bool fontBig = false;
   late final AnswerSpeech _speech;
-  bool _voiceStarting = false;
+  bool _voiceBusy = false;
   int _voiceGeneration = 0;
-  String _voiceHint = '点按话筒开始说话，再点停止';
-  String _voicePrefix = '';
   String? _historyKey;
   final _sessionId = DateTime.now().toIso8601String();
   late final Future<void> _historyReady;
@@ -810,7 +778,6 @@ class _ChatTabState extends State<ChatTab> {
   @override
   void dispose() {
     ++_voiceGeneration;
-    unawaited(_activeStt?.cancel().catchError((_) {}) ?? Future<void>.value());
     _speech.removeListener(_speechChanged);
     _speech.dispose();
     chatScale.removeListener(_applyScale);
@@ -844,57 +811,55 @@ class _ChatTabState extends State<ChatTab> {
             child: i == 1 ? const ReportTab() : const ConsultsTab())));
   }
 
-  /// 症状关键词：命中则走专用自查接口并展示风险等级，而非普通问答。
-  static const _symptomKeys = [
-    '头晕',
-    '头痛',
-    '头疼',
-    '发烧',
-    '发热',
-    '咳嗽',
-    '胸闷',
-    '心慌',
-    '心悸',
-    '气短',
-    '腹痛',
-    '肚子疼',
-    '胃疼',
-    '恶心',
-    '呕吐',
-    '腹泻',
-    '失眠',
-    '乏力',
-    '疼痛',
-    '麻木',
-    '发麻',
-    '水肿',
-    '感冒',
-    '咽痛',
-    '牙疼',
-    '腰疼',
-    '腿疼',
-    '背疼',
-    '不舒服',
-    '难受',
-    '眩晕',
-    '耳鸣',
-    '皮疹',
-  ];
-
-  bool _looksLikeSymptom(String t) {
-    if (t.length > 60) return false;
-    for (final k in _symptomKeys) {
-      if (t.contains(k)) return true;
-    }
-    return false;
-  }
-
+  /// 普通问事统一请求双视图；明确的测量录入仍进入体征草稿。
   Future<void> send(String text) async {
     await _historyReady;
     final t = text.trim();
-    if (t.isEmpty || busy || !mounted) return;
+    if (t.isEmpty || busy || _voiceBusy || !mounted) return;
+    if (looksLikeVitalRecord(t)) {
+      await _speech.stop();
+      if (!mounted) return;
+      final role = await ApiService.getRole();
+      var mine = true;
+      final mentionsOther =
+          RegExp(r'妈妈|爸爸|母亲|父亲|爷爷|奶奶|外公|外婆|老伴|家人|长辈').hasMatch(t);
+      if (role == 'family') {
+        if (!mounted) return;
+        final choice = await showDialog<bool>(
+            context: context,
+            builder: (c) => AlertDialog(
+                  title: const Text('这次测量是谁的？'),
+                  content: const Text('请核对记录对象，避免把长辈的数值保存到本人账号。'),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(c),
+                        child: const Text('取消')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, true),
+                        child: const Text('家属本人')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(c, false),
+                        child: const Text('当前绑定长辈')),
+                  ],
+                ));
+        if (choice == null) return;
+        mine = choice;
+      } else if (mentionsOther) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('当前账号仅能录入本人体征。请使用家属账号选择绑定长辈，或让本人录入。')));
+        return;
+      }
+      if (!mounted) return;
+      final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => VitalDraftPage(initialText: t, mine: mine)));
+      if (mounted && saved == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('体征已保存，可在体征记录和异常提醒中查看')));
+      }
+      return;
+    }
     setState(() => busy = true);
-    await stopHoldToTalk();
     await _speech.stop();
     if (!mounted) return;
     setState(() {
@@ -904,183 +869,66 @@ class _ChatTabState extends State<ChatTab> {
     });
     await _saveHistory();
     String answer;
+    bool emergency = false;
+    Map<String, dynamic>? answerData;
     try {
-      final drug = drugQueryName(t);
-      // 后端统一生成 kind=chat 的查药记录，并执行摘要同步隐私规则。
-      if (drug == null && _looksLikeSymptom(t)) {
-        try {
-          final r = await ApiService.symptomCheck(t);
-          final risk = (r['risk'] ?? 'green').toString();
-          final tag = risk == 'red'
-              ? '高风险'
-              : risk == 'yellow'
-                  ? '中风险'
-                  : '低风险';
-          final tail = risk == 'red'
-              ? '\n请立即拨打120'
-              : risk == 'yellow'
-                  ? '\n建议尽快就医'
-                  : '';
-          answer =
-              '【症状自查·$tag】\n${r['advice_text'] ?? ''}$tail\n${r['disclaimer'] ?? ApiService.disclaimer}';
-        } catch (_) {
-          // 同一条提问回退到普通问答，不重复插入消息，也不被 busy 挡住。
-          answer = _formatChat(await ApiService.chat(t));
-        }
-      } else {
-        answer = _formatChat(await ApiService.chat(t));
-      }
+      final r = await _requestAnswer(t);
+      answerData = r;
+      emergency = answerIsEmergency(r);
+      answer = _formatChat(r);
     } catch (e) {
       answer = '出错了：${ApiService.friendly(e)}';
     }
     msgs.removeWhere((m) => m['role'] == 'thinking');
-    msgs.add({'role': 'ai', 'text': answer});
+    if (answerData != null && emergency) {
+      answerData = {...answerData, 'emergency': true, 'reported_question': t};
+    }
+    msgs.add({
+      'role': 'ai',
+      'text': answer,
+      'emergency': emergency.toString(),
+      if (answerData != null) 'answer_data': jsonEncode(answerData)
+    });
     await _saveHistory();
     if (!mounted) return;
     setState(() => busy = false);
     unawaited(_speech.play(msgs.length - 1, answer));
   }
 
-  String _formatChat(Map<String, dynamic> result) {
-    final raw = (result['answer'] ?? '').toString();
-    if (re_step.hasMatch(raw) || result['steps'] is! List) return raw;
-    final missing = (result['steps'] as List)
-        .map((s) => s.toString())
-        .where((s) => s.isNotEmpty && !raw.contains(s))
-        .toList();
-    return missing.isEmpty
-        ? raw
-        : '$raw\n\n步骤：\n${missing.map((s) => '• $s').join('\n')}';
-  }
+  String _formatChat(Map<String, dynamic> result) =>
+      answerText(result, detailed: answerDefaultsToDetailedView(result));
 
-  SpeechToText? _activeStt;
-  Future<bool>? _sttInitialization;
+  // AI 问事统一保留双视图、来源及安全字段；症状自查只在专用入口调用。
+  Future<Map<String, dynamic>> _requestAnswer(String text) =>
+      ApiService.tieredChat(text);
 
-  bool _autoSend = false;
-
-  Future<bool> _ensureSpeechReady() {
-    return _sttInitialization ??= () async {
-      final stt = _activeStt ??= SpeechToText();
-      stt.errorListener = (e) {
-        if (!mounted) return;
-        final permission = e.errorMsg.contains('permission');
-        final noSpeech = e.errorMsg.contains('no_match') ||
-            e.errorMsg.contains('speech_timeout');
-        final message = permission
-            ? '请在系统设置中允许麦克风权限'
-            : noSpeech
-                ? '没有听清，请点话筒后靠近手机说话'
-                : '系统语音识别不可用（${e.errorMsg}），请检查语音服务和网络';
-        setState(() {
-          listening = false;
-          _voiceHint = message;
-        });
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
-      };
-      stt.statusListener = (status) {
-        if (mounted &&
-            (status == SpeechToText.doneStatus ||
-                status == SpeechToText.notListeningStatus)) {
-          setState(() {
-            listening = false;
-            _voiceHint = '点按话筒开始说话，再点停止';
-          });
-        }
-      };
-      return stt.initialize(
-          onError: stt.errorListener,
-          onStatus: stt.statusListener,
-          options: [
-            SpeechToText.androidIntentLookup,
-            SpeechToText.androidNoBluetooth
-          ]).timeout(const Duration(seconds: 10), onTimeout: () => false);
-    }();
-  }
-
-  Future<void> startHoldToTalk({bool autoSend = false}) async {
-    if (listening || _voiceStarting || busy) return;
+  Future<void> _recordVoice() async {
+    if (_voiceBusy || busy) return;
     final generation = ++_voiceGeneration;
-    setState(() {
-      _voiceStarting = true;
-      _voiceHint = '正在准备麦克风…';
-    });
+    final original = inputC.text;
+    final token = await ApiService.getToken();
+    if (!mounted || generation != _voiceGeneration) return;
+    setState(() => _voiceBusy = true);
     try {
-      await _speech
-          .stop()
-          .timeout(const Duration(seconds: 2), onTimeout: () {});
-      final stt = _activeStt ??= SpeechToText();
-      final ok = await _ensureSpeechReady();
+      await _speech.stop();
       if (!mounted || generation != _voiceGeneration) return;
-      if (!ok) {
-        _sttInitialization = null;
-        throw StateError('请允许麦克风权限，并在手机设置中启用系统语音识别服务');
-      }
-      String? locale = 'zh_CN';
-      final locales = await stt
-          .locales()
-          .timeout(const Duration(seconds: 3), onTimeout: () => []);
-      for (final l in locales) {
-        final id = l.localeId.toLowerCase().replaceAll('-', '_');
-        if (id == 'zh_cn' || id.startsWith('zh_hans') || id.startsWith('cmn')) {
-          locale = l.localeId;
-          break;
-        }
-      }
-      if (!mounted || generation != _voiceGeneration) return;
-      _autoSend = autoSend;
-      _voicePrefix = inputC.text.trim();
-      FocusManager.instance.primaryFocus?.unfocus();
-      setState(() {
-        listening = true;
-        _voiceHint = '正在听，请讲话；再点话筒停止';
-      });
-      await stt.listen(
-        localeId: locale,
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 5),
-        listenOptions: SpeechListenOptions(
-            partialResults: true,
-            cancelOnError: false,
-            listenMode: ListenMode.dictation),
-        onResult: (res) {
-          if (!mounted || generation != _voiceGeneration) return;
-          final words = res.recognizedWords.trim();
-          if (words.isEmpty) return;
-          final text = _voicePrefix.isEmpty ? words : '$_voicePrefix $words';
-          setState(() {
-            inputC.value = TextEditingValue(
-                text: text,
-                selection: TextSelection.collapsed(offset: text.length));
-          });
-          if (_autoSend && res.finalResult) {
-            _autoSend = false;
-            unawaited(send(words));
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        final message =
-            e is StateError ? e.message : '语音启动失败，请检查麦克风权限和系统语音识别服务';
-        setState(() {
-          listening = false;
-          _voiceHint = message;
-        });
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(message)));
-      }
+      final text = await showVoiceRecording(context,
+          purpose: 'chat',
+          recorderFactory: widget.voiceRecorderFactory,
+          isOwnerActive: () => mounted && generation == _voiceGeneration);
+      if (!mounted || generation != _voiceGeneration || text == null) return;
+      if (await ApiService.getToken() != token || !mounted) return;
+      await applyVoiceTranscript(
+          context: context,
+          input: inputC,
+          originalInput: original,
+          transcript: text,
+          isCurrent: () => mounted && generation == _voiceGeneration);
     } finally {
-      if (mounted) setState(() => _voiceStarting = false);
+      if (mounted && generation == _voiceGeneration) {
+        setState(() => _voiceBusy = false);
+      }
     }
-  }
-
-  Future<void> stopHoldToTalk() async {
-    if (_voiceStarting) ++_voiceGeneration;
-    try {
-      await _activeStt?.stop();
-    } catch (_) {}
-    if (mounted && listening) setState(() => listening = false);
   }
 
   @override
@@ -1090,7 +938,13 @@ class _ChatTabState extends State<ChatTab> {
         if (m['role'] == 'thinking')
           const AfuMessage(text: '', isMe: false, thinking: true)
         else
-          AfuMessage(text: m['text'] ?? '', isMe: m['role'] == 'me'),
+          AfuMessage(
+              text: m['text'] ?? '',
+              answerData: m.containsKey('answer_data')
+                  ? decodeAnswer(m['answer_data'])
+                  : null,
+              isMe: m['role'] == 'me',
+              emergency: m['emergency'] == 'true'),
     ];
     return AfuElderChatPage(
       messages: items,
@@ -1098,10 +952,9 @@ class _ChatTabState extends State<ChatTab> {
       inputController: inputC,
       speakingMessage: _speech.messageIndex,
       speechPaused: _speech.paused,
-      onToggleSpeech: (i) {
+      onToggleSpeech: (i, text) {
         if (i >= 0 && i < msgs.length && msgs[i]['role'] == 'ai') {
-          unawaited(stopHoldToTalk()
-              .then((_) => _speech.toggle(i, msgs[i]['text'] ?? '')));
+          if (!_voiceBusy) unawaited(_speech.toggle(i, text));
         }
       },
       onQuickEntry: onQuick,
@@ -1112,10 +965,11 @@ class _ChatTabState extends State<ChatTab> {
               ))),
       textScale: 1.0,
       onSend: send,
-      onVoiceStart: () => startHoldToTalk(),
-      onVoiceEnd: stopHoldToTalk,
-      voiceActive: listening || _voiceStarting,
-      voiceHint: _voiceHint,
+      onVoiceStart: _recordVoice,
+      onVoiceEnd: () {},
+      voiceActive: _voiceBusy,
+      voiceHint: '录音转文字，请核对数字、时间、药名后再发送',
+      sendingBlocked: _voiceBusy,
       onToggleTextScale: () async {
         const steps = [1.0, 1.15, 1.3];
         var i = steps.indexWhere((s) => (s - chatScale.value).abs() < 0.01);

@@ -1,8 +1,7 @@
 class AppConfig {
-  /// Android 模拟器访问本机后端用 10.0.2.2，真机改成电脑局域网 IP，例如 http://192.168.1.5:8000
-  /// 联调地址通过 --dart-define=API_BASE=... 传入，不再手改本文件。
-  /// Edge 本机：--dart-define=API_BASE=http://192.168.3.22:8001
-  /// 安卓模拟器默认 10.0.2.2，真机填电脑局域网 IP。
+  /// 发布/真机 APK 必须在构建时传入已部署后端的 HTTPS 地址：
+  /// --dart-define=API_BASE=https://api.example.com
+  /// 未传入时仅适用于 Android 模拟器访问本机后端。
   static const String baseUrl = String.fromEnvironment(
     'API_BASE',
     defaultValue: 'http://10.0.2.2:8000',

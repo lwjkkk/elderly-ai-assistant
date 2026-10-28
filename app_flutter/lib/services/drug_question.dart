@@ -31,3 +31,31 @@ String? drugQueryName(String question) {
       RegExp(r'(?:查药|查询药品|药名)[：:\s]+([^？?\n]+)').firstMatch(question);
   return explicit?.group(1)?.trim();
 }
+
+/// 普通问答落库的 kind=chat 记录没有 category 字段，列表端用同一组
+/// 意图词过滤旧数据，避免“高血压怎么办”被误显示成查药记录。
+bool isDrugSummaryQuestion(String question) {
+  final text = question.trim();
+  if (text.isEmpty) return false;
+  final healthCondition =
+      RegExp(r'高血压|血压高|血压低|血糖高|血糖低|糖尿病|心率|心慌|胸闷|头晕|头痛|发热|咳嗽|不舒服|难受')
+          .hasMatch(text);
+  final explicitDrugQuery =
+      RegExp(r'查药|药盒|说明书|药品|药名|什么药|药的作用|副作用|禁忌|能一起吃|药怎么吃').hasMatch(text);
+  if (healthCondition && !explicitDrugQuery && drugQueryName(text) == null) {
+    return false;
+  }
+  return drugQueryName(text) != null ||
+      RegExp(r'查药|药盒|说明书|药品|药名|什么药|药的作用|副作用|禁忌|能一起吃|药怎么吃').hasMatch(text);
+}
+
+bool isHealthSelfcheckQuestion(String question) {
+  final text = question.trim();
+  if (text.isEmpty || drugQueryName(text) != null) return false;
+  final hasHealthTopic =
+      RegExp(r'高血压|血压高|血压低|血糖高|血糖低|糖尿病|心率|心慌|胸闷|头晕|头痛|发热|咳嗽|不舒服|难受|症状|自查|血脂|尿酸')
+          .hasMatch(text);
+  final asksAboutDrug =
+      RegExp(r'查药|药盒|说明书|药品|药名|什么药|药的作用|副作用|禁忌|能一起吃|药怎么吃').hasMatch(text);
+  return hasHealthTopic && !asksAboutDrug;
+}

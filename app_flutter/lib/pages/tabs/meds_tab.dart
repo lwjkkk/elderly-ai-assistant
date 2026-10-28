@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
+import '../../services/medication_notification_service.dart';
 import '../../services/medication_time.dart';
 import '../../afu/delete_confirm.dart';
 import 'med_form.dart';
@@ -76,7 +77,16 @@ class _MedsTabState extends State<MedsTab> {
 
   Future<void> doCheckin(int medId, String slot) async {
     final key = '$medId-$slot';
-    if (!medicationSlotDue(slot) || _checking.contains(key)) return;
+    final window = medicationSlotWindow(slot);
+    if (window != MedicationSlotWindow.due) {
+      final message = window == MedicationSlotWindow.expired
+          ? '已超过服药时间1小时，本次打卡已关闭'
+          : '尚未到服药时间，请到时间后再打卡';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    if (_checking.contains(key)) return;
     setState(() => _checking.add(key));
     try {
       await ApiService.checkin(medId, slot);
@@ -100,6 +110,8 @@ class _MedsTabState extends State<MedsTab> {
     try {
       await ApiService.deleteMed(id);
       await refresh();
+      // 删除后立即重排本机通知（另一台设备下次启动也会自动取消）
+      MedicationNotificationService.instance.syncWithServer();
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -250,6 +262,7 @@ class _MedsTabState extends State<MedsTab> {
         mine: widget.mine,
       );
       refresh();
+      MedicationNotificationService.instance.syncWithServer();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -297,7 +310,10 @@ class _MedsTabState extends State<MedsTab> {
         final slot = (sm['slot'] ?? '').toString();
         final status = (sm['status'] ?? 'pending').toString();
         final done = status == 'taken';
-        final due = medicationSlotDue(slot);
+        final window = medicationSlotWindow(slot);
+        final due = window == MedicationSlotWindow.due;
+        final expired =
+            window == MedicationSlotWindow.expired || status == 'missed';
         final checking = _checking.contains('${medId.toInt()}-$slot');
         cards.add(GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -306,27 +322,38 @@ class _MedsTabState extends State<MedsTab> {
           child: Card(
               child: ListTile(
             title: Text(name, style: const TextStyle(fontSize: 22)),
-            subtitle: Text('$slot吃$dosage',
-                style: TextStyle(fontSize: 18, color: Color(0xFF212936))),
+            subtitle: Text(
+                '$slot 吃$dosage（北京时间）${!done && !due ? '\n${expired ? '已过用药时间，超过1小时未打卡' : '未到用药时间，请勿提前服用'}' : ''}',
+                style: TextStyle(
+                    fontSize: 17,
+                    color: expired ? Colors.red : Color(0xFF212936))),
             trailing: widget.readOnly
                 ? null
-                : ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF345C87),
-                      foregroundColor: Colors.white,
+                : SizedBox(
+                    width: 122,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF345C87),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: done || expired || !due || checking
+                          ? null
+                          : () => doCheckin(medId.toInt(), slot),
+                      child: Text(
+                          done
+                              ? '已打卡'
+                              : checking
+                                  ? '提交中'
+                                  : expired
+                                      ? '已过用药时间'
+                                      : due
+                                          ? '打卡'
+                                          : '未到用药时间',
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 16)),
                     ),
-                    onPressed: done || !due || checking
-                        ? null
-                        : () => doCheckin(medId.toInt(), slot),
-                    child: Text(
-                        done
-                            ? (due ? '已打卡' : '时间未到')
-                            : checking
-                                ? '提交中'
-                                : due
-                                    ? '打卡'
-                                    : '时间未到',
-                        style: const TextStyle(fontSize: 20)),
                   ),
           )),
         ));

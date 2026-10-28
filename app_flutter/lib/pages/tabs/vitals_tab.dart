@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../services/api.dart';
 import '../../services/file_download.dart';
 import '../../afu/delete_confirm.dart';
 import 'health_record_style.dart';
+import 'vital_draft_page.dart';
+import 'vital_alerts_page.dart';
 
 class VitalsTab extends StatefulWidget {
   final bool readOnly;
@@ -191,51 +192,6 @@ class _VitalsTabState extends State<VitalsTab> {
     return null;
   }
 
-  Future<void> photo() async {
-    final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        backgroundColor: Colors.white,
-        builder: (c) => SafeArea(
-            child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('选择上传方式',
-                      style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: HealthRecordStyle.ink)),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                      width: double.infinity,
-                      child: HealthRecordStyle.button(
-                          '拍照',
-                          Icons.camera_alt_outlined,
-                          () => Navigator.pop(c, ImageSource.camera))),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                      width: double.infinity,
-                      child: HealthRecordStyle.button(
-                          '从相册选择',
-                          Icons.photo_library_outlined,
-                          () => Navigator.pop(c, ImageSource.gallery))),
-                ]))));
-    if (source == null || !mounted) return;
-    setState(() => busy = true);
-    Map<String, dynamic>? result;
-    try {
-      final file =
-          await ImagePicker().pickImage(source: source, maxWidth: 1600);
-      if (file != null)
-        result = await ApiService.recognizeVital(await file.readAsBytes(),
-            mine: widget.mine);
-    } catch (e) {
-      message('识别失败：${ApiService.friendly(e)}');
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-    if (result != null && mounted) await showAddDialog(preset: result);
-  }
-
   Future<void> export() async {
     setState(() => busy = true);
     try {
@@ -260,6 +216,28 @@ class _VitalsTabState extends State<VitalsTab> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
             children: [
+              Wrap(spacing: 8, children: [
+                if (!widget.readOnly)
+                  TextButton.icon(
+                      icon: const Icon(Icons.mic_none),
+                      label: const Text('口述体征／继续草稿'),
+                      onPressed: () async {
+                        await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    VitalDraftPage(mine: widget.mine)));
+                        if (mounted) await load();
+                      }),
+                TextButton.icon(
+                    icon: const Icon(Icons.notifications_active_outlined),
+                    label: const Text('异常提醒'),
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                VitalAlertsPage(mine: widget.mine)))),
+              ]),
               if (!widget.readOnly)
                 Row(children: [
                   Expanded(

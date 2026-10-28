@@ -5,12 +5,16 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/cupertino.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../afu/afu_theme.dart';
 import '../afu/afu_widgets.dart';
 import '../services/api.dart';
+import '../services/medication_notification_service.dart';
+import '../widgets/age_profile_card.dart';
 import '../afu/uploaded_avatar_actions.dart';
 
 import 'tabs/health_overview.dart';
@@ -27,7 +31,7 @@ class FamilyHome extends StatefulWidget {
 }
 
 class _FamilyHomeState extends State<FamilyHome> {
-  int idx = 1;
+  int idx = 0;
 
   @override
   void initState() {
@@ -35,6 +39,12 @@ class _FamilyHomeState extends State<FamilyHome> {
     // 响应跨 Tab 跳转（如总览页「分享记录」→ 家人互动）
     HubNav.tab.addListener(_onHubTab);
     HubNav.request.addListener(_onHubTab);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(
+            MedicationNotificationService.instance.activateForSession(context));
+      }
+    });
   }
 
   @override
@@ -97,12 +107,11 @@ class FamMe extends StatefulWidget {
 }
 
 class _FamMeState extends State<FamMe> {
+  int _profileRevision = 0;
   String avatarAsset = kAvatarAssets[0];
   String nickname = '\u5bb6\u5c5e';
   List binds = [];
   final codeC = TextEditingController();
-  String? inviteCode;
-  bool generating = false;
   String msg = '';
   bool binding = false;
 
@@ -144,7 +153,7 @@ class _FamMeState extends State<FamMe> {
     } catch (_) {
       binds = [];
     }
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _profileRevision++);
   }
 
   Future<void> _doBind() async {
@@ -171,20 +180,6 @@ class _FamMeState extends State<FamMe> {
     if (mounted) setState(() => binding = false);
   }
 
-  Future<void> _genInvite() async {
-    if (generating) return;
-    setState(() => generating = true);
-    try {
-      inviteCode = await ApiService.createInvite();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('生成失败：${ApiService.friendly(e)}')));
-      }
-    }
-    if (mounted) setState(() => generating = false);
-  }
-
   Future<void> _logout() async {
     await ApiService.clearAuth();
     if (mounted) {
@@ -202,6 +197,7 @@ class _FamMeState extends State<FamMe> {
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
+          AgeProfileCard(key: ValueKey(_profileRevision), family: true),
           const SizedBox(height: 16),
           _fontEntry(),
           const SizedBox(height: 16),
@@ -274,10 +270,12 @@ class _FamMeState extends State<FamMe> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        UploadedAvatarActions(onDeleted: () async {
-          avatarAsset = kAvatarAssets.first;
-          await _load();
-        }, child: _FamRippleAvatar(asset: avatarAsset)),
+        UploadedAvatarActions(
+            onDeleted: () async {
+              avatarAsset = kAvatarAssets.first;
+              await _load();
+            },
+            child: _FamRippleAvatar(asset: avatarAsset)),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,
@@ -318,9 +316,7 @@ class _FamMeState extends State<FamMe> {
         Text('\u4eb2\u5c5e\u7ed1\u5b9a\u7ba1\u7406',
             style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text(
-            '\u8f93\u5165\u9080\u8bf7\u7801\u53ef\u7ed1\u5b9a\u957f\u8f88',
-            style: AfuElderText.secondary),
+        const Text('输入长辈的邀请码完成绑定', style: AfuElderText.secondary),
         const SizedBox(height: 12),
         TextField(
           controller: codeC,
@@ -368,58 +364,6 @@ class _FamMeState extends State<FamMe> {
           ),
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEDF4FB),
-              foregroundColor: const Color(0xFF345C87),
-              elevation: 2,
-              shadowColor: const Color(0xFF345C87).withOpacity(0.25),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            onPressed: generating ? null : _genInvite,
-            child: Text(generating ? '生成中…' : '生成邀请码'),
-          ),
-        ),
-        if (inviteCode != null && inviteCode!.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEDF4FB),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(children: [
-              Expanded(
-                child: Text('邀请码：$inviteCode',
-                    style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF212936))),
-              ),
-              AfuPressable(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: inviteCode!));
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
-                },
-                borderRadius: 12,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text('复制',
-                      style: TextStyle(
-                          fontSize: 18, color: const Color(0xFF345C87))),
-                ),
-              ),
-            ]),
-          ),
-        ],
         if (msg.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(msg,
