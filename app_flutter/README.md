@@ -2,6 +2,8 @@
 
 老人端和家属端共用的 Flutter 应用。当前仓库包含 Android 和 Web 工程；两个角色共用源码，登录后按服务端返回的角色进入首页。老人端和家属端目前均为 4 个 Tab，具体入口以 `lib/pages/home/` 为准。
 
+**前端维护分支为 `front`；后端在 `main` / `backend`。** `main` 中的 Flutter 工程已迁至 `front`，后续前端开发请从 `origin/front` 创建任务分支。分支职责和迁移恢复方式见 [分支分工](docs/branch-layout-20261028.md)。
+
 ## 目录
 
 ```text
@@ -57,7 +59,7 @@ flutter pub get
 flutter run -d edge --web-hostname 127.0.0.1 --web-port 8080 --dart-define=API_BASE=http://127.0.0.1:8000
 ```
 
-后端需要另行在仓库根目录启动。前端的请求入口是 `lib/services/api.dart`，后端地址来自 `lib/config.dart` 中的 `AppConfig.baseUrl`。
+后端需在 `main` / `backend` 的独立检出目录或云服务器运行；`front` 不包含 Python 后端。前端的请求入口是 `lib/services/api.dart`，后端地址来自 `lib/config.dart` 中的 `AppConfig.baseUrl`。
 
 ## 后端地址
 
