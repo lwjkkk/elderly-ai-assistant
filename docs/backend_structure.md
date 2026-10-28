@@ -1,3 +1,5 @@
+> 2026-10-29 更新：backend 中的旧 Flutter 工程已由备份标签保全并移出；当前前端统一由 front 分支维护。旧手机工具原样归档到 archive/legacy-frontend-tools。以下记录描述之前的后端整理。
+
 # 后端目录与测试入口
 
 本次整理仅涉及后端脚本、测试和依赖清单，不移动 app_flutter 或修改业务路由。根目录的Python入口仅保留main.py与web_app.py，依赖入口为requirements.txt及requirements_lite.txt，另保留Postman集合。启动脚本移至scripts，开发和演示依赖放在requirements。README、pytest.ini、.gitignore、.env和本机运行数据库保留其必要位置。
