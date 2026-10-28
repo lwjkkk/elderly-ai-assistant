@@ -1,6 +1,6 @@
 # 云栖码梦 — 银龄数字生活辅助智能体
 
-> 分支分工：本分支 `main` 保留后端；最新 Flutter 前端已迁至 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。
+> 分支分工：`main` 为稳定后端，`backend` 为后端开发，Flutter 前端维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。知识库保留在后端的 `knowledge_base/`，原知识库分支已备份并删除。详见 [整理与恢复说明](docs/repository-cleanup-20261029.md)。
 
 > 面向老年人的 AI 健康助手与数字生活辅助 App。支持用药提醒、体征记录、体检报告解读、症状自查、拍照查药、问诊录音、天气健康提醒，以及手机操作/便民办事/生活常识的智能问答。
 
