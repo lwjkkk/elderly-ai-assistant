@@ -1,5 +1,9 @@
 # 云栖码梦 — 银龄数字生活辅助智能体
 
+> 当前分支 `backend` 用于后端开发。
+
+> 分支分工：`main` 为稳定后端，`backend` 为后端开发，Flutter 前端维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。知识库保留在后端的 `knowledge_base/`，原知识库分支已备份并删除。详见 [整理与恢复说明](docs/repository-cleanup-20261029.md)。
+
 > 面向老年人的 AI 健康助手与数字生活辅助 App。支持用药提醒、体征记录、体检报告解读、症状自查、拍照查药、问诊录音、天气健康提醒，以及手机操作/便民办事/生活常识的智能问答。
 
 ---
@@ -72,15 +76,7 @@
 
 ### 3.2 前端
 
-| 技术 | 用途 |
-|---|---|
-| Flutter 3 | 跨平台框架，一套代码同时编译 Android 和 iOS |
-| Dio | HTTP 网络请求 |
-| shared_preferences | 本地存储（Token、角色） |
-| flutter_tts | 文字转语音（语音播报） |
-| speech_to_text | 语音转文字（语音输入） |
-| image_picker | 图片选择/拍照 |
-| fl_chart | 图表（体征趋势曲线） |
+Flutter 源码、依赖、资源和构建说明维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。前端入口为该分支的 `app_flutter/lib/main.dart`；本分支只保留后端和共享资料。
 
 ### 3.3 知识库
 
@@ -107,20 +103,6 @@ elderly-ai-assistant/
 │   ├── reports.py                # 体检报告上传、OCR识别、AI解读
 │   ├── weather.py                # 天气健康提醒
 │   └── routes.py                 # 原有智能问答 /api/chat
-├── app_flutter/                  # Flutter 前端（双端 App）
-│   ├── lib/
-│   │   ├── main.dart             # 入口，主题配置（大字体大按钮）
-│   │   ├── config.dart           # 后端地址配置
-│   │   ├── services/
-│   │   │   └── api.dart          # API 请求封装（Dio）
-│   │   └── pages/
-│   │       ├── login_page.dart   # 登录页
-│   │       ├── register_page.dart# 注册页
-│   │       ├── bind_page.dart    # 绑定管理页
-│   │       ├── elder_home.dart   # 老人端首页
-│   │       ├── family_home.dart  # 家属端首页
-│   │       └── tabs/             # 各 Tab 页面
-│   └── pubspec.yaml              # Flutter 依赖
 ├── config/
 │   └── settings.py               # 配置：模型地址、API Key、服务器端口
 ├── core/                         # 核心业务逻辑
@@ -217,20 +199,18 @@ ollama pull qwen2:7b
 **云端 API（通义千问，效果更好）：**
 在 `.env` 中设置 `DASHSCOPE_API_KEY`，并将 `config/settings.py` 中 `LLM_BASE_URL` 改为 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
 
-### 5.4 前端启动
+### 5.4 前端启动（front 分支）
+
+前端已迁入独立的 `front` 分支，请在另一个目录检出，避免切换正在运行的后端工作区：
 
 ```bash
-cd app_flutter
-
-# 安装依赖
+git clone --branch front --single-branch https://github.com/lwjkkk/elderly-ai-assistant.git elderly-ai-assistant-front
+cd elderly-ai-assistant-front/app_flutter
 flutter pub get
-
-# 配置后端地址
-# 修改 lib/config.dart 中的 baseUrl 为你的后端地址
-
-# 运行（Android 模拟器/真机）
-flutter run
+flutter run -d edge --dart-define=API_BASE=http://101.201.226.34:8000
 ```
+
+完整运行和打包说明见 [front 分支前端 README](https://github.com/lwjkkk/elderly-ai-assistant/blob/front/app_flutter/README.md)。`API_BASE` 应填写实际后端地址；本分支不再存放 Flutter 源码和前端历史工具。
 
 ### 5.5 运行测试
 
@@ -292,31 +272,7 @@ python batch_test.py
 
 ---
 
-## 八、团队分工
-
-| 角色 | 成员 | 职责 |
-|---|---|---|
-| A（后端） | - | 数据库设计、JWT 鉴权、13组接口实现、OCR 接入、健康 AI 提示词、推送、PDF 导出 |
-| B（前端） | - | Flutter 框架搭建、老人端5Tab/家属端4Tab、大字体大按钮适老化 UI、语音输入/播报、拍照录音、趋势图表 |
-| C（文档素材测试） | 杜怡静 | 知识库96篇、4份设计文档、README、测试脚本、演示视频、Day6 联调验收 |
-
----
-
-## 九、七天交付计划
-
-| 日期 | 里程碑 | 核心内容 | 状态 |
-|---|---|---|---|
-| Day1 9/29 | 基座绑定 | 数据库 + JWT鉴权 + 家属绑定，Flutter 空壳可登录 | ✅ 完成 |
-| Day2 9/30 | 用药查药 | 录药/推送/打卡/家属同步，药盒拍照常识 | ✅ 完成 |
-| Day3 10/1 | 体征问诊 | 体征曲线 + PDF导出，问诊录音上传可播 | ✅ 完成 |
-| Day4 10/2 | 自查报告天气 | 症状分级预警 + 体检报告解读 + 天气弹窗，8模块全通 | ✅ 完成 |
-| Day5 10/3 | 迁移双播报 | 原有 RAG 问答进 App，全页文字 + 语音播报 | 🔄 进行中 |
-| Day6 10/4 | 联调压测 | 前后端联调、越权修复、违禁词扫描、适老化验收 | ⏳ 待开始 |
-| Day7 10/5 | 冻结发布 | 打 v1.0，答辩包（APK + 视频 + 报告） | ⏳ 待开始 |
-
----
-
-## 十、免责声明
+## 八、免责声明
 
 本产品涉及健康医疗的功能（用药提醒、体征记录、体检报告解读、症状自查、拍照查药）仅为**健康科普与信息整理**，**不能替代医生面诊，不构成疾病诊断或用药建议**。如有不适，请及时咨询医生或拨打急救电话。
 
@@ -324,7 +280,7 @@ python batch_test.py
 
 ---
 
-## 十一、许可证
+## 九、许可证
 
 本项目为开源项目，采用 MIT 许可证。
 
