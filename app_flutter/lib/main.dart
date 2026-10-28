@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/api.dart';
 import 'services/location_access.dart';
+import 'services/medication_notification_service.dart';
 import 'theme.dart';
 import 'pages/login_page.dart';
 import 'pages/elder_home.dart';
@@ -18,15 +20,30 @@ class ElderApp extends StatefulWidget {
   State<ElderApp> createState() => _ElderAppState();
 }
 
-class _ElderAppState extends State<ElderApp> {
+class _ElderAppState extends State<ElderApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final context = _navigatorKey.currentContext;
       if (context != null) LocationAccess.onStartup(context);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从后台恢复时重新对账，保证另一台设备的修改/删除同步到本机
+    if (state == AppLifecycleState.resumed) {
+      MedicationNotificationService.instance.syncWithServer();
+    }
   }
 
   // 字号变化会重建主题；复用登录查询，避免反复移除正在使用的页面。
@@ -38,6 +55,9 @@ class _ElderAppState extends State<ElderApp> {
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: '老年助手',
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: buildAppTheme(),
       builder: (context, child) {
         return ValueListenableBuilder<double>(

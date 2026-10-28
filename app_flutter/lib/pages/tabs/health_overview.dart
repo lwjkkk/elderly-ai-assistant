@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+import 'vital_draft_page.dart';
+import 'vital_alerts_page.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -9,6 +12,7 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/delete_confirm.dart';
 import '../../services/api.dart';
+import '../../services/drug_question.dart';
 import '../../widgets/consult_summary_cell.dart';
 import 'consult_drug_chat_tab.dart';
 import 'med_form.dart';
@@ -23,6 +27,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cross_file/cross_file.dart';
 import '../../services/file_download.dart';
+import '../../widgets/report_job_upload_panel.dart';
 
 /// 全局色彩规范（本人视图与绑定长辈视图共用，身份区分靠顶部切换文字）。
 const _kPrimary = Color(0xFF4080FF);
@@ -522,10 +527,15 @@ class HealthOverviewTab extends StatefulWidget {
   State<HealthOverviewTab> createState() => _HealthOverviewTabState();
 }
 
-class _HealthOverviewTabState extends State<HealthOverviewTab> {
+class _HealthOverviewTabState extends State<HealthOverviewTab>
+    with WidgetsBindingObserver {
   int _elderId = 0;
   String _elderName = '';
   List _binds = [];
+  Map<String, dynamic>? _urgentAlert;
+  int _overdueCheckins = 0;
+  int _attentionRequest = 0;
+  Timer? _attentionTimer;
   // 当前展示的健康模块：0总览卡片 1体征 2报告 3用药。
   // 顶部横排标签已移除，改由下方功能卡片点击切换。
   int mod = 0;
@@ -535,6 +545,7 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // AI 问事快捷入口复用本人区页面，并固定读取家属自己的数据。
     if (widget.role == 'family') {
       final section = HubNav.pendingSection;
@@ -551,6 +562,11 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
       }
     }
     _loadBinds();
+    if (widget.role == 'family') {
+      _attentionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        unawaited(_refreshFamilyAttention());
+      });
+    }
   }
 
   /// 家属端：读取已绑定长辈列表，默认选中首个（与接口 elder_id 规则一致）。
@@ -567,6 +583,7 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
         final eid = (m['elder_id'] as num?)?.toInt() ?? 0;
         if (eid == 0) continue;
         list.add({
+          'binding_id': (m['id'] as num?)?.toInt(),
           'elder_id': eid,
           'name': (m['other_nickname'] ??
                   m['nickname'] ??
@@ -590,7 +607,198 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
           _elderName = selected['name'].toString();
         }
       });
+      if (selected != null) {
+        await _loadFamilyAttention(
+          selected['elder_id'] as int,
+          selected['binding_id'] as int?,
+        );
+      } else {
+        setState(() {
+          _urgentAlert = null;
+          _overdueCheckins = 0;
+        });
+      }
     } catch (_) {}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshFamilyAttention());
+    }
+  }
+
+  Future<void> _refreshFamilyAttention() async {
+    if (widget.role != 'family' || !showElder || _elderId == 0) return;
+    for (final raw in _binds) {
+      if (raw is! Map) continue;
+      final binding = Map<String, dynamic>.from(raw);
+      if (binding['elder_id'] == _elderId) {
+        final bindingId = (binding['binding_id'] as num?)?.toInt();
+        await _loadFamilyAttention(_elderId, bindingId);
+        return;
+      }
+    }
+  }
+
+  Future<void> _loadFamilyAttention(int elderId, int? bindingId) async {
+    if (bindingId == null) return;
+    final request = ++_attentionRequest;
+    List messages = [];
+    List medications = [];
+    try {
+      messages = await ApiService.familyMessages(bindingId);
+    } catch (_) {}
+    try {
+      medications = await ApiService.medsToday(elderId: elderId);
+    } catch (_) {}
+
+    final now = DateTime.now();
+    Map<String, dynamic>? latestAlert;
+    for (final raw in messages) {
+      if (raw is! Map) continue;
+      final message = Map<String, dynamic>.from(raw);
+      if (message['kind'] != 'emergency_alert') continue;
+      final createdAt =
+          DateTime.tryParse((message['created_at'] ?? '').toString());
+      final age = createdAt == null ? null : now.difference(createdAt);
+      if (age != null && (age.isNegative || age > const Duration(hours: 24))) {
+        continue;
+      }
+      latestAlert = message;
+    }
+
+    var overdue = 0;
+    for (final raw in medications) {
+      if (raw is! Map) continue;
+      final medication = Map<String, dynamic>.from(raw);
+      final slots =
+          medication['slots'] is List ? medication['slots'] as List : const [];
+      for (final rawSlot in slots) {
+        if (rawSlot is! Map) continue;
+        final slot = Map<String, dynamic>.from(rawSlot);
+        final status = (slot['status'] ?? 'pending').toString();
+        final time = (slot['slot'] ?? '').toString();
+        if (medicationSlotOverdue(status, time)) {
+          overdue++;
+        }
+      }
+    }
+
+    if (!mounted || request != _attentionRequest) return;
+    setState(() {
+      _urgentAlert = latestAlert;
+      _overdueCheckins = overdue;
+    });
+  }
+
+  Future<void> _showEmergencyAlert() async {
+    final alert = _urgentAlert;
+    if (alert == null) return;
+    final rawContent = alert['content'];
+    final content = rawContent is Map
+        ? Map<String, dynamic>.from(rawContent)
+        : <String, dynamic>{};
+    final rawLabels = content['emergency_labels'];
+    final labels = rawLabels is List
+        ? rawLabels.join('、')
+        : (rawLabels ?? '紧急症状').toString();
+    final question = (content['reported_question'] ?? content['question'] ?? '')
+        .toString()
+        .trim();
+    final advice = (content['advice'] ?? '请立即联系长辈或拨打120。').toString();
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('紧急情况提醒'),
+        content: Text([
+          '提醒类别：$labels',
+          if (question.isNotEmpty) '原话：$question',
+          advice,
+        ].join('\n\n')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('我知道了'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _familyAttentionBanners() {
+    final widgets = <Widget>[];
+    if (_urgentAlert != null) {
+      final rawContent = _urgentAlert!['content'];
+      final content = rawContent is Map
+          ? Map<String, dynamic>.from(rawContent)
+          : <String, dynamic>{};
+      final rawLabels = content['emergency_labels'];
+      final labels = rawLabels is List
+          ? rawLabels.join('、')
+          : (rawLabels ?? '需要立即关注').toString();
+      widgets.add(Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEBEE),
+          border: Border.all(color: const Color(0xFFEF9A9A)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: _showEmergencyAlert,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded,
+                  size: 30, color: Color(0xFFB71C1C)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('紧急情况提醒',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFB71C1C))),
+                      Text(labels,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 16, color: Color(0xFF7F1D1D))),
+                    ]),
+              ),
+              const Icon(Icons.chevron_right, color: Color(0xFFB71C1C)),
+            ]),
+          ),
+        ),
+      ));
+    }
+    if (_overdueCheckins > 0) {
+      widgets.add(Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4E5),
+          border: Border.all(color: const Color(0xFFE6B566)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(children: [
+          const Icon(Icons.medication_outlined,
+              size: 28, color: Color(0xFF9A5B00)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$_elderName有 $_overdueCheckins 个用药时间点超过1小时未打卡。打卡状态不代表实际服药情况。',
+              style: const TextStyle(
+                  fontSize: 16, color: Color(0xFF5F3B08), height: 1.4),
+            ),
+          ),
+        ]),
+      ));
+    }
+    return Column(mainAxisSize: MainAxisSize.min, children: widgets);
   }
 
   /// 长辈选择卡片点击：底部面板单选已绑定长辈，切换后整页数据刷新。
@@ -668,11 +876,15 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
             .toString();
         mod = 0;
       });
+      await _refreshFamilyAttention();
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _attentionTimer?.cancel();
+    _attentionRequest++;
     // 离开总览页时恢复 Tab 默认色
     if (HubNav.accent.value != null) HubNav.accent.value = null;
     super.dispose();
@@ -717,6 +929,8 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
           // 子页面返回栏：点卡片进入子模块后，可一键返回健康总览主页
           if (mod != 0) _backBar(),
         ],
+        if (widget.role == 'family' && showElder && mod == 0)
+          _familyAttentionBanners(),
         Expanded(
           child: IndexedStack(
             index: mod,
@@ -803,15 +1017,16 @@ class _HealthOverviewTabState extends State<HealthOverviewTab> {
             () => setState(() {
                   showElder = false;
                   mod = 0;
+                  _attentionRequest++;
                 })),
         const SizedBox(width: 12),
-        seg(
-            '长辈',
-            showElder,
-            () => setState(() {
-                  showElder = true;
-                  mod = 0;
-                })),
+        seg('长辈', showElder, () {
+          setState(() {
+            showElder = true;
+            mod = 0;
+          });
+          unawaited(_refreshFamilyAttention());
+        }),
       ]),
     );
   }
@@ -1770,7 +1985,7 @@ class _MineMedsPageState extends State<_MineMedsPage> {
   }
 }
 
-/// 本人-体征：录入（手动/拍照）+ 历史表格（编辑/删除）+ 导出 PDF。
+/// 本人-体征：手动录入 + 历史表格（编辑/删除）+ 导出 PDF。
 class _MineVitalsPage extends StatefulWidget {
   final bool forElder;
   const _MineVitalsPage({super.key, this.forElder = false});
@@ -2192,108 +2407,6 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
     }
   }
 
-  bool _recognizing = false;
-
-  /// 体征拍照识别：拍照 -> POST /api/vitals/recognize -> 回填手动表单确认再提交。
-  Future<void> _pickPhoto() async {
-    if (_recognizing) return;
-    try {
-      final source = await showModalBottomSheet<ImageSource>(
-        context: context,
-        backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        builder: (c) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('选择上传方式',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: _kText)),
-              const SizedBox(height: 16),
-              SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                      style: _tintBtn(_kText, _mVitBg),
-                      onPressed: () => Navigator.pop(c, ImageSource.camera),
-                      icon: const Icon(Icons.camera_alt_outlined),
-                      label: const Text('拍照'))),
-              const SizedBox(height: 12),
-              SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                      style: _tintBtn(_kText, _mVitBg),
-                      onPressed: () => Navigator.pop(c, ImageSource.gallery),
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('从相册选择'))),
-              const SizedBox(height: 8),
-              TextButton(
-                  onPressed: () => Navigator.pop(c),
-                  child: const Text('取消', style: TextStyle(color: _kSub))),
-            ]),
-          ),
-        ),
-      );
-      if (source == null || !mounted) return;
-      final f = await ImagePicker().pickImage(source: source, maxWidth: 1600);
-      if (f == null) return;
-      final bytes = await f.readAsBytes();
-      if (!mounted) return;
-      setState(() => _recognizing = true);
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (c) => const Center(
-            child: CircularProgressIndicator(color: Color(0xFF345C87))),
-      );
-      Map<String, dynamic>? r;
-      Object? err;
-      try {
-        r = await ApiService.recognizeVital(bytes.toList(),
-            mine: !widget.forElder);
-      } catch (e) {
-        err = e;
-      }
-      if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      if (!mounted) return;
-      setState(() => _recognizing = false);
-      if (err != null) {
-        final detail = ApiService.errorDetail(err);
-        final msg = (ApiService.statusOf(err) == 400 &&
-                detail != null &&
-                detail.isNotEmpty)
-            ? detail
-            : '识别失败：${ApiService.friendly(err)}';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(msg)));
-        return;
-      }
-      final type = (r!['type'] ?? 'bp').toString();
-      final kind = _typeNames.containsKey(type) ? type : 'bp';
-      String v1 = '', v2 = '';
-      if (kind == 'bp') {
-        final ss = r['systolic'], dd = r['diastolic'];
-        v1 = ss == null ? '' : '$ss';
-        v2 = dd == null ? '' : '$dd';
-      } else {
-        final v = r['value'];
-        v1 = v == null ? '' : '$v';
-      }
-      await _openAdd(
-          presetType: kind,
-          presetV1: v1.isEmpty ? null : v1,
-          presetV2: v2.isEmpty ? null : v2);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _recognizing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('识别失败：${ApiService.friendly(e)}')));
-      }
-    }
-  }
-
   Future<void> _export() async {
     if (_exporting) return;
     setState(() => _exporting = true);
@@ -2338,15 +2451,37 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
             : ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                 children: [
-                  Row(children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                          onPressed: _openAdd,
-                          style: _tintBtn(_kText, _mVitBg),
-                          icon: const Icon(Icons.edit_outlined),
-                          label: const Text('手动录入', softWrap: false)),
-                    ),
+                  Wrap(spacing: 8, children: [
+                    if (!widget.forElder)
+                      TextButton.icon(
+                          icon: const Icon(Icons.mic_none),
+                          label: const Text('口述体征／继续草稿'),
+                          onPressed: () async {
+                            await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const VitalDraftPage()));
+                            if (mounted) await _refresh();
+                          }),
+                    TextButton.icon(
+                        icon: const Icon(Icons.notifications_active_outlined),
+                        label: const Text('异常提醒'),
+                        onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    VitalAlertsPage(mine: !widget.forElder)))),
                   ]),
+                  if (!widget.forElder)
+                    Row(children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                            onPressed: _openAdd,
+                            style: _tintBtn(_kText, _mVitBg),
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text('手动录入', softWrap: false)),
+                      ),
+                    ]),
                   const SizedBox(height: 16),
                   _MineTable(
                     headers: const ['日期', '血压', '血糖', '心率', '体重'],
@@ -2425,7 +2560,6 @@ class _MineReportsPage extends StatefulWidget {
 class _MineReportsPageState extends State<_MineReportsPage> {
   List _items = [];
   bool _loading = true;
-  bool _uploading = false;
   String? _reportError;
 
   @override
@@ -2462,100 +2596,73 @@ class _MineReportsPageState extends State<_MineReportsPage> {
     }
   }
 
-  Future<void> _upload(ImageSource source) async {
-    if (_uploading) return;
-    try {
-      final f = await ImagePicker().pickImage(source: source, maxWidth: 1600);
-      if (f == null) return;
-      setState(() => _uploading = true);
-      final bytes = await f.readAsBytes();
-      final r = await ApiService.uploadReport(bytes.toList(), f.name,
-          mine: !widget.forElder);
-      await _refresh();
-      if (mounted) {
-        final advice = (r['advice_text'] ?? '').toString();
-        await showDialog<void>(
-          context: context,
-          builder: (c) => AlertDialog(
-            title: const Text('识别结果',
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF333333))),
-            content: SingleChildScrollView(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                  ReportMetrics(report: r),
-                  const SizedBox(height: 12),
-                  Text(advice.isEmpty ? '暂无解读建议' : advice,
-                      style: const TextStyle(fontSize: 19, height: 1.5)),
-                ])),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(c),
-                  child: const Text('知道了',
-                      style: TextStyle(fontSize: 19, color: _kText))),
-            ],
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('上传失败：${ApiService.friendly(e)}')));
-      }
-    }
-    if (mounted) setState(() => _uploading = false);
+  Future<void> _detail(Map<String, dynamic> m) async {
+    await showReportDetails(context, m);
   }
 
-  Future<void> _detail(Map<String, dynamic> m) async {
-    await showDialog<void>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(_cdate(m).isEmpty ? '体检报告' : _cdate(m),
-            style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF333333))),
-        content: SingleChildScrollView(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ReportMetrics(report: m),
-            const SizedBox(height: 12),
-            const Text('识别文字',
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF333333))),
-            Text((m['ocr_text'] ?? '').toString(),
-                style: const TextStyle(
-                    fontSize: 18, color: Color(0xFF333333), height: 1.5)),
-            const SizedBox(height: 12),
-            const Text('健康建议',
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF333333))),
-            Text((m['advice_text'] ?? '').toString(),
-                style: const TextStyle(
-                    fontSize: 18, color: Color(0xFF333333), height: 1.5)),
-            if ((m['image_url'] ?? '').toString().isNotEmpty)
-              TextButton.icon(
-                  onPressed: () =>
-                      showReportOriginal(context, m['image_url'].toString()),
-                  icon: const Icon(Icons.image_outlined),
-                  label: const Text('查看原图')),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: const Text('关闭',
-                  style: TextStyle(fontSize: 19, color: _kText))),
-        ],
+  Widget _familyReportCard(dynamic raw) {
+    final report = Map<String, dynamic>.from(raw as Map);
+    final createdAt = (report['created_at'] ?? '').toString();
+    final date = createdAt.length >= 10 ? createdAt.substring(0, 10) : '日期未知';
+    final notice = reportMetricSummary(report);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _kLine),
+        borderRadius: BorderRadius.circular(8),
       ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _detail(report),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Expanded(
+                  child: Text('体检报告  ·  $date',
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _kText)),
+                ),
+                const Icon(Icons.chevron_right, color: _kSub),
+              ]),
+              const SizedBox(height: 10),
+              _familyReportField('指标摘要', (report['ocr_text'] ?? '').toString(),
+                  maxLines: 3),
+              _familyReportField('提示', notice,
+                  color: reportMetricColor(report), maxLines: 2),
+              _familyReportField(
+                  '健康建议', (report['advice_text'] ?? '').toString(),
+                  maxLines: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _familyReportField(String label, String value,
+      {Color? color, int maxLines = 3}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 78,
+          child: Text(label,
+              style: const TextStyle(fontSize: 16, color: _kSub, height: 1.5)),
+        ),
+        Expanded(
+          child: Text(value.trim().isEmpty ? '暂无内容' : value,
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  TextStyle(fontSize: 16, color: color ?? _kText, height: 1.5)),
+        ),
+      ]),
     );
   }
 
@@ -2579,90 +2686,82 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                         style: const TextStyle(color: _kDanger)),
                     TextButton(onPressed: _refresh, child: const Text('重试')),
                   ],
-                  Row(children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                          onPressed: _uploading
-                              ? null
-                              : () => _upload(ImageSource.camera),
-                          style: _tintBtn(_kText, _mRepBg),
-                          icon: const Icon(Icons.camera_alt_outlined),
-                          label: const Text('拍照上传', softWrap: false)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                          onPressed: _uploading
-                              ? null
-                              : () => _upload(ImageSource.gallery),
-                          style: _tintBtn(_kText, _mRepBg),
-                          icon: const Icon(Icons.photo_outlined),
-                          label: const Text('相册上传', softWrap: false)),
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  _MineTable(
-                    headers: const ['日期', '指标摘要', '提示', '健康建议'],
-                    flex: const [2, 3, 2, 3],
-                    rows: [
-                      for (final e in _items)
-                        [
-                          AfuPressable(
-                            onTap: () =>
-                                _detail(Map<String, dynamic>.from(e as Map)),
-                            borderRadius: 8,
-                            child: Row(children: [
-                              Expanded(
-                                  child: Text(
-                                      ((Map<String, dynamic>.from(e as Map)[
-                                                          'created_at'] ??
-                                                      '')
-                                                  .toString()
-                                                  .length >=
-                                              10)
-                                          ? (Map<String, dynamic>.from(
-                                                  e as Map)['created_at'])
-                                              .toString()
-                                              .substring(0, 10)
-                                          : '',
-                                      style: const TextStyle(
-                                          fontSize: 17,
-                                          color: _kText,
-                                          height: 1.45))),
-                              const Icon(Icons.chevron_right,
-                                  size: 18, color: _kSub),
-                            ]),
-                          ),
-                          _tCell(_short(
-                              (Map<String, dynamic>.from(
-                                          e as Map)['ocr_text'] ??
-                                      '')
-                                  .toString(),
-                              40)),
-                          _tCell(
-                              reportMetricSummary(
-                                  Map<String, dynamic>.from(e as Map)),
-                              color: reportMetricColor(
-                                  Map<String, dynamic>.from(e as Map))),
-                          _tCell(_short(
-                              (Map<String, dynamic>.from(
-                                          e as Map)['advice_text'] ??
-                                      '')
-                                  .toString(),
-                              40)),
-                        ],
-                    ],
-                    rowLongPress: widget.forElder
-                        ? null
-                        : [
-                            for (final e in _items)
-                              () => _deleteReport(
-                                  Map<String, dynamic>.from(e as Map)),
-                          ],
-                    emptyIcon: Icons.description_outlined,
-                    emptyAccent: _mRep,
-                    emptyText: widget.forElder ? '暂无报告信息' : '暂无历史体检报告，今天记录一条吧',
+                  ReportJobUploadPanel(
+                    key: ValueKey('report-jobs-${widget.forElder}'),
+                    mine: !widget.forElder,
+                    primary: _kText,
+                    soft: _mRepBg,
+                    onReportSaved: _refresh,
+                    onOpenReport: (report) =>
+                        showReportDetails(context, report),
                   ),
+                  const SizedBox(height: 16),
+                  if (widget.forElder && _items.isNotEmpty)
+                    for (final report in _items) _familyReportCard(report)
+                  else
+                    _MineTable(
+                      headers: const ['日期', '指标摘要', '提示', '健康建议'],
+                      flex: const [2, 3, 2, 3],
+                      rows: [
+                        for (final e in _items)
+                          [
+                            AfuPressable(
+                              onTap: () =>
+                                  _detail(Map<String, dynamic>.from(e as Map)),
+                              borderRadius: 8,
+                              child: Row(children: [
+                                Expanded(
+                                    child: Text(
+                                        ((Map<String, dynamic>.from(e as Map)[
+                                                            'created_at'] ??
+                                                        '')
+                                                    .toString()
+                                                    .length >=
+                                                10)
+                                            ? (Map<String, dynamic>.from(
+                                                    e as Map)['created_at'])
+                                                .toString()
+                                                .substring(0, 10)
+                                            : '',
+                                        style: const TextStyle(
+                                            fontSize: 17,
+                                            color: _kText,
+                                            height: 1.45))),
+                                const Icon(Icons.chevron_right,
+                                    size: 18, color: _kSub),
+                              ]),
+                            ),
+                            _tCell(_short(
+                                (Map<String, dynamic>.from(
+                                            e as Map)['ocr_text'] ??
+                                        '')
+                                    .toString(),
+                                40)),
+                            _tCell(
+                                reportMetricSummary(
+                                    Map<String, dynamic>.from(e as Map)),
+                                color: reportMetricColor(
+                                    Map<String, dynamic>.from(e as Map))),
+                            _tCell(_short(
+                                (Map<String, dynamic>.from(
+                                            e as Map)['advice_text'] ??
+                                        '')
+                                    .toString(),
+                                40)),
+                          ],
+                      ],
+                      rowLongPress: widget.forElder
+                          ? null
+                          : [
+                              for (final e in _items)
+                                () => _deleteReport(
+                                    Map<String, dynamic>.from(e as Map)),
+                            ],
+                      emptyIcon: Icons.description_outlined,
+                      emptyAccent: _mRep,
+                      emptyText:
+                          widget.forElder ? '暂无报告信息' : '暂无历史体检报告，今天记录一条吧',
+                    ),
                   if (widget.forElder && _items.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     SizedBox(
@@ -3087,7 +3186,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
     try {
       final records = await ApiService.drugRecords();
       _items = records
-          .where((record) => record is Map && record['kind'] == 'chat')
+          .where((record) => record is Map && _isDrugRecord(record))
           .toList();
     } catch (e) {
       _error = ApiService.friendly(e);
@@ -3099,6 +3198,14 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
     final v = (m['input_text'] ?? '').toString().trim();
     if (v.isNotEmpty) return v;
     return (m['ocr_text'] ?? '').toString().trim();
+  }
+
+  bool _isDrugRecord(dynamic record) {
+    final m = Map<String, dynamic>.from(record as Map);
+    final kind = (m['kind'] ?? '').toString();
+    if (kind != 'chat') return false;
+    final question = (m['input_text'] ?? m['ocr_text'] ?? '').toString();
+    return isDrugSummaryQuestion(question);
   }
 
   Future<void> _dDetail(Map<String, dynamic> m) async {
@@ -3162,23 +3269,6 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
                       const TextStyle(color: Color(0xFF345C87), fontSize: 18)),
               TextButton(onPressed: _refresh, child: const Text('重试')),
             ],
-            if (list.isNotEmpty)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    final m = list.first;
-                    final d = (m['created_at'] ?? '').toString();
-                    _askElder(context,
-                        record:
-                            '查药记录（${d.length >= 10 ? d.substring(0, 10) : d}）：\n${_dname(m)}',
-                        prompt: '这次查的药品，服用方法和注意事项都清楚了吗？');
-                  },
-                  style: _tintBtn(_eDrug, _eDrugBg),
-                  child: const Text('一键询问长辈', softWrap: false),
-                ),
-              ),
-            if (list.isNotEmpty) const SizedBox(height: 16),
             _MineTable(
               headers: const ['药品名称', '查询时间', '说明'],
               flex: const [3, 2, 3],
@@ -3278,11 +3368,58 @@ class _ElderSelfcheckPageState extends State<_ElderSelfcheckPage> {
   }
 
   Future<void> _refresh() async {
+    final records = <Map<String, dynamic>>[];
     try {
-      _items = await ApiService.symptomHistory();
-    } catch (_) {
-      _items = [];
-    }
+      final symptoms = await ApiService.symptomHistory();
+      records.addAll(symptoms.whereType<Map>().map(_asMap));
+    } catch (_) {}
+    try {
+      final summaries = await ApiService.chatSummaries(limit: 100);
+      records.addAll(summaries.whereType<Map>().map((raw) {
+        final summary = _asMap(raw);
+        final question = (summary['question'] ?? '').toString();
+        if (summary['category'] != 'selfcheck' &&
+            !isHealthSelfcheckQuestion(question)) {
+          return <String, dynamic>{};
+        }
+        return {
+          'id': 'summary-${summary['id'] ?? records.length}',
+          'input_text': question,
+          'advice_text': summary['summary'] ?? '',
+          'risk': summary['risk'] ?? 'green',
+          'created_at': summary['created_at'],
+        };
+      }).where((summary) => summary['id'] != null));
+    } catch (_) {}
+    try {
+      final legacyDrugRecords = await ApiService.drugRecords();
+      for (final raw in legacyDrugRecords.whereType<Map>()) {
+        final summary = _asMap(raw);
+        if (summary['kind'] != 'chat') continue;
+        final question =
+            (summary['input_text'] ?? summary['ocr_text'] ?? '').toString();
+        if (isDrugSummaryQuestion(question)) continue;
+        records.add({
+          'id': 'legacy-chat-${summary['id'] ?? records.length}',
+          'input_text': question,
+          'advice_text': summary['explanation'] ?? '',
+          'risk': 'green',
+          'created_at': summary['created_at'],
+        });
+      }
+    } catch (_) {}
+    final seen = <String>{};
+    records.removeWhere((record) {
+      final key = '${_cdate(record)}|'
+          '${(record['input_text'] ?? '').toString().trim()}';
+      return !seen.add(key);
+    });
+    records.sort((a, b) =>
+        (DateTime.tryParse((b['created_at'] ?? '').toString()) ??
+                DateTime.fromMillisecondsSinceEpoch(0))
+            .compareTo(DateTime.tryParse((a['created_at'] ?? '').toString()) ??
+                DateTime.fromMillisecondsSinceEpoch(0)));
+    _items = records;
     if (mounted) setState(() => _loading = false);
   }
 

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../services/api.dart';
+import '../../widgets/age_profile_card.dart';
 import '../../afu/uploaded_avatar_actions.dart';
 import '../login_page.dart';
 import 'hub_pages.dart' show chatScale, notifyEnabled;
@@ -26,6 +27,9 @@ class _MeTabState extends State<MeTab> {
   bool syncToFamily = true;
   bool _privacyLoading = true;
   bool _privacySaving = false;
+  bool _forcedShare = false;
+  String? _ageTier;
+  int _profileRevision = 0;
   String? _privacyError;
   double fontScale = 1.0;
   // 亲属绑定管理（邀请码输入 + 生成 + 已绑定列表）
@@ -62,7 +66,7 @@ class _MeTabState extends State<MeTab> {
             '${ApiService.avatarFullUrl(remote)}?v=${DateTime.now().millisecondsSinceEpoch}';
       }
     } catch (_) {}
-    if (mounted) setState(() {});
+    if (mounted) setState(() => _profileRevision++);
     await _loadPrivacy();
   }
 
@@ -168,6 +172,8 @@ class _MeTabState extends State<MeTab> {
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
+          AgeProfileCard(
+              key: ValueKey(_profileRevision), onUpdated: _loadPrivacy),
           const SizedBox(height: 24),
           _notifyCard(),
           const SizedBox(height: 16),
@@ -215,8 +221,14 @@ class _MeTabState extends State<MeTab> {
       _privacyError = null;
     });
     try {
-      final value = await ApiService.getPrivacy();
-      if (mounted) setState(() => syncToFamily = value);
+      final state = await ApiService.privacyState();
+      if (mounted) {
+        setState(() {
+          syncToFamily = state['sync_summary_to_family'] == true;
+          _forcedShare = state['forced_share'] == true;
+          _ageTier = state['age_tier']?.toString();
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _privacyError = ApiService.friendly(e));
     } finally {
@@ -225,26 +237,42 @@ class _MeTabState extends State<MeTab> {
   }
 
   Future<void> _savePrivacy(bool value) async {
-    if (_privacySaving || _privacyLoading || _privacyError != null) return;
+    if (_privacySaving ||
+        _privacyLoading ||
+        _privacyError != null ||
+        _forcedShare) {
+      return;
+    }
     setState(() => _privacySaving = true);
+    bool submitted = false;
     try {
       final saved = await ApiService.updatePrivacy(value);
+      submitted = true;
+      if (mounted) setState(() => syncToFamily = saved);
+      final state = await ApiService.privacyState();
       if (!mounted) return;
-      setState(() => syncToFamily = saved);
+      setState(() {
+        syncToFamily = state['sync_summary_to_family'] == true;
+        _forcedShare = state['forced_share'] == true;
+        _ageTier = state['age_tier']?.toString();
+      });
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('sync_to_family', saved);
+        await prefs.setBool('sync_to_family', syncToFamily);
       } catch (_) {}
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('设置未保存：${ApiService.friendly(e)}')));
+      if (mounted) {
+        if (submitted) setState(() => _privacyError = '设置已提交，请重新读取以核对当前状态');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                '${submitted ? '设置状态待核对' : '设置未保存'}：${ApiService.friendly(e)}')));
+      }
     } finally {
       if (mounted) setState(() => _privacySaving = false);
     }
   }
 
-  /// 隐私保护只影响开启后的 AI 对话摘要，开启前的信息继续保留给家属。
+  /// 共享规则由服务端年龄分层和权限闸门决定。
   Widget _privacyCard() {
     return AfuCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -265,24 +293,29 @@ class _MeTabState extends State<MeTab> {
                   style:
                       AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              const Text(
-                  '开启后，不再从新的 AI 对话中提取敏感信息给家属；开启前已经同步的信息会继续保留，体征、报告等主动上传记录不受影响',
-                  style: TextStyle(
+              Text(
+                  _forcedShare
+                      ? '当前服务端为满60周岁强制共享模式；健康资料向有效绑定家属开放，不能关闭共享。'
+                      : _ageTier == 'unknown'
+                          ? '请先补齐出生年月。开启隐私保护后不再同步新的对话摘要；家属健康资料访问仍由服务端逐类校验。'
+                          : '开启后不再同步新的 AI 对话摘要和相关查药记录。体征、报告、录音等健康资料的家属访问也受当前共享规则限制；已同步消息不自动撤回。',
+                  style: const TextStyle(
                       fontSize: 16, color: Color(0xFF6B7280), height: 1.4)),
             ]),
           ),
-          Switch(
-            key: const ValueKey('family-summary-sharing'),
-            value: !syncToFamily,
-            activeTrackColor: const Color(0xFF345C87),
-            activeThumbColor: Colors.white,
-            inactiveTrackColor: const Color(0xFFEDF4FB),
-            inactiveThumbColor: const Color(0xFF6B7280),
-            onChanged:
-                _privacyLoading || _privacySaving || _privacyError != null
-                    ? null
-                    : (enabled) => _savePrivacy(!enabled),
-          ),
+          if (!_forcedShare)
+            Switch(
+              key: const ValueKey('family-summary-sharing'),
+              value: !syncToFamily,
+              activeTrackColor: const Color(0xFF345C87),
+              activeThumbColor: Colors.white,
+              inactiveTrackColor: const Color(0xFFEDF4FB),
+              inactiveThumbColor: const Color(0xFF6B7280),
+              onChanged:
+                  _privacyLoading || _privacySaving || _privacyError != null
+                      ? null
+                      : (enabled) => _savePrivacy(!enabled),
+            ),
         ]),
         if (_privacyLoading || _privacySaving)
           const Padding(
@@ -305,97 +338,104 @@ class _MeTabState extends State<MeTab> {
         Text('亲属绑定管理',
             style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        const Text('输入邀请码可绑定家属，也可生成邀请码发给家属', style: AfuElderText.secondary),
-        const SizedBox(height: 12),
-        TextField(
-          controller: codeC,
-          style: const TextStyle(fontSize: 21, color: Color(0xFF212936)),
-          decoration: InputDecoration(
-            hintText: '请输入6位邀请码',
-            hintStyle: const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(22),
-              borderSide: const BorderSide(color: Color(0xFF345C87), width: 2),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF345C87),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            onPressed: binding ? null : _doBind,
-            child: Text(binding ? '绑定中…' : '确认绑定'),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEDF4FB),
-              foregroundColor: const Color(0xFF345C87),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle:
-                  const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-            onPressed: generating ? null : _genInvite,
-            child: Text(generating ? '生成中…' : '生成邀请码'),
-          ),
-        ),
-        if (inviteCode != null && inviteCode!.isNotEmpty) ...[
+        Text(widget.role == 'elder' ? '生成邀请码，邀请家属绑定' : '输入长辈的邀请码完成绑定',
+            style: AfuElderText.secondary),
+        if (widget.role == 'family') ...[
           const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEDF4FB),
-              borderRadius: BorderRadius.circular(18),
+          TextField(
+            controller: codeC,
+            style: const TextStyle(fontSize: 21, color: Color(0xFF212936)),
+            decoration: InputDecoration(
+              hintText: '请输入6位邀请码',
+              hintStyle:
+                  const TextStyle(fontSize: 19, color: Color(0xFF6B7280)),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide: const BorderSide(color: Color(0xFFD8E6F3)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(22),
+                borderSide:
+                    const BorderSide(color: Color(0xFF345C87), width: 2),
+              ),
             ),
-            child: Row(children: [
-              Expanded(
-                child: Text('邀请码：$inviteCode',
-                    style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF212936))),
-              ),
-              AfuPressable(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: inviteCode!));
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
-                },
-                borderRadius: 12,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text('复制',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF345C87))),
-                ),
-              ),
-            ]),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF345C87),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              onPressed: binding ? null : _doBind,
+              child: Text(binding ? '绑定中…' : '确认绑定'),
+            ),
+          ),
+        ],
+        if (widget.role == 'elder') ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEDF4FB),
+                foregroundColor: const Color(0xFF345C87),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              onPressed: generating ? null : _genInvite,
+              child: Text(generating ? '生成中…' : '生成邀请码'),
+            ),
+          ),
+          if (inviteCode != null && inviteCode!.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEDF4FB),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Text('邀请码：$inviteCode',
+                      style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF212936))),
+                ),
+                AfuPressable(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: inviteCode!));
+                    ScaffoldMessenger.of(context)
+                        .showSnackBar(const SnackBar(content: Text('邀请码已复制')));
+                  },
+                  borderRadius: 12,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Text('复制',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF345C87))),
+                  ),
+                ),
+              ]),
+            ),
+          ],
         ],
         if (bindMsg.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -459,10 +499,12 @@ class _MeTabState extends State<MeTab> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(children: [
-        UploadedAvatarActions(onDeleted: () async {
-          avatarAsset = kAvatarAssets.first;
-          await _loadPrefs();
-        }, child: _ElderRippleAvatar(asset: avatarAsset)),
+        UploadedAvatarActions(
+            onDeleted: () async {
+              avatarAsset = kAvatarAssets.first;
+              await _loadPrefs();
+            },
+            child: _ElderRippleAvatar(asset: avatarAsset)),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,

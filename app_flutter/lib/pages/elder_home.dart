@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../afu/afu_theme.dart';
+import '../services/medication_notification_service.dart';
 import 'tabs/consult_drug_chat_tab.dart';
 import 'tabs/hub_pages.dart';
 import 'tabs/meds_tab.dart';
@@ -20,6 +23,12 @@ class _ElderHomeState extends State<ElderHome> {
     super.initState();
     HubNav.tab.addListener(_onHubTab);
     HubNav.request.addListener(_onHubTab);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(
+            MedicationNotificationService.instance.activateForSession(context));
+      }
+    });
   }
 
   @override
@@ -43,8 +52,18 @@ class _ElderHomeState extends State<ElderHome> {
       FamilyTab(), // 2 家人互动
       SettingsTab(), // 3 个人中心
     ];
-    const labels = ['\u7528\u836f\u63d0\u9192', 'AI\u95ee\u4e8b', '\u5bb6\u4eba\u4e92\u52a8', '\u4e2a\u4eba\u4e2d\u5fc3'];
-    const icons = [Icons.alarm_outlined, Icons.chat_bubble_outline, Icons.family_restroom_outlined, Icons.person_outline];
+    const labels = [
+      '\u7528\u836f\u63d0\u9192',
+      'AI\u95ee\u4e8b',
+      '\u5bb6\u4eba\u4e92\u52a8',
+      '\u4e2a\u4eba\u4e2d\u5fc3'
+    ];
+    const icons = [
+      Icons.alarm_outlined,
+      Icons.chat_bubble_outline,
+      Icons.family_restroom_outlined,
+      Icons.person_outline
+    ];
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
       body: SafeArea(key: ValueKey(idx), child: pages[idx]),
@@ -58,7 +77,8 @@ class _ElderHomeState extends State<ElderHome> {
         onTap: (i) => setState(() => idx = i),
         items: [
           for (var i = 0; i < labels.length; i++)
-            BottomNavigationBarItem(icon: Icon(icons[i], size: 30), label: labels[i]),
+            BottomNavigationBarItem(
+                icon: Icon(icons[i], size: 30), label: labels[i]),
         ],
       ),
     );

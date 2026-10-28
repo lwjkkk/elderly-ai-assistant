@@ -18,6 +18,7 @@ class AnswerSpeech extends ChangeNotifier {
   int? messageIndex;
   bool paused = false;
   List<String> _parts = [];
+  String _spokenText = '';
   int _part = 0;
   int _generation = 0;
   bool _disposed = false;
@@ -39,12 +40,8 @@ class AnswerSpeech extends ChangeNotifier {
       await _tts.stop();
       await (_ready ??= _initialize());
       if (_disposed || generation != _generation) return;
-      _parts = text
-          .replaceAll(RegExp(r'[*#`]'), '')
-          .split(RegExp(r'\n+'))
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
+      _spokenText = _normalize(text);
+      _parts = _spokenText.isEmpty ? [] : _spokenText.split('\n');
       _part = 0;
       messageIndex = index;
       notifyListeners();
@@ -71,7 +68,7 @@ class AnswerSpeech extends ChangeNotifier {
 
   Future<void> toggle(int index, String text) async {
     if (_disposed) return;
-    if (messageIndex != index) {
+    if (messageIndex != index || _normalize(text) != _spokenText) {
       await play(index, text);
       return;
     }
@@ -86,10 +83,21 @@ class AnswerSpeech extends ChangeNotifier {
         final result = await _tts.pause();
         if (result == 0) await _tts.stop();
       } catch (_) {
-        try { await _tts.stop(); } catch (_) { _fail(); }
+        try {
+          await _tts.stop();
+        } catch (_) {
+          _fail();
+        }
       }
     }
   }
+
+  String _normalize(String text) => text
+      .replaceAll(RegExp(r'[*#`]'), '')
+      .split(RegExp(r'\n+'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .join('\n');
 
   Future<void> stop() async {
     ++_generation;

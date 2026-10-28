@@ -13,12 +13,14 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/afu_chat_page.dart' show AfuMessage, AfuBubble;
 import '../../services/api.dart';
+import '../../services/family_alert_content.dart';
 import '../../afu/delete_confirm.dart';
 import 'package:cross_file/cross_file.dart';
 import 'consult_drug_chat_tab.dart';
 import '../bind_page.dart';
 import 'meds_tab.dart';
 import 'vitals_tab.dart';
+import 'report_details.dart';
 import 'me_tab.dart';
 
 /// 跨 Tab 跳转总线：问事页快捷入口调用 HubNav.go(1, 'drugs') 即切到健康百事并滚到对应板块。
@@ -1218,6 +1220,7 @@ class _FamConversationState extends State<FamConversationPage> {
   bool _initialLoaded = false;
   bool _loadingHistory = false;
   bool _historyRestored = false;
+  String? _historyAccessError;
   int _revision = 0;
   final Map<String, _FamMsg> _pending = {};
   final Set<String> _failed = {};
@@ -1266,16 +1269,44 @@ class _FamConversationState extends State<FamConversationPage> {
             content['kind'] = row['kind'] ?? content['kind'] ?? 'text';
             content['server_id'] = row['id'];
             content['created_at'] = row['created_at'];
-            return _FamMsg.fromJson(content);
+            // 紧急告警消息：后端存 kind=emergency_alert，content 里是结构化字段，
+            // 转成通用 health 卡片展示（红色由渲染层按 kind=emergency_alert 判断）。
+            if (content['kind'] == 'emergency_alert') {
+              content['title'] = '紧急情况提醒';
+              content['lines'] = [
+                '提醒类别：${content['emergency_labels'] ?? '需立即求助的危险信号'}',
+                if ((content['reported_question'] ?? content['question'] ?? '')
+                    .toString()
+                    .isNotEmpty)
+                  '原话：${content['reported_question'] ?? content['question']}',
+                content['advice'] ?? '请立即联系老人或拨打120。',
+              ];
+            }
+            return _FamMsg.fromJson(normalizeFamilyAlertContent(content));
           })(),
       ];
       for (final message in received) {
         _pending.remove(message.clientId);
         _failed.remove(message.clientId);
       }
-      setState(() => _msgs = [...received, ..._pending.values]);
+      setState(() {
+        _historyAccessError = null;
+        _msgs = [...received, ..._pending.values];
+      });
       await _saveHistory();
-    } catch (_) {
+    } catch (error) {
+      if ([401, 403, 404].contains(ApiService.statusOf(error))) {
+        if (!mounted || revision != _revision) return;
+        setState(() {
+          _msgs = [];
+          _pending.clear();
+          _failed.clear();
+          _historyAccessError = '当前登录状态或绑定不允许查看此会话，请重新登录或核对绑定。';
+        });
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(widget.storeKey);
+        return;
+      }
       // 保留当前消息和失败消息；网络恢复后再同步。
     } finally {
       _loadingHistory = false;
@@ -1303,7 +1334,13 @@ class _FamConversationState extends State<FamConversationPage> {
             _failed.add(message.clientId);
           }
         }
-        if (mounted) setState(() => _msgs = saved);
+        // System health messages require fresh server authorization on each visit.
+        if (mounted) {
+          setState(() => _msgs = saved
+              .where((message) =>
+                  message.kind != 'health' && message.kind != 'emergency_alert')
+              .toList());
+        }
       }
     } catch (_) {}
     _historyRestored = true;
@@ -1493,6 +1530,7 @@ class _FamConversationState extends State<FamConversationPage> {
         final ocr = (m['ocr_text'] ?? '').toString();
         final adv = (m['advice_text'] ?? '').toString();
         _push(_FamMsg(isMe: true, kind: 'health', title: '体检报告', lines: [
+          '指标核对：${reportMetricSummary(m)}',
           if (ocr.isNotEmpty)
             (ocr.length > 80 ? '${ocr.substring(0, 80)}…' : ocr),
           if (adv.isNotEmpty)
@@ -1635,6 +1673,11 @@ class _FamConversationState extends State<FamConversationPage> {
       ),
       body: SafeArea(
         child: Column(children: [
+          if (_historyAccessError != null)
+            Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(_historyAccessError!,
+                    style: const TextStyle(color: Color(0xFFB3261E)))),
           Expanded(
             child: _msgs.isEmpty
                 ? const Padding(
@@ -1807,6 +1850,47 @@ class _FamBubble extends StatelessWidget {
     }
     if (msg.kind == 'audio') {
       return _AudioBubble(msg: msg, bindingId: bindingId);
+    }
+    if (msg.kind == 'emergency_alert') {
+      return Align(
+        alignment: msg.isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: EdgeInsets.only(
+              left: msg.isMe ? 48 : 0,
+              right: msg.isMe ? 0 : 48,
+              top: 6,
+              bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFDECEC),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFD93025), width: 2),
+          ),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: const [
+              Icon(Icons.warning_amber_rounded,
+                  size: 26, color: Color(0xFFB71C1C)),
+              SizedBox(width: 6),
+              Expanded(
+                child: Text('紧急情况提醒',
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFB71C1C))),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            for (final line in msg.lines)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(line,
+                    style: const TextStyle(
+                        fontSize: 18, height: 1.5, color: Color(0xFF7A1A1A))),
+              ),
+          ]),
+        ),
+      );
     }
     if (msg.kind == 'health') {
       return Align(

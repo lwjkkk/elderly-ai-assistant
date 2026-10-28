@@ -18,7 +18,7 @@ class _Adapter implements HttpClientAdapter {
       Future<void>? cancel) async {
     requests.add(options);
     String body = '[]';
-    if (options.path == '/api/chat')
+    if (options.path == '/api/chat' || options.path == '/api/chat/tiered')
       body = '{"answer":"第一段说明\\n第二段说明","module":"health","steps":[]}';
     if (options.path.contains('weather')) body = '{"text":"未配置API_KEY"}';
     if (options.path == '/api/vitals/export')
@@ -55,25 +55,33 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('OCR medicine name removes English sections and preserves identifiers', () {
-    expect(medicationChineseName('复方消化酶胶囊\n英文名称：CompoundDigestiveEnzymeCapsules'), '复方消化酶胶囊');
-    expect(medicationChineseName('通用名称：复方消化酶胶囊英文名称: Compound Digestive Enzyme Capsules'), '复方消化酶胶囊');
+  test('OCR medicine name removes English sections and preserves identifiers',
+      () {
+    expect(
+        medicationChineseName('复方消化酶胶囊\n英文名称：CompoundDigestiveEnzymeCapsules'),
+        '复方消化酶胶囊');
+    expect(
+        medicationChineseName(
+            '通用名称：复方消化酶胶囊英文名称: Compound Digestive Enzyme Capsules'),
+        '复方消化酶胶囊');
     expect(medicationChineseName('阿司匹林 Aspirin'), '阿司匹林');
     expect(medicationChineseName('维生素B12片'), '维生素B12片');
   });
-  test('check-in respects both phone time and Shanghai time', () {
+  test('check-in uses Shanghai time and a one-hour grace window', () {
     expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 12, 23, 59)),
         false);
-    expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 13, 8, 0)),
+    expect(medicationSlotDue('08:00', now: DateTime.utc(2026, 10, 13, 0, 0)),
         true);
     expect(
         medicationSlotDue('08:00',
             date: '2026-10-14', now: DateTime.utc(2026, 10, 13, 0, 0)),
         false);
-    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 8, 47)),
-        false);
-    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 13, 0)),
+    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 5, 47)),
         true);
+    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 6, 0)),
+        true);
+    expect(medicationSlotDue('13:00', now: DateTime.utc(2026, 10, 13, 6, 0, 1)),
+        false);
     expect(medicationSlotDue('99:00', now: DateTime.utc(2026, 10, 13)), false);
   });
   test('drug queries use names and leave ordinary questions unchanged', () {
@@ -82,6 +90,24 @@ void main() {
     expect(drugQueryName('查药：测试药品'), '测试药品');
     expect(drugQueryName('微信怎么加好友'), isNull);
     expect(drugQueryName('帮我设置用药提醒'), isNull);
+  });
+  test('health chat summaries do not appear in the drug summary list', () {
+    expect(isDrugSummaryQuestion('我有高血压，平时生活要注意什么'), isFalse);
+    expect(isDrugSummaryQuestion('我有高血压，血压偏高怎么办'), isFalse);
+    expect(isDrugSummaryQuestion('我有高血压，漏服降压药怎么办'), isFalse);
+    expect(isDrugSummaryQuestion('阿司匹林有什么副作用？'), isTrue);
+    expect(isHealthSelfcheckQuestion('我有高血压，漏服降压药怎么办'), isTrue);
+  });
+  test('selfcheck summaries request the correct family scope and category',
+      () async {
+    final adapter = _Adapter();
+    ApiService.dio.httpClientAdapter = adapter;
+    SharedPreferences.setMockInitialValues(
+        {'role': 'family', 'user_id': 5, 'elder_id': 9, 'token': 't'});
+    await ApiService.chatSummaries(category: 'selfcheck');
+    expect(adapter.requests.single.path, '/api/chat/summaries');
+    expect(adapter.requests.single.queryParameters['category'], 'selfcheck');
+    expect(adapter.requests.single.queryParameters['elder_id'], 9);
   });
   test('binary PDF errors retain backend detail', () async {
     ApiService.dio.httpClientAdapter = _Adapter();
@@ -116,7 +142,7 @@ void main() {
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
-    expect(adapter.requests.any((r) => r.path == '/api/chat'), true);
+    expect(adapter.requests.any((r) => r.path == '/api/chat/tiered'), true);
     expect(
         adapter.requests.any((r) => r.path == '/api/drugs/query-name'), false);
     expect(spoken.any((c) => c.method == 'speak'), true);
