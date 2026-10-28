@@ -1,5 +1,7 @@
 # 云栖码梦 — 银龄数字生活辅助智能体
 
+> 分支分工：本分支 `main` 保留后端；最新 Flutter 前端已迁至 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。
+
 > 面向老年人的 AI 健康助手与数字生活辅助 App。支持用药提醒、体征记录、体检报告解读、症状自查、拍照查药、问诊录音、天气健康提醒，以及手机操作/便民办事/生活常识的智能问答。
 
 ---
@@ -72,15 +74,7 @@
 
 ### 3.2 前端
 
-| 技术 | 用途 |
-|---|---|
-| Flutter 3 | 跨平台框架，一套代码同时编译 Android 和 iOS |
-| Dio | HTTP 网络请求 |
-| shared_preferences | 本地存储（Token、角色） |
-| flutter_tts | 文字转语音（语音播报） |
-| speech_to_text | 语音转文字（语音输入） |
-| image_picker | 图片选择/拍照 |
-| fl_chart | 图表（体征趋势曲线） |
+Flutter 源码、依赖、资源和构建说明维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。前端入口为该分支的 `app_flutter/lib/main.dart`；本分支只保留后端和共享资料。
 
 ### 3.3 知识库
 
@@ -107,20 +101,6 @@ elderly-ai-assistant/
 │   ├── reports.py                # 体检报告上传、OCR识别、AI解读
 │   ├── weather.py                # 天气健康提醒
 │   └── routes.py                 # 原有智能问答 /api/chat
-├── app_flutter/                  # Flutter 前端（双端 App）
-│   ├── lib/
-│   │   ├── main.dart             # 入口，主题配置（大字体大按钮）
-│   │   ├── config.dart           # 后端地址配置
-│   │   ├── services/
-│   │   │   └── api.dart          # API 请求封装（Dio）
-│   │   └── pages/
-│   │       ├── login_page.dart   # 登录页
-│   │       ├── register_page.dart# 注册页
-│   │       ├── bind_page.dart    # 绑定管理页
-│   │       ├── elder_home.dart   # 老人端首页
-│   │       ├── family_home.dart  # 家属端首页
-│   │       └── tabs/             # 各 Tab 页面
-│   └── pubspec.yaml              # Flutter 依赖
 ├── config/
 │   └── settings.py               # 配置：模型地址、API Key、服务器端口
 ├── core/                         # 核心业务逻辑
@@ -217,20 +197,18 @@ ollama pull qwen2:7b
 **云端 API（通义千问，效果更好）：**
 在 `.env` 中设置 `DASHSCOPE_API_KEY`，并将 `config/settings.py` 中 `LLM_BASE_URL` 改为 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
 
-### 5.4 前端启动
+### 5.4 前端启动（front 分支）
+
+前端已迁入独立的 `front` 分支，请在另一个目录检出，避免切换正在运行的后端工作区：
 
 ```bash
-cd app_flutter
-
-# 安装依赖
+git clone --branch front --single-branch https://github.com/lwjkkk/elderly-ai-assistant.git elderly-ai-assistant-front
+cd elderly-ai-assistant-front/app_flutter
 flutter pub get
-
-# 配置后端地址
-# 修改 lib/config.dart 中的 baseUrl 为你的后端地址
-
-# 运行（Android 模拟器/真机）
-flutter run
+flutter run -d edge --dart-define=API_BASE=http://101.201.226.34:8000
 ```
+
+完整运行和打包说明见 [front 分支前端 README](https://github.com/lwjkkk/elderly-ai-assistant/blob/front/app_flutter/README.md)。`API_BASE` 应填写实际后端地址；本分支不再存放 Flutter 源码和前端历史工具。
 
 ### 5.5 运行测试
 
