@@ -1,0 +1,34 @@
+证据 E07  改造后速度采样
+记录日期或阶段：2026-10-23
+结果：聊天13.821至28.359秒；报告33.378秒
+验证范围：报告受理0.037秒，指标先返回9.764秒；非严格压测
+原件：silver_agent_backend/backend_validation/results_20261023/benchmark.log
+原件SHA256：2d93bb527262543ebb4d0da27ebdf595cf66ada0ad25340b7dd459cbe152eb63
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+原日志PERFORMANCE_JSON中仅提取计时与调用次数，不复制历史回答正文。
+{
+  "warmup_seconds": 11.783,
+  "chat": [
+    {
+      "question": "高血压老人平时饮食要注意什么？",
+      "seconds": 21.866,
+      "model_calls": 1
+    },
+    {
+      "question": "胸痛是不是心梗？",
+      "seconds": 28.359,
+      "model_calls": 1
+    },
+    {
+      "question": "微信怎么发红包？",
+      "seconds": 13.821,
+      "model_calls": 1
+    }
+  ],
+  "report": {
+    "accepted_seconds": 0.037,
+    "partial_metrics_seconds": 9.764,
+    "completed_seconds": 33.378
+  }
+}

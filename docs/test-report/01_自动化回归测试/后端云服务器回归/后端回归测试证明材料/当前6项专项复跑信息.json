@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-28",
+  "timezone": "Asia/Shanghai",
+  "commit": "4c063e8295711d9e996c874b31b1c7cf49d2971f",
+  "runtime": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+  "sqlite": "3.49.1",
+  "command": "D:\\python\\python.exe -m unittest discover -s D:\\AICcode\\silver_agent_backend\\tests -p test_emergency_presentation.py -v",
+  "working_directory": "D:\\AICcode\\比赛测试记录_20261028",
+  "pythonpath": "D:\\AICcode\\silver_agent_backend",
+  "exit_code": 0,
+  "tests": 6,
+  "seconds_reported_by_unittest": 2.494,
+  "real_external_model_test": false,
+  "business_database": "isolated in-memory SQLite",
+  "sandbox_attempt": "stalled and explicitly stopped; not counted as pass",
+  "source_sha256": "38bf54070751015c855574769805ff8ada91188512687794b97b2cde0dbe9adb",
+  "log_sha256": "8492e18c7d4244da30129bcc811e9cdf3d51406a314717ce99598785f19e7683"
+}

@@ -1,0 +1,49 @@
+证据 E38  语音专项
+记录日期或阶段：2026-10-27
+结果：39/39 通过
+验证范围：ASR替身；验证鉴权、超时、限流、清理、无自动业务写入
+原件：语音录音转写_20261027/tests.log
+原件SHA256：5f220fbab17947cfd0eb9f42c283eba1867537fdb994c9ba4156d2450caae6fe
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_authenticated_upload_returns_editable_text (__main__.HTTP.test_authenticated_upload_returns_editable_text) ... ok
+L2: test_capabilities_does_not_claim_live_verification (__main__.HTTP.test_capabilities_does_not_claim_live_verification) ... ok
+L3: test_capacity_limit_returns_429_without_queued_work (__main__.HTTP.test_capacity_limit_returns_429_without_queued_work) ... ok
+L4: test_empty_blocked_before_asr (__main__.HTTP.test_empty_blocked_before_asr) ... ok
+L5: test_invalid_token_never_calls_asr (__main__.HTTP.test_invalid_token_never_calls_asr) ... ok
+L6: test_missing_configuration_explicit (__main__.HTTP.test_missing_configuration_explicit) ... ok
+L7: test_missing_file_and_invalid_purpose_are_validation_errors (__main__.HTTP.test_missing_file_and_invalid_purpose_are_validation_errors) ... ok
+L8: test_openapi_documents_success_and_upload (__main__.HTTP.test_openapi_documents_success_and_upload) ... ok
+L9: test_oversize_blocked_before_asr (__main__.HTTP.test_oversize_blocked_before_asr) ... ok
+L10: test_provider_auth_and_model_error_not_login_error (__main__.HTTP.test_provider_auth_and_model_error_not_login_error) ... ok
+L11: test_provider_connection_failure (__main__.HTTP.test_provider_connection_failure) ... ok
+L12: test_provider_empty_result_is_not_success (__main__.HTTP.test_provider_empty_result_is_not_success) ... ok
+L13: test_provider_rate_limit (__main__.HTTP.test_provider_rate_limit) ... ok
+L14: test_provider_receives_only_canonical_audio_and_no_extra_health_fields (__main__.HTTP.test_provider_receives_only_canonical_audio_and_no_extra_health_fields) ... ok
+L15: test_provider_timeout (__main__.HTTP.test_provider_timeout) ... ok
+L16: test_purposes_have_no_database_side_effects (__main__.HTTP.test_purposes_have_no_database_side_effects) ... ok
+L17: test_silence_blocked_before_asr (__main__.HTTP.test_silence_blocked_before_asr) ... ok
+L18: test_unauthenticated_never_calls_asr (__main__.HTTP.test_unauthenticated_never_calls_asr) ... ok
+L19: test_unexpected_error_does_not_leak_secrets (__main__.HTTP.test_unexpected_error_does_not_leak_secrets) ... ok
+L20: test_unknown_extension_blocked (__main__.HTTP.test_unknown_extension_blocked) ... ok
+L21: test_upload_file_is_closed_even_after_error (__main__.HTTP.test_upload_file_is_closed_even_after_error) ... ok
+L22: test_wall_timeout_late_result_has_no_side_effects (__main__.HTTP.test_wall_timeout_late_result_has_no_side_effects) ... ok
+L23: test_decode_failure_cleans_private_file (__main__.Input.test_decode_failure_cleans_private_file) ... ok
+L24: test_decoder_timeout_cleans_private_file (__main__.Input.test_decoder_timeout_cleans_private_file) ... ok
+L25: test_empty_rejected (__main__.Input.test_empty_rejected) ... ok
+L26: test_exact_60_seconds_accepted (__main__.Input.test_exact_60_seconds_accepted) ... ok
+L27: test_extension_does_not_override_content (__main__.Input.test_extension_does_not_override_content) ... ok
+L28: test_fake_audio_and_playlists_rejected (__main__.Input.test_fake_audio_and_playlists_rejected) ... ok
+L29: test_file_name_is_not_used_as_disk_path (__main__.Input.test_file_name_is_not_used_as_disk_path) ... ok
+L30: test_missing_decoder_is_explicit (__main__.Input.test_missing_decoder_is_explicit) ... ok
+L31: test_one_frame_over_60_rejected (__main__.Input.test_one_frame_over_60_rejected) ... ok
+L32: test_oversize_rejected (__main__.Input.test_oversize_rejected) ... ok
+L33: test_pcm_wav_needs_no_decoder (__main__.Input.test_pcm_wav_needs_no_decoder) ... ok
+L34: test_real_m4a_ogg_mp3_flac_decode_and_cleanup (__main__.Input.test_real_m4a_ogg_mp3_flac_decode_and_cleanup) ... ok
+L35: test_silence_not_sent_as_speech (__main__.Input.test_silence_not_sent_as_speech) ... ok
+L36: test_stereo_48khz_is_really_normalized (__main__.Input.test_stereo_48khz_is_really_normalized) ... ok
+L37: test_truncated_pcm_rejected (__main__.Input.test_truncated_pcm_rejected) ... ok
+L38: test_actual_request_shape_and_client_closed (__main__.Provider.test_actual_request_shape_and_client_closed) ... ok
+L39: test_legacy_file_wrapper_keeps_timeout (__main__.Provider.test_legacy_file_wrapper_keeps_timeout) ... ok
+L42: Ran 39 tests in 6.161s
+L44: OK

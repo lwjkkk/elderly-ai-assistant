@@ -1,0 +1,30 @@
+证据 E29  报告解读最终补测
+记录日期或阶段：2026-10-26
+结果：2个合成场景返回并人工检查
+验证范围：确认异常、缺参考或单位；非真实患者报告及临床认证
+原件：报告OCR_P1优化_20261026/qwen_final.json
+原件SHA256：ae056995ca5e63b3da095b35eac9a6bc742c78cb62eac10deb8a3466ac8f748d
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "model": "qwen3.7-plus",
+  "mocked_generation": false,
+  "data": "synthetic GLU7.2 ALT52 TC6.2 only; no personal information",
+  "cases": [
+    {
+      "case": "confirmed",
+      "seconds": 29.57,
+      "answer": "程序核对结果：程序核对的异常项：GLU 结果7.2，参考3.9-6.1，判定【偏高】；ALT 结果52.0，参考0-40，判定【偏高】；TC 结果6.2，参考3.1-5.6，判定【偏高】\n\n需要关注的异常项：\n血糖（GLU）：结果7.2，高于参考范围。这代表血液里的糖分偏高，因为没说明是不是空腹查的，建议您找医生复查。\n谷丙转氨酶（ALT）：结果52，高于正常上限。这是看肝脏状况的指标，偏高可能提示肝脏负担加重，建议咨询医生。\n总胆固醇（TC）：结果6.2，高于参考范围。这是查血脂的一项，偏高说明血液里胆固醇较多，建议就医评估。\n\n本次识别到的项目均偏高，无正常项和未能核对项。\n\n整体建议：\n1. 请带齐报告去医院，由医生结合您的身体情况给出专业指导。\n2. 日常饮食尽量清淡，少吃油腻和高糖食物，适当活动。\n3. 本解读仅限识别到的这三项，不代表整张报告都没问题，具体请遵医嘱。"
+    },
+    {
+      "case": "uncertain",
+      "seconds": 34.93,
+      "answer": "程序核对结果：程序核对的异常项：TC 结果6.2，参考3.1-5.6，判定【偏高】\n未能核对项：GLU：结果7.2，报告参考条件缺失或暂不支持，保留结果但不判断高低，判定【未能核对】；ALT：结果52，计量单位未能确认，判定【未能核对】\n\n需要关注的异常项：\nTC（总胆固醇）：查的是血液里的胆固醇水平。您的结果是6.2，属于偏高（参考3.1-5.6）。胆固醇偏高可能增加心血管负担，建议找医生看看是否需要复查。\n\n正常项：\n本次识别到的项目中没有正常项。\n\n未能核对项：\nGLU（血糖）：结果7.2。因报告参考条件缺失或暂不支持，未知是否空腹，无法判断高低，请对照纸质报告或请医生确认。\nALT（谷丙转氨酶）：结果52。因计量单位未能确认，无法判断高低，请对照纸质报告或请医生确认。\n\n整体建议：\n1. 请带上完整纸质报告找医生面诊，具体以医生解读为准。\n2. 日常饮食尽量清淡，少吃油腻食物。\n3. 本解读仅限已识别的部分指标，不能代表整份报告情况。"
+    }
+  ],
+  "manual_review": {
+    "confirmed": "GLU/ALT/TC all preserve program-high; no invented fasting state, no diagnosis or exact repeat interval; only detected scope stated.",
+    "uncertain": "GLU missing reference and ALT missing unit explained separately; neither classified normal/high; TC remains high.",
+    "limitation": "Two synthetic cases, not clinical expert validation or whole-model reliability. Actual patient reports were not sent."
+  }
+}

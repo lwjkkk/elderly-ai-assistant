@@ -1,0 +1,29 @@
+证据 E03  本地真实 RAG 与报告链路
+记录日期或阶段：2026-10-22
+结果：5 个检查点完成
+验证范围：201文档632分块512维；3个聊天问题及合成报告链路
+原件：silver_agent_backend/backend_validation/real_pipeline_20261022_result.json
+原件SHA256：d70331ccdd7e4011f79f21df403c0c4d8585a66ecfbdf7cad5ee6a36dd6796ff
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "model": "qwen3.7-plus",
+  "checks": [
+    "real_embedding_and_chunk_metadata",
+    "real_chat:高血压老人平时饮食要注意什么？",
+    "real_chat:微信怎么发红包？",
+    "real_chat:胸痛是不是心梗？",
+    "real_ocr_upload_advice_history_sync"
+  ],
+  "index_stats": {
+    "rebuilt": true,
+    "reason": "rebuilt",
+    "stats": {
+      "docs": 201,
+      "chunks": 632,
+      "skipped": 0,
+      "dim": 512,
+      "db": "C:\\Users\\b'y'b'y\\AppData\\Local\\Temp\\silver-real-5t88s5s4\\vectors.db"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+﻿.\.venv\Scripts\python.exe : Traceback (most recent call last):
+所在位置 行:1 字符: 92
++ ... fy_all.py ==="; .\.venv\Scripts\python.exe verify_all.py 2>&1 | Tee-O ...
++                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\Duyijing\Desktop\elderly-ai-assistant\verify_all.py", line 82, in <module>
+    st = rt.json()[0]["slots"][0]["status"] if rt.json() else None
+         ~~~~~~~~~^^^
+KeyError: 0

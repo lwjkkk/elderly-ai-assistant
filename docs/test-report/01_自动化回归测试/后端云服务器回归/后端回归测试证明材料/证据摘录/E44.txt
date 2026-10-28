@@ -1,0 +1,86 @@
+证据 E44  云端紧急原话接口
+记录日期或阶段：2026-10-28
+结果：3问×2接口共6条响应
+验证范围：未调用生成模型；保留原话与类别；非APK实机
+原件：前端恢复验证_20261028/cloud_responses.json
+原件SHA256：e2f0be0c156db0520fdbc35552a84ad5b933eb6eb7db52dce47b6c41de04076e
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+[
+  {
+    "question": "我现在心脏疼怎么办？",
+    "endpoint": "/api/chat",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号"
+    ],
+    "reported_question": "我现在心脏疼怎么办？"
+  },
+  {
+    "question": "我现在心脏疼怎么办？",
+    "endpoint": "/api/chat/tiered",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号"
+    ],
+    "reported_question": "我现在心脏疼怎么办？"
+  },
+  {
+    "question": "我心脏疼，没有胸闷，刚才开始的",
+    "endpoint": "/api/chat",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号"
+    ],
+    "reported_question": "我心脏疼，没有胸闷，刚才开始的"
+  },
+  {
+    "question": "我心脏疼，没有胸闷，刚才开始的",
+    "endpoint": "/api/chat/tiered",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号"
+    ],
+    "reported_question": "我心脏疼，没有胸闷，刚才开始的"
+  },
+  {
+    "question": "我心脏疼，喘不上气",
+    "endpoint": "/api/chat",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain",
+      "breath"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号",
+      "呼吸相关危险信号"
+    ],
+    "reported_question": "我心脏疼，喘不上气"
+  },
+  {
+    "question": "我心脏疼，喘不上气",
+    "endpoint": "/api/chat/tiered",
+    "emergency": true,
+    "emergency_types": [
+      "chest_pain",
+      "breath"
+    ],
+    "emergency_labels": [
+      "胸部不适相关危险信号",
+      "呼吸相关危险信号"
+    ],
+    "reported_question": "我心脏疼，喘不上气"
+  }
+]

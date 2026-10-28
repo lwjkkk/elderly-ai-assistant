@@ -1,0 +1,77 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\Duyijing\Desktop\elderly-ai-assistant\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\Duyijing\Desktop\elderly-ai-assistant
+plugins: anyio-4.15.1, langsmith-0.14.4
+collecting ... collected 11 items
+
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_all_risk_groups_preserve_subject_detail_time_negation_and_numbers PASSED [  9%]
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_chat_and_both_views_keep_original_question_and_120 PASSED [ 18%]
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_current_negated_historical_and_hypothetical_context PASSED [ 27%]
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_family_message_and_outbox_separate_risk_from_original_quote PASSED [ 36%]
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_risk_group_never_replaces_reported_words PASSED [ 45%]
+tests/test_emergency_presentation.py::EmergencyPresentationTests::test_symptom_check_keeps_original_words_in_saved_answer_data PASSED [ 54%]
+tests/test_family_message_media.py::FamilyMediaTests::test_consult_summary_failure_and_historical_retry PASSED [ 63%]
+tests/test_family_message_media.py::FamilyMediaTests::test_consult_summary_is_generated_persisted_and_bound FAILED [ 72%]
+tests/test_family_message_media.py::FamilyMediaTests::test_recording_survives_sync_and_retry_and_is_private PASSED [ 81%]
+tests/test_family_message_media.py::FamilyMediaTests::test_transcript_is_cached_and_image_is_persisted PASSED [ 90%]
+tests/test_family_message_media.py::FamilyMediaTests::test_uploaded_records_can_only_be_deleted_by_owner PASSED [100%]
+
+================================== FAILURES ===================================
+___ FamilyMediaTests.test_consult_summary_is_generated_persisted_and_bound ____
+tests\test_family_message_media.py:75: in test_consult_summary_is_generated_persisted_and_bound
+    self.assertEqual(self.client.get(url).status_code, 200)
+E   AssertionError: 403 != 200
+============================== warnings summary ===============================
+db\schemas.py:25
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:25: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class UserOut(BaseModel):
+
+db\schemas.py:44
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:44: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class UserProfileOut(BaseModel):
+
+db\schemas.py:108
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:108: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ChatSummaryOut(BaseModel):
+
+db\schemas.py:125
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:125: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class DrugQueryOut(BaseModel):
+
+db\schemas.py:152
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:152: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class BindingOut(BaseModel):
+
+db\schemas.py:186
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:186: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class MedicationOut(BaseModel):
+
+db\schemas.py:207
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:207: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class LogOut(BaseModel):
+
+db\schemas.py:266
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:266: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VitalsOut(BaseModel):
+
+db\schemas.py:288
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:288: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class VitalAlertOut(BaseModel):
+
+db\schemas.py:393
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:393: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ConsultOut(BaseModel):
+
+db\schemas.py:418
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:418: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class SymptomOut(BaseModel):
+
+db\schemas.py:461
+  C:\Users\Duyijing\Desktop\elderly-ai-assistant\db\schemas.py:461: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class HealthReportOut(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_family_message_media.py::FamilyMediaTests::test_consult_summary_is_generated_persisted_and_bound
+================= 1 failed, 10 passed, 12 warnings in 15.02s ==================
