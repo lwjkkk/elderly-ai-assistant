@@ -5,7 +5,7 @@ import 'afu_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/api.dart';
-import '../services/contest_answer.dart';
+import '../services/chat/contest_answer.dart';
 import '../widgets/answer_evidence.dart';
 
 /// 图片资源说明：

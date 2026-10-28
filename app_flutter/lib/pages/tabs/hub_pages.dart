@@ -13,15 +13,15 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/afu_chat_page.dart' show AfuMessage, AfuBubble;
 import '../../services/api.dart';
-import '../../services/family_alert_content.dart';
+import '../../services/health/family_alert_content.dart';
 import '../../afu/delete_confirm.dart';
 import 'package:cross_file/cross_file.dart';
 import 'consult_drug_chat_tab.dart';
-import '../bind_page.dart';
-import 'meds_tab.dart';
-import 'vitals_tab.dart';
-import 'report_details.dart';
-import 'me_tab.dart';
+import 'package:elderly_ai_assistant/pages/profile/bind_page.dart';
+import 'package:elderly_ai_assistant/pages/medication/meds_tab.dart';
+import 'package:elderly_ai_assistant/pages/health/vitals_tab.dart';
+import 'package:elderly_ai_assistant/pages/health/report_details.dart';
+import 'package:elderly_ai_assistant/pages/profile/me_tab.dart';
 
 /// 跨 Tab 跳转总线：问事页快捷入口调用 HubNav.go(1, 'drugs') 即切到健康百事并滚到对应板块。
 /// 问事页字号总线：设置页调节后问事页实时跟随。

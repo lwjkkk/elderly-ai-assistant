@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-/// 全局设计 token（苹果风：浅灰底、白卡片、系统蓝）
+/// 全局设计 token（浅灰底、白卡片、沿用个人中心的深蓝灰）。
 /// 所有页面只许用这里的值，不许硬编码颜色/字号/圆角。
 class AppColors {
   static const bg = Color(0xFFF2F2F7);
   static const card = Colors.white;
-  static const primary = Color(0xFF007AFF);
+  static const primary = Color(0xFF345C87);
   static const ink = Color(0xFF1C1C1E);
   static const secondary = Color(0xFF8E8E93);
   static const line = Color(0xFFE5E5EA);

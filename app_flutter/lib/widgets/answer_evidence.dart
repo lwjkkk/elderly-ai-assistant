@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/contest_answer.dart';
+import '../services/chat/contest_answer.dart';
 
 class AnswerUncertainBanner extends StatelessWidget {
   const AnswerUncertainBanner({super.key});
