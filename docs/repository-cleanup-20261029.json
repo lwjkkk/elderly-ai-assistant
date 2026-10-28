@@ -1,0 +1,690 @@
+{
+  "date": "2026-10-29",
+  "before": {
+    "main": "0ae65421045711dcc108646fa1c6d4c21739aa59",
+    "backend": "b25b07b7d2a1e12e7d704f379decd6d1ea5129e9",
+    "front": "b8b5ab80de785d1077e4bd12a097f3183e2602a6",
+    "feature/knowledge-base": "22df31ae3e2f6671bbe788c603fe178ba62f6f34"
+  },
+  "changes": [
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/.gitignore",
+      "original_blob": "79f7ecabd5c79ed432e463c2304a605523961083",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/.metadata",
+      "original_blob": "0c146c25f44495373e7f7995c2c2765f6ff31ac7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/README.md",
+      "original_blob": "628b899501c5ed0bc1a93f2e651d04349c29d4be",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/analysis_options.yaml",
+      "original_blob": "3f13f0faad7a8382e244861c62ae298f7976ffa7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/.gitignore",
+      "original_blob": "be3943c96d8eed92e2a329ce8327616d5e7dc440",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/build.gradle.kts",
+      "original_blob": "986c51a6178ad072da0bd0047acd725ae55c094e",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/debug/AndroidManifest.xml",
+      "original_blob": "399f6981d5d35475eb18e6068ae67cdd7c731978",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/AndroidManifest.xml",
+      "original_blob": "5d7e76c5fdb27230258645ac9db76b19c16ea37c",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/kotlin/com/example/elderly_ai_assistant/MainActivity.kt",
+      "original_blob": "38186733ff11072ec271bfccedd219e0c80206dd",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/drawable-v21/launch_background.xml",
+      "original_blob": "f74085f3f6a2b995f8ad1f9ff7b2c46dc118a9e0",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/drawable/launch_background.xml",
+      "original_blob": "304732f8842013497e14bd02f67a55f2614fb8f7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "original_blob": "db77bb4b7b0906d62b1847e87f15cdcacf6a4f29",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "original_blob": "17987b79bb8a35cc66c3c1fd44f5a5526c1b78be",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "original_blob": "09d4391482be68e9e4a07fab769b5de337d16eb1",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "original_blob": "d5f1c8d34e7a88e3f88bea192c3a370d44689c3c",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "original_blob": "4d6372eebdb28e45604e46eeda8dd24651419bc0",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/values-night/styles.xml",
+      "original_blob": "06952be745f9fa6fa75196e830d9578eb2ee631d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/main/res/values/styles.xml",
+      "original_blob": "cb1ef88056edd1caf99a935e434e7ff6943a0ef6",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/app/src/profile/AndroidManifest.xml",
+      "original_blob": "399f6981d5d35475eb18e6068ae67cdd7c731978",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/build.gradle.kts",
+      "original_blob": "dbee657bb5b9158516486b3a1b47ef8b6fc72a2a",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/gradle.properties",
+      "original_blob": "2d143db42e236b32b426f9ececbdbcdb357f576a",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/gradle/wrapper/gradle-wrapper.properties",
+      "original_blob": "e4ef43fb98df49e4a065ae4c2777f54463bf65b7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/android/settings.gradle.kts",
+      "original_blob": "ca7fe065c167b304c620950482ab6349d0ab124a",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/assistant.png",
+      "original_blob": "bbf22e38a6a861ef563cf8df265c2ae28c49afc7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/assistant_face.png",
+      "original_blob": "d973f9ac1f7a01ad2dc708cc2aad44fc6463918a",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/avatars/avatar1.png",
+      "original_blob": "d306c07a7dc8961951618db3aef91e50490cf8a9",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/avatars/avatar2.png",
+      "original_blob": "3efd92b48e77fc814ade33c51efea89e33b89b55",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/avatars/avatar3.png",
+      "original_blob": "f39b070d64569a51e9523dc4d83fd1470d221c95",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/assets/avatars/avatar4.png",
+      "original_blob": "0d3dbac0bcc4066fcd2f6ab16c1817f4a748f7f7",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/afu_chat_page.dart",
+      "original_blob": "61215c185a76099a1929f24bbd6bab93eedf2eb0",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/afu_illust.dart",
+      "original_blob": "aa026e280c04f3ff7a2bf25c75aec81176e1f621",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/afu_theme.dart",
+      "original_blob": "fce1ebd66dda899c802f1e523e1d8ee77d86a8c9",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/afu_widgets.dart",
+      "original_blob": "1e5dee9ee0842526f147b92c2862b4e4eb44cbb2",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/delete_confirm.dart",
+      "original_blob": "75f9dc5fde7245edfee0cab1ff9d937a596a6456",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/afu/uploaded_avatar_actions.dart",
+      "original_blob": "3d2b679d46bfbd766c779886fa4abc21390f3f91",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/config.dart",
+      "original_blob": "a96cdebac1594667967c0f3dbd9bbb06724e924f",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/main.dart",
+      "original_blob": "5cb2d63b43a3d0031fd4c19f9d7431322061c4c8",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/bind_page.dart",
+      "original_blob": "b1033b3c2098e7f46fef8595974c8899cb2c46b4",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/chat_history_page.dart",
+      "original_blob": "135a3abf351f90ee7fd470653bfb00756067c4b0",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/elder_home.dart",
+      "original_blob": "2a36ff770ee26e156bc1ec83c3e7e3ef4dc609ef",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/family_home.dart",
+      "original_blob": "a677ad7abb0f51920b86445f08116d5c5fd12bbb",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/login_page.dart",
+      "original_blob": "2a847f093070b30a8493b13ce98c02f7a1f2a9dd",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/register_page.dart",
+      "original_blob": "7b4ad6cba589d1e3321842ef26b6ef008ad4b168",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/consult_drug_chat_tab.dart",
+      "original_blob": "a09973f2e920bc5ca55a95f1569705d6501009e6",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/health_overview.dart",
+      "original_blob": "9faaf22aee27fbf3faf50c4db253158e8248b546",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/health_record_style.dart",
+      "original_blob": "70920dbea87563deef5ba1c6dd6725f762ffb6b3",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/hub_pages.dart",
+      "original_blob": "6b158015b4d33225938cb5f2c4cd839ab75264ee",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/me_tab.dart",
+      "original_blob": "e551305a86ffe806d05e920b9b701b921415602d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/med_form.dart",
+      "original_blob": "1ef59aa3f5a19e82102622828824f6614335a20b",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/meds_tab.dart",
+      "original_blob": "20903072496e34338fa45ae050a758213b419387",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/placeholder_tab.dart",
+      "original_blob": "b7d89aafa8ad6507ade70d52ddd8d4d8035eaf0b",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/report_details.dart",
+      "original_blob": "a2f05c6402a7fd6ac89110055fcecc947d54edb2",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/pages/tabs/vitals_tab.dart",
+      "original_blob": "913ac82825ee211b5c22d0136d518d971cf0a16c",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/answer_speech.dart",
+      "original_blob": "3e7f1b5984716bdb71fb98a844b4374525fe2e20",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/api.dart",
+      "original_blob": "535daf3581319e5d211f9b27fca8e297cde90e6a",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/chat_archive.dart",
+      "original_blob": "6fd8dde305eca6b7563f2d1b0dff914e90a63bd3",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/drug_question.dart",
+      "original_blob": "3f0e942883f0ee11b7e732da9f2952ffa4bfd914",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/file_download.dart",
+      "original_blob": "a1d3e0465041804c7c9360ef13186d18100de965",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/file_download_io.dart",
+      "original_blob": "18d63246be926688d8a0e025e9c409e3cb8d1324",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/file_download_stub.dart",
+      "original_blob": "78721dad3c85c922a3c429746c7149529bd9a636",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/file_download_web.dart",
+      "original_blob": "89eb9ec89f7da5ee4c0ceb43d89f6e090de45274",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/location_access.dart",
+      "original_blob": "5afbd67f93f226fb386bf7fe5d369ec2b28b2b74",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/medication_name.dart",
+      "original_blob": "d1f1fe6d96a7662ccb48bd8d8492e581fd6cf9f2",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/medication_time.dart",
+      "original_blob": "c5e584709bebef67a9fa9bb195897c0a82dfde17",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/services/vital_validation.dart",
+      "original_blob": "a2af79bf64dc26e441d19fcae3b61f99f9b66113",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/theme.dart",
+      "original_blob": "98e6289e8bf8efc5c4ca2ebd8725cffa2c5e095d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/lib/widgets/consult_summary_cell.dart",
+      "original_blob": "957bdcb4afead6afccb08f4a37620e0df67c7df6",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/pubspec.lock",
+      "original_blob": "8aae2e24d68783fd0b32f6bf3a8e9be7c33c89cf",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/pubspec.yaml",
+      "original_blob": "cdf65e744ec6a8f1d5ef652ec5ee429769a5c49d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/test/backend_contract_test.dart",
+      "original_blob": "eef34a8d064d14a4c1dff2ca5e04c17cd30816d0",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/test/chat_archive_test.dart",
+      "original_blob": "c3f0441f900b68ea60ddbbf75cb9fac1af695f7f",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/test/chat_lifecycle_test.dart",
+      "original_blob": "479eb097cbce031303fadc5b81ba782735fc111f",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/test/health_interactions_test.dart",
+      "original_blob": "b45b2215b0a5f903eff3b381518c7cdd6ef44360",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/test/widget_test.dart",
+      "original_blob": "77bea13ed031c55215a06585ab27764c83522f53",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/favicon.png",
+      "original_blob": "8aaa46ac1ae21512746f852a42ba87e4165dfdd1",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/icons/Icon-192.png",
+      "original_blob": "b749bfef07473333cf1dd31e9eed89862a5d52aa",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/icons/Icon-512.png",
+      "original_blob": "88cfd48dff1169879ba46840804b412fe02fefd6",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/icons/Icon-maskable-192.png",
+      "original_blob": "eb9b4d76e525556d5d89141648c724331630325d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/icons/Icon-maskable-512.png",
+      "original_blob": "d69c56691fbdb0b7efa65097c7cc1edac12a6d3e",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/index.html",
+      "original_blob": "90677948d0acc017eaa62f285d892cd21909f4c9",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "app_flutter/web/manifest.json",
+      "original_blob": "9073c832809910ae2f7c5a80adfd81c327d18c65",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "assets_src/original.png",
+      "original_blob": "05ccbc303758a6138be02bc58be2e103f767fb2c",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "touxiang/touxiang1.png",
+      "original_blob": "e4854b588eb95ad568fb0fdee5e7a2b9a95eea67",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "touxiang/touxiang2.png",
+      "original_blob": "b4c2d403f7f633bc15c9473ac759662fada4168d",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "touxiang/touxiang3.png",
+      "original_blob": "f2af1127a3460cb5ff99565303dcae9892069feb",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "touxiang/touxiang4.png",
+      "original_blob": "1d1495be71478617c37490f11e9289f20830513f",
+      "destination": "backup tag (original bytes); current frontend: front",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "scripts/start_phone_test.bat",
+      "original_blob": "98a18e9c555aa8a3ec1595287dc89a1bd6e88c56",
+      "destination": "archive/legacy-frontend-tools/start_phone_test.bat",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "scripts/start_phone_test.ps1",
+      "original_blob": "3a2dd1d7a5f90e5832cf2d7d4f7de70998966f7d",
+      "destination": "archive/legacy-frontend-tools/start_phone_test.ps1",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "scripts/oneoff/fix_notify.py",
+      "original_blob": "2fe9a7c934fed5789aeda8afb7e2ae2c2681bdae",
+      "destination": "archive/legacy-frontend-tools/fix_notify.py",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/phone_test_runbook.md",
+      "original_blob": "c3830cfa381fa5e9acf77f1b3533ef27f1f6a139",
+      "destination": "archive/legacy-frontend-tools/phone_test_runbook.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/cloud_update_20261017.md",
+      "original_blob": "6de6ab9a9bbd3a6c52610be5445752d314bf5941",
+      "destination": "docs/dev-log/cloud_update_20261017.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/family_media_update_20261017.md",
+      "original_blob": "dc66ecaffb74fabe4d49f2599cf2dd33f971da59",
+      "destination": "docs/dev-log/family_media_update_20261017.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/knowledge_base_review_20261023/给C的核查说明.md",
+      "original_blob": "1c33eca3622a093f0981cb93b282df6c564cd46b",
+      "destination": "docs/dev-log/knowledge_base_review_20261023/给C的核查说明.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/后端待修改清单.md",
+      "original_blob": "7b63a84997da2cc1e844f8980c87302165a4d19a",
+      "destination": "docs/dev-log/后端待修改清单.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/后端待修改清单_20261014.md",
+      "original_blob": "ba38b1de7e5ccd4501a69b614cc18fd78fbae2ce",
+      "destination": "docs/dev-log/后端待修改清单_20261014.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/紧急描述精确展示修复_20261027.md",
+      "original_blob": "b6d2953c8544503312360b351bd2bef79f98fb7b",
+      "destination": "docs/dev-log/紧急描述精确展示修复_20261027.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    },
+    {
+      "branch": "backend",
+      "original_path": "docs/问题3-7_本地检查与后端修改清单.md",
+      "original_blob": "b10de4811f89c83aef4c8d930dd0bf8640fa3b73",
+      "destination": "docs/dev-log/问题3-7_本地检查与后端修改清单.md",
+      "backup_tag": "backup/repo-cleanup-20261029/backend"
+    }
+  ]
+}
