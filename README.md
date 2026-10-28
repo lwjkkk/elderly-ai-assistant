@@ -1,6 +1,6 @@
 # 云栖码梦 — 银龄数字生活辅助智能体
 
-> 分支分工：`main` 为稳定后端，`backend` 为后端开发，Flutter 前端维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。知识库保留在后端的 `knowledge_base/`，原知识库分支已备份并删除。详见 [整理与恢复说明](docs/repository-cleanup-20261029.md)。
+> 本分支 `main` 是完整项目展示版：包含后端、知识库和 Flutter 前端。`backend` 用于后端开发，`front` 用于前端开发；开发完成并验证后再合并到 `main`。
 
 > 面向老年人的 AI 健康助手与数字生活辅助 App。支持用药提醒、体征记录、体检报告解读、症状自查、拍照查药、问诊录音、天气健康提醒，以及手机操作/便民办事/生活常识的智能问答。
 
@@ -74,7 +74,7 @@
 
 ### 3.2 前端
 
-Flutter 源码、依赖、资源和构建说明维护在 [front 分支](https://github.com/lwjkkk/elderly-ai-assistant/tree/front)。前端入口为该分支的 `app_flutter/lib/main.dart`；本分支只保留后端和共享资料。
+Flutter 源码、依赖、资源和构建说明位于本分支的 `app_flutter/`。前端入口为 `app_flutter/lib/main.dart`；后端和前端在同一个完整项目快照中。
 
 ### 3.3 知识库
 
@@ -197,18 +197,17 @@ ollama pull qwen2:7b
 **云端 API（通义千问，效果更好）：**
 在 `.env` 中设置 `DASHSCOPE_API_KEY`，并将 `config/settings.py` 中 `LLM_BASE_URL` 改为 `https://dashscope.aliyuncs.com/compatible-mode/v1`。
 
-### 5.4 前端启动（front 分支）
+### 5.4 前端启动
 
-前端已迁入独立的 `front` 分支，请在另一个目录检出，避免切换正在运行的后端工作区：
+在项目根目录进入 Flutter 工程：
 
 ```bash
-git clone --branch front --single-branch https://github.com/lwjkkk/elderly-ai-assistant.git elderly-ai-assistant-front
-cd elderly-ai-assistant-front/app_flutter
+cd app_flutter
 flutter pub get
 flutter run -d edge --dart-define=API_BASE=http://101.201.226.34:8000
 ```
 
-完整运行和打包说明见 [front 分支前端 README](https://github.com/lwjkkk/elderly-ai-assistant/blob/front/app_flutter/README.md)。`API_BASE` 应填写实际后端地址；本分支不再存放 Flutter 源码和前端历史工具。
+完整运行和打包说明见 [前端 README](app_flutter/README.md)。`API_BASE` 应填写实际后端地址。
 
 ### 5.5 运行测试
 
