@@ -123,3 +123,9 @@ flutter_pub_cache/
 backend_validation/*.tar.gz
 docs/local_*audit.json
 docs/local_vitals_model_output.json
+
+# Local test reports and private OCR fixtures
+.test_artifacts/
+tests/fixtures/*.png
+tests/fixtures/*.jpg
+coverage.xml
