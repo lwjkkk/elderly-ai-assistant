@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-29",
+  "before": {
+    "main": "0ae65421045711dcc108646fa1c6d4c21739aa59",
+    "backend": "b25b07b7d2a1e12e7d704f379decd6d1ea5129e9",
+    "front": "b8b5ab80de785d1077e4bd12a097f3183e2602a6",
+    "feature/knowledge-base": "22df31ae3e2f6671bbe788c603fe178ba62f6f34"
+  },
+  "changes": [
+    {
+      "branch": "main",
+      "original_path": "docs/cloud_update_20261017.md",
+      "original_blob": "6de6ab9a9bbd3a6c52610be5445752d314bf5941",
+      "destination": "docs/dev-log/cloud_update_20261017.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/family_media_update_20261017.md",
+      "original_blob": "dc66ecaffb74fabe4d49f2599cf2dd33f971da59",
+      "destination": "docs/dev-log/family_media_update_20261017.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/knowledge_base_review_20261023/给C的核查说明.md",
+      "original_blob": "1c33eca3622a093f0981cb93b282df6c564cd46b",
+      "destination": "docs/dev-log/knowledge_base_review_20261023/给C的核查说明.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/后端待修改清单.md",
+      "original_blob": "7b63a84997da2cc1e844f8980c87302165a4d19a",
+      "destination": "docs/dev-log/后端待修改清单.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/后端待修改清单_20261014.md",
+      "original_blob": "ba38b1de7e5ccd4501a69b614cc18fd78fbae2ce",
+      "destination": "docs/dev-log/后端待修改清单_20261014.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/紧急描述精确展示修复_20261027.md",
+      "original_blob": "b6d2953c8544503312360b351bd2bef79f98fb7b",
+      "destination": "docs/dev-log/紧急描述精确展示修复_20261027.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    },
+    {
+      "branch": "main",
+      "original_path": "docs/问题3-7_本地检查与后端修改清单.md",
+      "original_blob": "b10de4811f89c83aef4c8d930dd0bf8640fa3b73",
+      "destination": "docs/dev-log/问题3-7_本地检查与后端修改清单.md",
+      "backup_tag": "backup/repo-cleanup-20261029/main"
+    }
+  ]
+}
