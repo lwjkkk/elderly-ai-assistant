@@ -1,0 +1,191 @@
+证据 E10  知识库最终补测
+记录日期或阶段：2026-10-24
+结果：3条补测保留响应
+验证范围：结合早一轮12问；其中含规则响应，不能全算Qwen调用
+原件：知识库复核_20261024/真实模型问答_最终补测.json
+原件SHA256：392890b6b673a00ff775dbf7ef8e520a3566c34a23bdb804da3430f64da739ae
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+[
+  {
+    "question": "微信发来的语音怎么转成文字？",
+    "elapsed_seconds": 11.94,
+    "response": {
+      "answer": "要把微信里别人发来的语音转成文字，您可以这样操作：\n\n第一步：找到别人发来的那条语音消息。\n第二步：用手指长按那条语音。\n第三步：在弹出来的菜单里，点「转文字」。\n第四步：稍微等一下，语音下面就出现文字了。\n\n找不到按钮的话，就问问身边的年轻人帮忙。",
+      "module": "phone",
+      "steps": [
+        "第一步：找到别人发来的那条语音消息。",
+        "第二步：用手指长按那条语音。",
+        "第三步：在弹出来的菜单里，点「转文字」。",
+        "第四步：稍微等一下，语音下面就出现文字了。\n找不到按钮的话，就问问身边的年轻人帮忙。"
+      ],
+      "sources": [
+        {
+          "source": "微信语音转文字.txt",
+          "title": "微信语音转文字",
+          "excerpt": "一、转别人发来的语音\n1. 收到一条语音消息。\n2. 用手指长按那条语音。\n3. 弹出来的菜单里点「转文字」。\n4. 稍微等一下，语音下面就出现文字了。",
+          "channel": "hybrid",
+          "score": 0.03333,
+          "vector_score": 0.8757,
+          "keyword_score": 11.0,
+          "category": "phone_tutorial",
+          "document_id": "594c0447aab80f7b6a0284dd",
+          "chunk_id": "257e066f538056cb702b3577664c9852",
+          "chunk_index": 1,
+          "document_version": "63d5641c9410b473",
+          "source_url": null,
+          "updated_at": "2026-10-24",
+          "region": "通用",
+          "rerank_score": 0.84423,
+          "evidence_role": "retrieved_reference",
+          "verification_status": "unverified",
+          "platform": "通用",
+          "review_status": "approved",
+          "reviewed_by": "项目AI辅助内容核查（非专业医疗或法律认证）",
+          "reviewed_at": "2026-10-24",
+          "valid_until": "2027-10-23",
+          "source_scope": "一般生活操作与项目整理，不提供官方链接背书；具体入口以实际界面和当地规则为准。"
+        },
+        {
+          "source": "微信语音转文字.txt",
+          "title": "微信语音转文字",
+          "excerpt": "二、发语音时同时转文字\n1. 长按说话的时候，手指不要松，往上滑。\n2. 滑到「转文字」那里再松。\n3. 发出去的语音下面会带上文字，对方既能听也能看。",
+          "channel": "hybrid",
+          "score": 0.03279,
+          "vector_score": 0.8525,
+          "keyword_score": 9.0,
+          "category": "phone_tutorial",
+          "document_id": "594c0447aab80f7b6a0284dd",
+          "chunk_id": "498008e563baedb6dc5f48f8b411ae5c",
+          "chunk_index": 2,
+          "document_version": "63d5641c9410b473",
+          "source_url": null,
+          "updated_at": "2026-10-24",
+          "region": "通用",
+          "rerank_score": 0.7991,
+          "evidence_role": "retrieved_reference",
+          "verification_status": "unverified",
+          "platform": "通用",
+          "review_status": "approved",
+          "reviewed_by": "项目AI辅助内容核查（非专业医疗或法律认证）",
+          "reviewed_at": "2026-10-24",
+          "valid_until": "2027-10-23",
+          "source_scope": "一般生活操作与项目整理，不提供官方链接背书；具体入口以实际界面和当地规则为准。"
+        }
+      ],
+      "retrieval_channel": "hybrid",
+      "evidence_status": "insufficient",
+      "evidence_notice": "已匹配参考片段，但来源、适用条件或时效尚未完成复核。",
+      "answer_origin": "llm",
+      "safety_flags": [],
+      "emergency_types": [],
+      "fallback_reason": null,
+      "index_version": "cd2e716907474f798d353c0742f8fd911d7ca86c",
+      "disclaimer": "以上内容仅为健康科普与信息整理，不能替代医生面诊，不构成疾病诊断或用药建议。如有不适，请及时咨询医生或拨打急救电话。非健康类操作请以实际界面及官方说明为准。"
+    }
+  },
+  {
+    "question": "手机微信怎么发语音",
+    "elapsed_seconds": 14.58,
+    "response": {
+      "answer": "第一步：打开微信，点进您想聊天的人或者群。\n第二步：在底下打字框的旁边，点一下语音或者键盘的小图标。\n第三步：看到屏幕上出现「按住说话」后，用手指一直按着它，开始说话。\n第四步：说完话后，手指松开，语音就发出去了。要是想取消，就把手指往上滑到取消的地方再松开。\n\n要是找不到按钮，就问问身边的年轻人。",
+      "module": "phone",
+      "steps": [
+        "第一步：打开微信，点进您想聊天的人或者群。",
+        "第二步：在底下打字框的旁边，点一下语音或者键盘的小图标。",
+        "第三步：看到屏幕上出现「按住说话」后，用手指一直按着它，开始说话。",
+        "第四步：说完话后，手指松开，语音就发出去了。要是想取消，就把手指往上滑到取消的地方再松开。\n要是找不到按钮，就问问身边的年轻人。"
+      ],
+      "sources": [
+        {
+          "source": "微信发语音消息.txt",
+          "title": "微信发语音消息详细步骤",
+          "excerpt": "一、微信发语音的完整步骤\n打开微信，进入目标联系人或群聊。点聊天输入框旁的语音/键盘切换图标，看到「按住说话」后，按住按钮录音，说完松开发送；若要取消，按界面提示向上滑到取消区域后再松手。按钮位置随版本变化，以实际界面为准。\n二、不能录音时\n检查系统是否允许微信使用麦克风，确认没有其他应用占用录音；仍无法使用时记录错误提示和系统版本再求助。先给熟悉的联系人试发一小段，避免把隐私内容误发；不要把语音转文字当成录音发送步骤。",
+          "channel": "hybrid",
+          "score": 0.03333,
+          "vector_score": 0.7829,
+          "keyword_score": 9.0,
+          "category": "phone_tutorial",
+          "document_id": "c9272c94e77d694d074cc6b3",
+          "chunk_id": "eefd5cb0df97559c27a108086d7af6e3",
+          "chunk_index": 0,
+          "document_version": "80c49aa58250d6e2",
+          "source_url": null,
+          "updated_at": "2026-10-24",
+          "region": "通用",
+          "rerank_score": 0.81885,
+          "evidence_role": "retrieved_reference",
+          "verification_status": "unverified",
+          "platform": "通用",
+          "review_status": "approved",
+          "reviewed_by": "项目AI辅助内容核查（非专业医疗或法律认证）",
+          "reviewed_at": "2026-10-24",
+          "valid_until": "2027-10-23",
+          "source_scope": "一般生活操作与项目整理，不提供官方链接背书；具体入口以实际界面和当地规则为准。"
+        }
+      ],
+      "retrieval_channel": "hybrid",
+      "evidence_status": "insufficient",
+      "evidence_notice": "已匹配参考片段，但来源、适用条件或时效尚未完成复核。",
+      "answer_origin": "llm",
+      "safety_flags": [],
+      "emergency_types": [],
+      "fallback_reason": null,
+      "index_version": "cd2e716907474f798d353c0742f8fd911d7ca86c",
+      "disclaimer": "以上内容仅为健康科普与信息整理，不能替代医生面诊，不构成疾病诊断或用药建议。如有不适，请及时咨询医生或拨打急救电话。非健康类操作请以实际界面及官方说明为准。"
+    }
+  },
+  {
+    "question": "苹果手机怎么截图",
+    "elapsed_seconds": 26.46,
+    "response": {
+      "answer": "叔叔/阿姨，苹果手机截图要看您手机上的按键长什么样，您先看看手机属于下面哪种情况：\n\n情况一：手机屏幕下面没有圆圆的按键\n第一步：找到手机右边的「侧边按钮」和左边的「音量加键」。\n第二步：同时按下这两个键，然后马上松开。\n\n情况二：手机屏幕下面有圆圆的「Home键」，手机右边有长条按键\n第一步：找到手机右边的「侧边按钮」和屏幕下面的「Home键」。\n第二步：同时按下这两个键，然后马上松开。\n\n情况三：手机屏幕下面有圆圆的「Home键」，手机最上面有按键\n第一步：找到手机最上面的「顶部按钮」和屏幕下面的「Home键」。\n第二步：同时按下这两个键，然后马上松开。\n\n提醒：按键时点一下就马上松开，不要一直按着。截好的图可以在「照片」应用里找到。如果找不到按键，就问问身边的年轻人帮帮忙。",
+      "module": "phone",
+      "steps": [
+        "第一步：找到手机右边的「侧边按钮」和左边的「音量加键」。",
+        "第二步：同时按下这两个键，然后马上松开。\n情况二：手机屏幕下面有圆圆的「Home键」，手机右边有长条按键",
+        "第一步：找到手机右边的「侧边按钮」和屏幕下面的「Home键」。",
+        "第二步：同时按下这两个键，然后马上松开。\n情况三：手机屏幕下面有圆圆的「Home键」，手机最上面有按键",
+        "第一步：找到手机最上面的「顶部按钮」和屏幕下面的「Home键」。",
+        "第二步：同时按下这两个键，然后马上松开。\n提醒：按键时点一下就马上松开，不要一直按着。截好的图可以在「照片」应用里找到。如果找不到按键，就问问身边的年轻人帮帮忙。"
+      ],
+      "sources": [
+        {
+          "source": "苹果iPhone截屏方法.txt",
+          "title": "苹果iPhone截屏方法",
+          "excerpt": "一、先确认iPhone按键类型\n有面容ID、没有主屏幕Home键：同时按侧边按钮和音量加键，随即松开。\n有Home键且有侧边按钮：同时按侧边按钮和Home键，随即松开。\n有Home键且只有顶部按钮：同时按顶部按钮和Home键，随即松开。\n二、不清楚是哪种机型\n先查看实际按钮位置或告诉我机型，再选择对应组合，不把全部有Home键的手机都说成侧边按钮。不长按，避免触发其他功能。\n三、查看截图\n截图后可在照片应用查找；缩略图的呈现随系统版本变化，以本机界面为准。付款码、证件等敏感截图不要随意分享。",
+          "channel": "hybrid",
+          "score": 0.03333,
+          "vector_score": 0.7393,
+          "keyword_score": 8.0,
+          "category": "phone_tutorial",
+          "document_id": "ddb2500fd96b01a73b9f6334",
+          "chunk_id": "1f22c3a6518e36bb54a14ccd0abaebfe",
+          "chunk_index": 0,
+          "document_version": "ea9b014ddca3a92b",
+          "source_url": "https://support.apple.com/zh-cn/102616",
+          "updated_at": "2026-10-24",
+          "region": "通用",
+          "rerank_score": 0.66387,
+          "evidence_role": "retrieved_reference",
+          "verification_status": "documented_review",
+          "platform": "iOS;iPhone",
+          "review_status": "approved",
+          "reviewed_by": "项目AI辅助内容核查（非专业医疗或法律认证）",
+          "reviewed_at": "2026-10-24",
+          "valid_until": "2027-10-23",
+          "source_scope": "支持对应的一般原则；地区、型号、版本及具体办理条件以主管部门或产品当前说明为准。"
+        }
+      ],
+      "retrieval_channel": "hybrid",
+      "evidence_status": "sufficient",
+      "evidence_notice": "已匹配参考片段，来源已记录内部复核；仍不等于每项回答均经专业验证。",
+      "answer_origin": "llm",
+      "safety_flags": [],
+      "emergency_types": [],
+      "fallback_reason": null,
+      "index_version": "cd2e716907474f798d353c0742f8fd911d7ca86c",
+      "disclaimer": "以上内容仅为健康科普与信息整理，不能替代医生面诊，不构成疾病诊断或用药建议。如有不适，请及时咨询医生或拨打急救电话。非健康类操作请以实际界面及官方说明为准。"
+    }
+  }
+]

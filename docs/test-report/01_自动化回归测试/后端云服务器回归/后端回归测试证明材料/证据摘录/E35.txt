@@ -1,0 +1,46 @@
+证据 E35  云端紧急提醒专项
+记录日期或阶段：2026-10-27
+结果：36/36 通过
+验证范围：真实语义质量另证
+原件：紧急症状修复_20261027/cloud_tests.log
+原件SHA256：335b56a0e653cd1d2913769b23cc33837444fe6bd67525332001880d9955ad64
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_emergency_medication_boundary_is_preserved (__main__.Fallback) ... ok
+L2: test_failure_is_uncertain_not_normal (__main__.Fallback) ... 紧急筛查未完成 error_type=RuntimeError
+L4: test_fast_positive_never_waits_for_model (__main__.Fallback) ... ok
+L5: test_invalid_json_fails_to_uncertain (__main__.Fallback) ... 紧急筛查未完成 error_type=ValueError
+L7: test_json_schema_strict (__main__.Fallback) ... ok
+L8: test_model_positive_unknown_category_supported (__main__.Fallback) ... ok
+L9: test_negative_is_not_a_health_clearance (__main__.Fallback) ... ok
+L10: test_saturated_classifier_does_not_queue_unbounded_requests (__main__.Fallback) ... 紧急筛查未完成 error_type=RuntimeError
+L12: test_wall_time_timeout_and_late_result_discarded (__main__.Fallback) ... 紧急筛查未完成 error_type=TimeoutError
+L14: test_anonymous_still_gets_emergency_no_family_write (__main__.HTTP) ... ok
+L15: test_concurrent_workers_dedupe (__main__.HTTP) ... ok
+L16: test_dedupe_survives_memory_cache_clear (__main__.HTTP) ... ok
+L17: test_different_categories_not_suppressed_by_previous_chest_alert (__main__.HTTP) ... ok
+L18: test_dispatch_failure_preserves_message (__main__.HTTP) ... 通知 outbox 发送失败 id=1
+L30: test_duplicate_bindings_do_not_duplicate_or_rollback_alert (__main__.HTTP) ... ok
+L31: test_generation_red_risk_upgrades_same_symptom_assessment (__main__.HTTP) ... ok
+L32: test_heart_pain_both_routes_preempts_generation_and_persists_one_alert (__main__.HTTP) ... ok
+L33: test_legacy_empty_emergency_array_does_not_bypass_triage (__main__.HTTP) ... ok
+L34: test_missing_birth_keeps_own_emergency_and_blocks_family (__main__.HTTP) ... ok
+L35: test_revoke_before_retry_suppresses_and_hides_existing_health_content (__main__.HTTP) ... ok
+L36: test_rollback_does_not_poison_retry_dedupe (__main__.HTTP) ... 紧急告警记录失败 error_type=RuntimeError
+L38: test_semantic_failure_gives_uncertainty_without_main_generation (__main__.HTTP) ... 紧急筛查未完成 error_type=RuntimeError
+L40: test_semantic_positive_used_once_and_same_dual_view_safety (__main__.HTTP) ... ok
+L41: test_senior_forced_share_preserved (__main__.HTTP) ... ok
+L42: test_symptom_endpoint_shares_rules_and_authorized_family_event (__main__.HTTP) ... ok
+L43: test_symptom_unknown_birth_does_not_leak (__main__.HTTP) ... ok
+L44: test_unbound_user_cannot_read_alert (__main__.HTTP) ... ok
+L45: test_younger_privacy_blocks_family (__main__.HTTP) ... ok
+L46: test_broad_severity_net (__main__.Rules) ... ok
+L47: test_critical_aliases (__main__.Rules) ... ok
+L48: test_denials_for_each_category (__main__.Rules) ... ok
+L49: test_education_history_hypothetical_not_current (__main__.Rules) ... ok
+L50: test_negation_does_not_hide_other_current_symptoms (__main__.Rules) ... ok
+L51: test_no_blanket_dizziness_or_standing_or_minor_bleeding_emergency (__main__.Rules) ... ok
+L52: test_novel_body_function_descriptions_reach_semantic_screen (__main__.Rules) ... ok
+L53: test_routine_tasks_need_no_semantic_request (__main__.Rules) ... ok
+L56: Ran 36 tests in 9.029s
+L58: OK

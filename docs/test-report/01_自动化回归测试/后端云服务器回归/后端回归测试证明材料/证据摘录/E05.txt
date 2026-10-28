@@ -1,0 +1,12 @@
+证据 E05  速度改造后云端回归
+记录日期或阶段：2026-10-23
+结果：72/72 通过
+验证范围：业务与故障测试；不计作生成质量
+原件：silver_agent_backend/backend_validation/results_20261023/verify.log
+原件SHA256：00bfce91b94a4cd6bc9aefbeb0ec00e45af4f391d8a8971f2b25cd962dc66366
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L9: test_transcript_is_cached_and_image_is_persisted (tests.test_family_message_media.FamilyMediaTests) ... INFO:httpx2:HTTP Request: POST http://testserver/api/messages/1/audio "HTTP/1.1 200 OK"
+L15: test_uploaded_records_can_only_be_deleted_by_owner (tests.test_family_message_media.FamilyMediaTests) ... INFO:httpx2:HTTP Request: DELETE http://testserver/api/vitals/1 "HTTP/1.1 403 Forbidden"
+L25: Ran 72 tests in 20.886s
+L27: OK

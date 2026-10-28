@@ -1,0 +1,54 @@
+证据 E26  OCR P1八组回归
+记录日期或阶段：2026-10-26
+结果：219项执行通过
+验证范围：47+64+32+25+14+14+12+11；不是219张图或独立准确率
+原件：报告OCR_P1优化_20261026/test_summary.json
+原件SHA256：3a1fdfc8f75cc722a4041bd3802ab379148134b77905c0ea81d5342e4a184463
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "groups": [
+    {
+      "file": "regression.log",
+      "tests": 47,
+      "passed": true
+    },
+    {
+      "file": "extended.log",
+      "tests": 64,
+      "passed": true
+    },
+    {
+      "file": "contracts.log",
+      "tests": 32,
+      "passed": true
+    },
+    {
+      "file": "p0_contracts.log",
+      "tests": 25,
+      "passed": true
+    },
+    {
+      "file": "recovery_contracts.log",
+      "tests": 14,
+      "passed": true
+    },
+    {
+      "file": "field_contracts.log",
+      "tests": 14,
+      "passed": true
+    },
+    {
+      "file": "quality_contracts.log",
+      "tests": 12,
+      "passed": true
+    },
+    {
+      "file": "direction_contracts.log",
+      "tests": 11,
+      "passed": true
+    }
+  ],
+  "total": 219,
+  "note": "unit/contract tests include mocked OCR and LLM; actual OCR/API and actual Qwen are separate evidence"
+}

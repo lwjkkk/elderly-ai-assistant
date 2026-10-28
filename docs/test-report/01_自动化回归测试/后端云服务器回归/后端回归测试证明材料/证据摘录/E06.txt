@@ -1,0 +1,9 @@
+证据 E06  改造前速度采样
+记录日期或阶段：2026-10-23
+结果：聊天40.779秒；报告57.859秒
+验证范围：单次样本，无统计显著性或SLA结论
+原件：silver_agent_backend/backend_validation/results_20261023/performance_before.log
+原件SHA256：8e99498647565beb4fc953ffb27f1dbb4eb54ade47a8faac73fb16db17da0405
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: PERFORMANCE_JSON={"chat": {"answer_seconds": 19.06, "format_seconds": 21.719, "total_seconds": 40.779, "source_count": 3}, "report": {"ocr_seconds": 14.836, "parse_seconds": 0.002, "llm_seconds": 43.022, "total_seconds": 57.859, "metrics": 4}}

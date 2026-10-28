@@ -1,0 +1,33 @@
+证据 E28  同步异步报告实际链路
+记录日期或阶段：2026-10-26
+结果：同步、异步2项检查通过
+验证范围：LLM明确stub；隔离身份和数据库
+原件：报告OCR_P1优化_20261026/live_contract_summary.json
+原件SHA256：de8a1456d9dfeab1da528e5b7b074a0ea6bc3fd9b675f047350ba25ccda14e35
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "ocr_mocked": false,
+  "llm_stubbed": true,
+  "auth_fixture": true,
+  "production_db_used": false,
+  "checks": [
+    {
+      "case": "real_sync_upload_history_media",
+      "passed": true,
+      "metrics": 27,
+      "seconds": 93.13
+    },
+    {
+      "case": "real_async_worker_poll_history",
+      "passed": true,
+      "metrics": 27,
+      "timings": {
+        "ocr_seconds": 46.47,
+        "parse_seconds": 0.0,
+        "explain_seconds": 0.0,
+        "total_seconds": 46.512
+      }
+    }
+  ]
+}

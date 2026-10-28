@@ -1,0 +1,18 @@
+证据 E15  来源卡片契约
+记录日期或阶段：2026-10-25
+结果：8/8 通过
+验证范围：有实际来源才显示；无外部网址仍可追溯
+原件：来源卡片修复_20261025/contract.log
+原件SHA256：a3134607fe49e06ef1c0c25e33f080a31317adf02b936e801eb24386f5e3ba39
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_both_chat_routes_keep_same_evidence_contract (__main__.Evidence.test_both_chat_routes_keep_same_evidence_contract) ... ok
+L2: test_empty_or_rejected_output_cannot_acquire_card (__main__.Evidence.test_empty_or_rejected_output_cannot_acquire_card) ... ok
+L3: test_empty_symptom_and_legacy_have_no_fabricated_sources (__main__.Evidence.test_empty_symptom_and_legacy_have_no_fabricated_sources) ... ok
+L4: test_existing_database_migration_is_idempotent (__main__.Evidence.test_existing_database_migration_is_idempotent) ... ok
+L5: test_missing_url_and_review_do_not_hide_excerpt (__main__.Evidence.test_missing_url_and_review_do_not_hide_excerpt) ... ok
+L6: test_symptom_sources_are_in_generation_and_history (__main__.Evidence.test_symptom_sources_are_in_generation_and_history) ... ok
+L7: test_unsafe_generated_output_discards_its_references (__main__.Evidence.test_unsafe_generated_output_discards_its_references) ... ok
+L8: test_urgent_and_medication_bypass_generation_and_retrieval (__main__.Evidence.test_urgent_and_medication_bypass_generation_and_retrieval) ... ok
+L11: Ran 8 tests in 2.442s
+L13: OK
