@@ -12,6 +12,7 @@ import 'package:elderly_ai_assistant/afu/afu_theme.dart';
 import 'package:elderly_ai_assistant/afu/afu_widgets.dart';
 import 'package:elderly_ai_assistant/afu/delete_confirm.dart';
 import 'package:elderly_ai_assistant/services/api.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 import 'package:elderly_ai_assistant/services/chat/drug_question.dart';
 import 'package:elderly_ai_assistant/widgets/consult_summary_cell.dart';
 import 'package:elderly_ai_assistant/pages/tabs/consult_drug_chat_tab.dart';
@@ -184,8 +185,8 @@ class _ECol {
   const _ECol(this.label, this.flex, {this.right = false});
 }
 
-/// 日期简写 MM-DD（时间列固定窄宽）。
-String _md(String s) => s.length >= 10 ? s.substring(5, 10) : s;
+/// Dates for record lists are derived from the timestamp in Beijing time.
+String _md(String s) => formatBeijingDate(s);
 
 /// 表头吸顶委托：功能浅底色，15px 加粗 #333，单行。
 class _EHeadDelegate extends SliverPersistentHeaderDelegate {
@@ -2027,8 +2028,8 @@ class _MineVitalsPageState extends State<_MineVitalsPage> {
     final map = <String, Map<String, dynamic>>{};
     for (final r in _rows) {
       final m = Map<String, dynamic>.from(r as Map);
-      final d = (m['measured_at'] ?? m['created_at'] ?? '').toString();
-      final day = d.length >= 10 ? d.substring(0, 10) : d;
+      final day = formatBeijingDate(m['measured_at'] ?? m['created_at'],
+          unknownText: '');
       if (day.isEmpty) continue;
       final row = map.putIfAbsent(
           day,
@@ -2603,8 +2604,7 @@ class _MineReportsPageState extends State<_MineReportsPage> {
 
   Widget _familyReportCard(dynamic raw) {
     final report = Map<String, dynamic>.from(raw as Map);
-    final createdAt = (report['created_at'] ?? '').toString();
-    final date = createdAt.length >= 10 ? createdAt.substring(0, 10) : '日期未知';
+    final date = formatBeijingDate(report['created_at']);
     final notice = reportMetricSummary(report);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -2713,17 +2713,9 @@ class _MineReportsPageState extends State<_MineReportsPage> {
                               child: Row(children: [
                                 Expanded(
                                     child: Text(
-                                        ((Map<String, dynamic>.from(e as Map)[
-                                                            'created_at'] ??
-                                                        '')
-                                                    .toString()
-                                                    .length >=
-                                                10)
-                                            ? (Map<String, dynamic>.from(
-                                                    e as Map)['created_at'])
-                                                .toString()
-                                                .substring(0, 10)
-                                            : '',
+                                        formatBeijingDate(
+                                            Map<String, dynamic>.from(
+                                                e as Map)['created_at']),
                                         style: const TextStyle(
                                             fontSize: 17,
                                             color: _kText,
@@ -2785,14 +2777,14 @@ class _MineReportsPageState extends State<_MineReportsPage> {
   Future<void> _startAsk() async {
     final labels = [
       for (final e in _items)
-        '${((Map<String, dynamic>.from(e as Map)['created_at'] ?? '').toString().length >= 10) ? (Map<String, dynamic>.from(e as Map)['created_at']).toString().substring(0, 10) : ''}　${_short((Map<String, dynamic>.from(e as Map)['advice_text'] ?? '').toString(), 30)}',
+        '${formatBeijingDate(Map<String, dynamic>.from(e as Map)['created_at'])}　${_short((Map<String, dynamic>.from(e as Map)['advice_text'] ?? '').toString(), 30)}',
     ];
     final idx = await _pickOneRecord(context,
         title: '选择体检报告', labels: labels, sendStyle: _tintBtn(_kText, _mRepBg));
     if (idx == null || idx < 0 || idx >= _items.length) return;
     final m = Map<String, dynamic>.from(_items[idx] as Map);
     final d = (m['created_at'] ?? '').toString();
-    final date = d.length >= 10 ? d.substring(0, 10) : d;
+    final date = formatBeijingDate(d);
     final rec = '体检报告（$date）：${_short((m['ocr_text'] ?? '').toString(), 40)}';
     await _askElder(context,
         record: rec, prompt: '这份体检报告有些指标需要关注，咱们要不要去医院复查一下？');
@@ -2803,8 +2795,7 @@ String _short(String s, int n) => s.length > n ? '${s.substring(0, n)}…' : s;
 
 // 自查日期简写 + 就医提示（risk 语义映射）。
 String _cdate(Map<String, dynamic> m) {
-  final d = (m['created_at'] ?? '').toString();
-  return d.length >= 10 ? d.substring(0, 10) : d;
+  return formatBeijingDate(m['created_at']);
 }
 
 String _riskHint(String risk) {
@@ -2820,7 +2811,7 @@ String _ctitle(Map<String, dynamic> m) {
   final d = (m['created_at'] ?? '').toString();
   if (doc.isNotEmpty) return doc;
   if (hosp.isNotEmpty) return hosp;
-  return '问诊录音${d.length >= 10 ? d.substring(0, 10) : ''}';
+  return '问诊录音${formatBeijingDate(d, unknownText: '')}';
 }
 
 /// 本人-咨询：录音上传（医院/标题备注）+ 历史回放。
@@ -2900,7 +2891,7 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
     final id = (m['id'] as num?)?.toInt();
     if (id != null && (_titles[id] ?? '').isNotEmpty) return _titles[id]!;
     final d = (m['created_at'] ?? '').toString();
-    return '问诊录音${d.length >= 10 ? d.substring(0, 10) : ''}';
+    return '问诊录音${formatBeijingDate(d, unknownText: '')}';
   }
 
   Future<void> _toggleRecord() async {
@@ -3069,10 +3060,7 @@ class _MineConsultsPageState extends State<_MineConsultsPage> {
     }
   }
 
-  String _dateOf(Map<String, dynamic> m) {
-    final d = (m['created_at'] ?? '').toString();
-    return d.length >= 10 ? d.substring(0, 10) : d;
-  }
+  String _dateOf(Map<String, dynamic> m) => formatBeijingDate(m['created_at']);
 
   Widget _playBtn(Map<String, dynamic> m) {
     final audio = (m['audio_url'] ?? '').toString();
@@ -3222,7 +3210,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('查询时间：${d.length >= 10 ? d.substring(0, 10) : d}',
+                Text('查询时间：${formatBeijingDate(d)}',
                     style: const TextStyle(fontSize: 19, color: _kText)),
                 const SizedBox(height: 8),
                 Text((m['explanation'] ?? '').toString(),
@@ -3291,11 +3279,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
                         const Icon(Icons.chevron_right, size: 18, color: _kSub),
                       ]),
                     ),
-                    _tCell(
-                        ((m['created_at'] ?? '').toString().length >= 10)
-                            ? (m['created_at']).toString().substring(0, 10)
-                            : '',
-                        color: _kSub2),
+                    _tCell(formatBeijingDate(m['created_at']), color: _kSub2),
                     _tCell(_short((m['explanation'] ?? '').toString(), 40),
                         maxLines: 3),
                   ],
@@ -3333,7 +3317,7 @@ class _ElderDrugPageState extends State<_ElderDrugPage> {
     if (idx == null || idx < 0 || idx >= _items.length) return;
     final m = _asMap(_items[idx]);
     final d = (m['created_at'] ?? '').toString();
-    final date = d.length >= 10 ? d.substring(0, 10) : d;
+    final date = formatBeijingDate(d);
     final rec =
         '查药记录（$date）：${_dname(m).isEmpty ? '' : _dname(m)}\n${_short((m['explanation'] ?? '').toString(), 60)}';
     await _askElder(context, record: rec, prompt: '关于这次查药，药品的用法和注意事项都清楚了吗？');
@@ -3595,7 +3579,7 @@ class _ElderConsultsPageState extends State<_ElderConsultsPage> {
     if (idx == null || idx < 0 || idx >= _items.length) return;
     final m = Map<String, dynamic>.from(_items[idx] as Map);
     final d = (m['created_at'] ?? '').toString();
-    final date = d.length >= 10 ? d.substring(0, 10) : d;
+    final date = formatBeijingDate(d);
     final rec = '问诊记录（$date）：${_ctitle(m)}';
     await _askElder(context, record: rec, prompt: '关于这次问诊，医生交代的事项都记清楚了吗？');
   }

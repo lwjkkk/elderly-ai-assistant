@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../services/api.dart';
+import '../../services/beijing_time.dart';
 import '../../widgets/consult_summary_cell.dart';
 import '../../services/voice/answer_speech.dart';
 import '../../services/voice/voice_transcription.dart';
@@ -331,9 +332,10 @@ class _ConsultsTabState extends State<ConsultsTab> {
     final audio = (m['audio_url'] ?? '').toString();
     final full = audio.isEmpty ? '' : ApiService.consultAudioUrl(audio);
     final date = (m['created_at'] ?? '').toString();
+    final dateLabel = formatBeijingDate(date, unknownText: '');
     final title = (m['doctor'] ?? '').toString().trim().isNotEmpty
         ? m['doctor'].toString()
-        : '问诊录音${date.length >= 10 ? date.substring(0, 10) : ''}';
+        : '问诊录音$dateLabel';
     final cells = <Widget>[
       Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -351,7 +353,7 @@ class _ConsultsTabState extends State<ConsultsTab> {
                       size: 27),
                   onPressed: () => _togglePlay(full)),
           ])),
-      cell(date.length >= 10 ? date.substring(0, 10) : date),
+      cell(formatBeijingDate(date)),
       ConsultSummaryCell(key: ValueKey('summary_${m['id']}'), record: m),
       cell((m['hospital'] ?? '').toString()),
     ];
@@ -654,8 +656,8 @@ class _ReportTabState extends State<ReportTab> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                              '${item['created_at'] ?? ''}'
-                                                  .replaceAll('T', ' '),
+                                              formatBeijingDateTime(
+                                                  item['created_at']),
                                               style: const TextStyle(
                                                   fontSize: 16,
                                                   color: HealthRecordStyle

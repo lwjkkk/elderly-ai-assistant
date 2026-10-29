@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:elderly_ai_assistant/services/chat/chat_archive.dart';
 import 'package:elderly_ai_assistant/services/chat/contest_answer.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 import 'package:elderly_ai_assistant/widgets/answer_evidence.dart';
 
 class ChatHistoryPage extends StatelessWidget {
@@ -34,11 +35,10 @@ class ChatHistoryPage extends StatelessWidget {
                     child: Text(
                         (session['created_at'] ?? '').toString().isEmpty
                             ? '以前的聊天记录'
-                            : session['created_at']
-                                .toString()
-                                .replaceFirst('T', ' ')
-                                .split('.')
-                                .first,
+                            : formatBeijingDateTime(
+                                session['created_at'],
+                                naiveTimeZone: NaiveDateTimeZone.deviceLocal,
+                              ),
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Color(0xFF6B7280))),
                   ),

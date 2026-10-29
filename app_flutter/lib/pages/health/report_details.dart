@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:elderly_ai_assistant/services/api.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 import 'package:elderly_ai_assistant/services/reports/report_retake.dart';
 
 List<Map<String, dynamic>> reportMetrics(Map<String, dynamic> report) =>
@@ -406,7 +407,7 @@ class ReportJobStatusCard extends StatelessWidget {
 Future<void> showReportDetails(
     BuildContext context, Map<String, dynamic> report) async {
   final createdAt = (report['created_at'] ?? '').toString();
-  final date = createdAt.length >= 10 ? createdAt.substring(0, 10) : '';
+  final date = formatBeijingDate(createdAt, unknownText: '');
   await showDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(

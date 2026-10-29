@@ -13,6 +13,7 @@ import '../../afu/afu_theme.dart';
 import '../../afu/afu_widgets.dart';
 import '../../afu/afu_chat_page.dart' show AfuMessage, AfuBubble;
 import '../../services/api.dart';
+import '../../services/beijing_time.dart';
 import '../../services/health/family_alert_content.dart';
 import '../../afu/delete_confirm.dart';
 import 'package:cross_file/cross_file.dart';
@@ -1121,14 +1122,9 @@ class _FamEmptyPainter extends CustomPainter {
 }
 
 /// 单条消息的数据模型（本地持久化）。
+/// SQLite offset-free timestamps are UTC; display them as Beijing time.
 String _familyMessageTime(String value) {
-  // SQLite timestamps are UTC without a suffix; server timestamps take priority.
-  final raw =
-      value.contains(RegExp(r'(Z|[+-]\d{2}:\d{2})$')) ? value : '${value}Z';
-  final date = DateTime.tryParse(raw)?.toLocal();
-  if (date == null) return '';
-  String pad(int n) => n.toString().padLeft(2, '0');
-  return '${date.year}-${pad(date.month)}-${pad(date.day)} ${pad(date.hour)}:${pad(date.minute)}';
+  return formatBeijingDateTime(value);
 }
 
 class _FamMsg {
