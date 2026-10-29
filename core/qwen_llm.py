@@ -7,14 +7,17 @@
 
 import logging
 import time
+from urllib.parse import urlsplit
 
 from openai import OpenAI
 
 from core.sensitive import sanitize
+from core.model_fallback import ModelQuotaExhausted, namespace, run_with_fallback
 from config.settings import (
     DASHSCOPE_API_KEY,
     LLM_BASE_URL,
     QWEN_MODEL_NAME,
+    QWEN_FALLBACK_MODEL_NAME,
     QWEN_MAX_TOKENS,
     QWEN_TEMPERATURE,
     QWEN_TIMEOUT,
@@ -23,7 +26,7 @@ from config.settings import (
 
 logger = logging.getLogger(__name__)
 
-# OpenAI 兼容模式的客户端（当前指向本地 Ollama，也可指向阿里云百炼）
+# 可复用的 OpenAI 兼容客户端，地址由配置指定。
 _client = None
 
 
@@ -53,6 +56,31 @@ def _validate_api_key():
         )
 
 
+def complete_with_fallback(messages, *, max_tokens, temperature, timeout=None):
+    """A shared model policy for answers, reports and bounded semantic triage."""
+    _validate_api_key()
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    host = urlsplit(LLM_BASE_URL).hostname or ''
+    bailian = host in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com',
+                       'dashscope-us.aliyuncs.com') or host.endswith('.maas.aliyuncs.com')
+
+    def request(model):
+        client = _get_client()
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('模型调用已超时')
+            client = client.with_options(timeout=remaining, max_retries=0)
+        options = dict(model=model, messages=messages, max_tokens=max_tokens,
+                       temperature=temperature)
+        if bailian and model.startswith(('qwen3.', 'qwen3-')):
+            options['extra_body'] = {'enable_thinking': False}
+        return client.chat.completions.create(**options)
+
+    return run_with_fallback(QWEN_MODEL_NAME, QWEN_FALLBACK_MODEL_NAME, request,
+                             scope=namespace('text', LLM_BASE_URL, DASHSCOPE_API_KEY))
+
+
 def call_qwen(system_prompt: str, user_question: str) -> str:
     """
     调用通义千问模型，返回模型生成的文字回答
@@ -66,9 +94,6 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
     """
     _validate_api_key()
 
-    # 统一使用配置的文本模型
-    model_name = QWEN_MODEL_NAME
-
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_question},
@@ -77,14 +102,14 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
     last_error = None
     for attempt in range(1, QWEN_MAX_RETRIES + 1):
         try:
-            logger.info(f"第 {attempt} 次调用通义千问，模型：{model_name}")
+            logger.info("第 %d 次请求文本模型主备链", attempt)
 
             started = time.perf_counter()
-            response = _get_client().chat.completions.create(
-                model=model_name,
-                messages=messages,
+            response = complete_with_fallback(
+                messages,
                 max_tokens=QWEN_MAX_TOKENS,
                 temperature=QWEN_TEMPERATURE,
+                timeout=QWEN_TIMEOUT,
             )
 
             answer = response.choices[0].message.content
@@ -101,11 +126,14 @@ def call_qwen(system_prompt: str, user_question: str) -> str:
 
             last_error = RuntimeError("模型返回为空")
 
+        except ModelQuotaExhausted:
+            # A retry cannot restore free quota and would only delay the user.
+            raise
         except Exception as e:
-            logger.warning(f"第 {attempt} 次调用失败：{e}")
+            logger.warning("文本模型调用失败 attempt=%d error_type=%s", attempt, type(e).__name__)
             last_error = e
             if attempt < QWEN_MAX_RETRIES:
                 time.sleep(1)  # 等 1 秒再重试
 
     # 所有重试都失败
-    raise RuntimeError(f"通义千问调用失败（已重试{QWEN_MAX_RETRIES}次）：{last_error}")
+    raise RuntimeError(f"通义千问调用失败（错误类型：{type(last_error).__name__}）") from None

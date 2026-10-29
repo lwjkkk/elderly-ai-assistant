@@ -3,6 +3,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor,TimeoutError as FutureTimeout
 
 import openai
+from core.model_fallback import ModelQuotaExhausted
 from core.speech_input import normalize_audio,AudioInputError
 from core.speech_transcription import transcribe_bytes,asr_configured
 
@@ -19,6 +20,8 @@ def _process(data,filename):
             raise AudioInputError(503,'speech_not_configured','语音转写服务尚未配置，请暂用文字输入')
         try:
             transcript=transcribe_bytes(audio.data,'audio/wav',timeout=PROVIDER_TIMEOUT_SECONDS,language='zh')
+        except ModelQuotaExhausted:
+            raise AudioInputError(503,'speech_free_quota_exhausted','语音模型免费额度已用尽，请联系管理员或暂用文字输入') from None
         except openai.APITimeoutError:
             raise AudioInputError(504,'transcription_timeout','语音识别超时，请重试或使用文字输入',True) from None
         except (openai.AuthenticationError,openai.PermissionDeniedError,openai.NotFoundError):
