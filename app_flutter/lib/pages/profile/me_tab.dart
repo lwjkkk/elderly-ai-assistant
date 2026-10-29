@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:elderly_ai_assistant/afu/afu_theme.dart';
@@ -8,7 +9,8 @@ import 'package:elderly_ai_assistant/services/api.dart';
 import 'package:elderly_ai_assistant/widgets/age_profile_card.dart';
 import 'package:elderly_ai_assistant/afu/uploaded_avatar_actions.dart';
 import 'package:elderly_ai_assistant/pages/auth/login_page.dart';
-import 'package:elderly_ai_assistant/pages/tabs/hub_pages.dart' show chatScale, notifyEnabled;
+import 'package:elderly_ai_assistant/pages/tabs/hub_pages.dart'
+    show chatScale, notifyEnabled;
 
 /// 设置页（长辈端）：个人信息 + 亲人绑定 + 功能选项 + 退出登录。
 /// 功能逻辑沿用旧版（邀请码/绑定列表/退出），只重做视觉。
@@ -22,6 +24,9 @@ class MeTab extends StatefulWidget {
 class _MeTabState extends State<MeTab> {
   String avatarAsset = kAvatarAssets[0];
   String nickname = '长辈';
+  String gender = '';
+  bool _uploadingAvatar = false;
+  bool _savingGender = false;
   bool notifyOn = true;
   // 以服务端隐私状态为准，成功保存后才更新本地缓存。
   bool syncToFamily = true;
@@ -49,25 +54,37 @@ class _MeTabState extends State<MeTab> {
 
   Future<void> _loadPrefs() async {
     try {
-      nickname = await ApiService.getNickname() ?? '长辈';
-      if (nickname.isEmpty) nickname = '长辈';
-    } catch (_) {}
-    try {
       final prefs = await SharedPreferences.getInstance();
+      nickname = prefs.getString('nickname') ?? nickname;
+      if (nickname.isEmpty) nickname = '长辈';
+      gender = prefs.getString('gender') ?? '';
       avatarAsset = prefs.getString('avatar') ?? kAvatarAssets[0];
       notifyOn = prefs.getBool('notify_on') ?? true;
       fontScale = prefs.getDouble('chat_text_scale') ?? 1.0;
     } catch (_) {}
     try {
       final profile = await ApiService.getProfile();
+      final remoteNickname = (profile['nickname'] ?? '').toString();
+      if (remoteNickname.isNotEmpty) nickname = remoteNickname;
+      gender = (profile['gender'] ?? '').toString();
       final remote = (profile['avatar_url'] ?? '').toString();
       if (remote.isNotEmpty) {
         avatarAsset =
             '${ApiService.avatarFullUrl(remote)}?v=${DateTime.now().millisecondsSinceEpoch}';
       }
+      final prefs = await SharedPreferences.getInstance();
+      if (remoteNickname.isNotEmpty) {
+        await prefs.setString('nickname', remoteNickname);
+      }
+      await prefs.setString('gender', gender);
+      await prefs.setString('avatar_url', remote);
     } catch (_) {}
     if (mounted) setState(() => _profileRevision++);
     await _loadPrivacy();
+  }
+
+  Future<void> _refreshProfileAndBindings() async {
+    await Future.wait([_loadPrefs(), _loadBinds()]);
   }
 
   Future<void> _loadBinds() async {
@@ -143,10 +160,76 @@ class _MeTabState extends State<MeTab> {
     );
     if (ok == true && c.text.trim().isNotEmpty) {
       try {
+        final result = await ApiService.updateProfile(nickname: c.text.trim());
+        final savedNickname = (result['nickname'] ?? c.text.trim()).toString();
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('nickname', c.text.trim());
-      } catch (_) {}
-      if (mounted) setState(() => nickname = c.text.trim());
+        await prefs.setString('nickname', savedNickname);
+        if (mounted) setState(() => nickname = savedNickname);
+        await _loadBinds();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('昵称保存失败：${ApiService.friendly(e)}')));
+        }
+      }
+    }
+    c.dispose();
+  }
+
+  Future<void> _changeAvatar() async {
+    if (_uploadingAvatar) return;
+    setState(() => _uploadingAvatar = true);
+    try {
+      final image = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+      final result = await ApiService.updateProfile(
+          avatarBytes: await image.readAsBytes());
+      var remote = (result['avatar_url'] ?? '').toString();
+      if (remote.isEmpty) {
+        final profile = await ApiService.getProfile();
+        remote = (profile['avatar_url'] ?? '').toString();
+      }
+      if (remote.isEmpty) throw StateError('服务器未返回头像地址');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('avatar_url', remote);
+      if (mounted) {
+        setState(() {
+          avatarAsset =
+              '${ApiService.avatarFullUrl(remote)}?v=${DateTime.now().millisecondsSinceEpoch}';
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('头像已更新')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('头像上传失败：${ApiService.friendly(e)}')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  Future<void> _saveGender(String value) async {
+    if (_savingGender || value == gender) return;
+    setState(() => _savingGender = true);
+    try {
+      final result = await ApiService.updateProfile(gender: value);
+      final savedGender = (result['gender'] ?? '').toString();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('gender', savedGender);
+      if (mounted) setState(() => gender = savedGender);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('性别保存失败：${ApiService.friendly(e)}')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingGender = false);
     }
   }
 
@@ -166,12 +249,15 @@ class _MeTabState extends State<MeTab> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: _loadPrefs,
+      onRefresh: _refreshProfileAndBindings,
       color: Color(0xFF345C87),
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
           _profileCard(),
+          const SizedBox(height: 8),
+          _genderCard(),
+          const SizedBox(height: 16),
           AgeProfileCard(
               key: ValueKey(_profileRevision), onUpdated: _loadPrivacy),
           const SizedBox(height: 24),
@@ -504,7 +590,38 @@ class _MeTabState extends State<MeTab> {
               avatarAsset = kAvatarAssets.first;
               await _loadPrefs();
             },
-            child: _ElderRippleAvatar(asset: avatarAsset)),
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                _ElderRippleAvatar(asset: avatarAsset),
+                Tooltip(
+                  message: '更换头像',
+                  child: Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(
+                        side: BorderSide(color: Color(0xFFD8E6F3))),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _uploadingAvatar ? null : _changeAvatar,
+                      child: SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Center(
+                          child: _uploadingAvatar
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Color(0xFF345C87)))
+                              : const Icon(Icons.photo_camera_outlined,
+                                  size: 19, color: Color(0xFF345C87)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )),
         const SizedBox(width: 14),
         Expanded(
           child: Text(nickname,
@@ -524,6 +641,35 @@ class _MeTabState extends State<MeTab> {
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF345C87))),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _genderCard() {
+    return AfuCard(
+      child: Row(children: [
+        const Icon(Icons.wc_outlined, size: 28, color: Color(0xFF345C87)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text('性别',
+              style: AfuElderText.body.copyWith(fontWeight: FontWeight.w700)),
+        ),
+        DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: gender == '男' || gender == '女' ? gender : '',
+            items: const [
+              DropdownMenuItem(value: '', child: Text('未设置')),
+              DropdownMenuItem(value: '男', child: Text('男')),
+              DropdownMenuItem(value: '女', child: Text('女')),
+            ],
+            onChanged: _savingGender
+                ? null
+                : (value) {
+                    if (value != null) _saveGender(value);
+                  },
+            style: AfuElderText.body,
           ),
         ),
       ]),

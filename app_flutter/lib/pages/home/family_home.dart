@@ -20,8 +20,10 @@ import 'package:elderly_ai_assistant/afu/uploaded_avatar_actions.dart';
 import 'package:elderly_ai_assistant/pages/health/health_overview.dart';
 
 import 'package:elderly_ai_assistant/pages/auth/login_page.dart';
-import 'package:elderly_ai_assistant/pages/tabs/consult_drug_chat_tab.dart' show ChatTab;
-import 'package:elderly_ai_assistant/pages/tabs/hub_pages.dart' show FamilyTab, chatScale, HubNav;
+import 'package:elderly_ai_assistant/pages/tabs/consult_drug_chat_tab.dart'
+    show ChatTab;
+import 'package:elderly_ai_assistant/pages/tabs/hub_pages.dart'
+    show FamilyTab, chatScale, HubNav;
 
 /// 家属端 4Tab：健康总览 / 体征 / 报告 / 我的（阿福风统一视觉）。
 class FamilyHome extends StatefulWidget {
@@ -144,6 +146,12 @@ class _FamMeState extends State<FamMe> {
       } catch (_) {}
       try {
         final profile = await ApiService.getProfile();
+        final remoteNickname = (profile['nickname'] ?? '').toString();
+        if (remoteNickname.isNotEmpty) {
+          nickname = remoteNickname;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('nickname', remoteNickname);
+        }
         final remote = (profile['avatar_url'] ?? '').toString();
         if (remote.isNotEmpty) {
           avatarAsset =
