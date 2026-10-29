@@ -6,6 +6,17 @@
 
 ---
 
+## 当前云端部署（2026-10-29）
+
+- API 地址：[http://47.93.97.48:8000](http://47.93.97.48:8000)；[查看 API 文档](http://47.93.97.48:8000/docs)。另提供 [80 端口入口](http://47.93.97.48)。当前部署使用 HTTP，尚未配置 HTTPS。
+- 根据本次服务器部署验收记录，最新后端已部署并保持运行，后端 systemd 服务和 Nginx 均已设置开机自动启动。
+- 已部署 **203 篇知识库、340 个检索分块**；云端 **33 项真实业务检查、6 项公网检查、2 个备用模型真实调用**通过。这些是部署验收结果，不代表本次重新执行，也不与此前隔离回归用例混算。
+- 文本主备：`qwen3.7-plus` → `qwen3.8-flash`；语音主备：`qwen3-asr-flash` → `qwen-audio-3.1-asr-flash`。备用调用通过不等同于额度耗尽后的切换测试。
+- 新服务器使用新建业务库，旧服务器账号和用户文件没有自动迁移；演示账号作为私密附件提供，不公开写入仓库。
+- APK 的 `API_BASE` 在编译时确定，**旧 APK 不会自动切换**。需重新构建并安装连接新地址的 APK，见下方构建命令及 [本次构建记录](app_flutter/docs/frontend-apk-build-20261029.md)。
+
+---
+
 ## 一、项目简介
 
 本项目面向老年人**智能设备操作困难**和**健康管理不便**两大数字困境，依托开源生态搭建适老化 AI 辅助智能体。
@@ -78,11 +89,11 @@ Flutter 源码、依赖、资源和构建说明位于本分支的 `app_flutter/`
 
 ### 3.3 知识库
 
-- 四大分类，共 **96篇** 知识文章：
-  - `phone_tutorial/`：手机操作教程 20篇
-  - `services/`：便民办事流程 27篇
-  - `daily_life/`：生活常识 24篇
-  - `health/`：健康科普 25篇
+- 四大分类，当前云端共 **203 篇** 知识文章、**340 个检索分块**：
+  - `phone_tutorial/`：手机操作教程
+  - `services/`：便民办事流程
+  - `daily_life/`：生活常识
+  - `health/`：健康科普
 
 ---
 
@@ -123,11 +134,11 @@ elderly-ai-assistant/
 │   ├── 免责声明与伦理合规文档.md    # 免责声明、隐私保护、违禁词清单
 │   ├── 适老化设计规范.md           # 字体/颜色/按钮/语音/AI回答全方面规范
 │   └── self_test_results.md      # 自测结果记录
-├── knowledge_base/               # 知识库（96篇 txt）
-│   ├── phone_tutorial/           # 手机操作教程 20篇
-│   ├── services/                 # 便民办事流程 27篇
-│   ├── daily_life/               # 生活常识 24篇
-│   └── health/                   # 健康科普 25篇
+├── knowledge_base/               # 知识库（云端部署 203 篇）
+│   ├── phone_tutorial/           # 手机操作教程
+│   ├── services/                 # 便民办事流程
+│   ├── daily_life/               # 生活常识
+│   └── health/                   # 健康科普
 ├── services/                     # 后端服务
 │   ├── push.py                   # 推送服务（JPush，预留接口）
 │   ├── scheduler.py              # 定时任务（用药提醒、漏服标记）
@@ -204,10 +215,18 @@ ollama pull qwen2:7b
 ```bash
 cd app_flutter
 flutter pub get
-flutter run -d edge --dart-define=API_BASE=http://101.201.226.34:8000
+flutter run -d edge --dart-define=API_BASE=http://47.93.97.48:8000
 ```
 
 完整运行和打包说明见 [前端 README](app_flutter/README.md)。`API_BASE` 应填写实际后端地址。
+
+构建连接新云服务器的 Android APK（在 `app_flutter` 目录执行）：
+
+```powershell
+.\tool\build_apk.ps1 -ApiBase http://47.93.97.48:8000 -AndroidSdk D:\AndroidSdk -GoogleMavenMirror https://maven.aliyun.com/repository/google -NoPub
+```
+
+首次构建请先执行 `flutter pub get` 或移除 `-NoPub`。产物为 `app_flutter/build/app/outputs/flutter-apk/app-release.apk`，沿用现有演示调试签名。安装新包后使用新服务器账号登录。
 
 ### 5.5 运行测试
 

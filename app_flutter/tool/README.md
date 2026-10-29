@@ -29,7 +29,7 @@
 在前端目录运行，显式指定云端后端地址：
 
 ```powershell
-.\tool\build_apk.ps1 -ApiBase http://101.201.226.34:8000 -AndroidSdk D:\AndroidSdk -GoogleMavenMirror https://maven.aliyun.com/repository/google -NoPub
+.\tool\build_apk.ps1 -ApiBase http://47.93.97.48:8000 -AndroidSdk D:\AndroidSdk -GoogleMavenMirror https://maven.aliyun.com/repository/google -NoPub
 ```
 
 Android SDK 路径依次从参数、`ANDROID_HOME`、`ANDROID_SDK_ROOT` 和 `android/local.properties` 读取。Java 可通过 `-JavaHome` 指定，否则使用 `JAVA_HOME` 或本机 `D:\AndroidTools\jdk21\` 中的 JDK 21。现有 Gradle 配置应使用兼容的 JDK 17/21；本机 Android Studio 自带的 JDK 25 不能用于直接运行当前 Gradle Wrapper。
