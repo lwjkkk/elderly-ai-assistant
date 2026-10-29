@@ -5,6 +5,7 @@ import 'package:elderly_ai_assistant/afu/delete_confirm.dart';
 import 'package:elderly_ai_assistant/pages/health/health_record_style.dart';
 import 'package:elderly_ai_assistant/pages/health/vital_draft_page.dart';
 import 'package:elderly_ai_assistant/pages/health/vital_alerts_page.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 
 class VitalsTab extends StatefulWidget {
   final bool readOnly;
@@ -280,8 +281,7 @@ class _VitalsTabState extends State<VitalsTab> {
                                           fontSize: 20,
                                           color: HealthRecordStyle.ink)),
                                   subtitle: Text(
-                                      '${m['measured_at'] ?? ''}'
-                                          .replaceAll('T', ' '),
+                                      formatBeijingDateTime(m['measured_at']),
                                       style: const TextStyle(
                                           color: HealthRecordStyle.secondary)));
                             }).toList())),
