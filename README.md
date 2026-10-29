@@ -174,7 +174,16 @@ Copy-Item .env.example .env   # 仅首次；已有 .env 不要覆盖
 
 ## 六、开源与许可证
 
-本项目源码采用 **MIT 许可证**（见 LICENSE）。第三方模型（BGE、PaddleOCR、PaddlePaddle）、云服务（百炼 Qwen/ASR）、数据集与前端依赖按各自许可条款适用，开源及第三方资源使用清单随技术报告附录提交。本项目不包含模型权重、真实用户数据库、上传文件或任何密钥。
+团队自写源码采用 **MIT 许可证**（见 `LICENSE`）。第三方组件按其各自许可证适用，完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+边界说明：
+
+- 后端直接依赖以 BSD / MIT / Apache-2.0 为主；关键间接依赖 `crc32c`（LGPL-2.1）、`certifi`/`tqdm`（MPL-2.0）须随发行包保留各自许可文本。
+- FFmpeg 通过 `subprocess` 独立进程调用（GPL-3.0-or-later），本仓库源码树不含其二进制；如发行物打包该二进制，须单独遵守 GPL 并提供源码。
+- 模型：BGE-small-zh-v1.5（MIT）、PaddleOCR/PaddlePaddle（Apache-2.0）；百炼 Qwen/ASR 为云服务调用，按其服务条款，MIT 不授权模型权重。
+- 视觉素材（`assets_src/`、`touxiang/`、`app_flutter/assets/`）授权依据待补，不随仓库主张 MIT 再分发。
+- `knowledge_base/` 203 篇为团队整理并附官方来源，外部引用条目（如 NHS）按原网站 OGL 条款署名，不整库按 MIT 再分发。
+- 本仓库不包含模型权重、真实用户数据库、上传文件、API 密钥或服务器凭据。
 
 ---
 
