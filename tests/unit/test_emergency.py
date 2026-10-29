@@ -80,9 +80,7 @@ class Fallback(unittest.TestCase):
     if data is good:self.assertEqual(triage.semantic_judge('人工测试'),('urgent',['stroke']))
     else:
      with self.assertRaises((ValueError,TypeError)):triage.semantic_judge('人工测试')
-   self.assertEqual(client.with_options.call_args.kwargs['max_retries'],0)
-   self.assertGreater(client.with_options.call_args.kwargs['timeout'],0)
-   self.assertLessEqual(client.with_options.call_args.kwargs['timeout'],5.0)
+   self.assertEqual(client.with_options.call_args.kwargs,{'timeout':5.0,'max_retries':0})
  def test_invalid_json_fails_to_uncertain(self):
   with patch.object(triage,'semantic_judge',side_effect=ValueError('bad JSON')):self.assertEqual(triage.assess('我身体不舒服')['status'],'uncertain')
  def test_emergency_medication_boundary_is_preserved(self):
