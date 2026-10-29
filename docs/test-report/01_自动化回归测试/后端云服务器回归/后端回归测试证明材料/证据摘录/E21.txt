@@ -1,0 +1,22 @@
+证据 E21  重拍质量门禁
+记录日期或阶段：2026-10-25
+结果：12/12 通过
+验证范围：空图、无表、低质量与不落正式报告
+原件：报告识别第三轮_20261025/quality_contracts_unrestricted.log
+原件SHA256：a2bad26c5e9b85feba1fe9ad3015d25a26e073b4203722af65ac3cf229fe0b66
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_async_retake_failed_and_no_generation_or_report (__main__.ApiGate.test_async_retake_failed_and_no_generation_or_report) ... D:\AICcode\silver_agent_backend\db\schemas.py:25: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.14/migration/
+L40: test_sync_retake_422_and_no_generation_or_report (__main__.ApiGate.test_sync_retake_422_and_no_generation_or_report) ... ok
+L41: test_alignment_ambiguity_does_not_count_as_clear (__main__.Quality.test_alignment_ambiguity_does_not_count_as_clear) ... ok
+L42: test_censored_reading_is_preserved (__main__.Quality.test_censored_reading_is_preserved) ... ok
+L43: test_complete_readable_report_usable (__main__.Quality.test_complete_readable_report_usable) ... ok
+L44: test_half_and_partial_remain_available (__main__.Quality.test_half_and_partial_remain_available) ... ok
+L45: test_majority_missing_retake (__main__.Quality.test_majority_missing_retake) ... ok
+L46: test_missing_unit_or_range_is_not_whole_report_failure (__main__.Quality.test_missing_unit_or_range_is_not_whole_report_failure) ... ok
+L47: test_no_high_confidence_result_retake (__main__.Quality.test_no_high_confidence_result_retake) ... ok
+L48: test_no_results_retake (__main__.Quality.test_no_results_retake) ... ok
+L49: test_no_table_retake (__main__.Quality.test_no_table_retake) ... ok
+L50: test_no_text_retake (__main__.Quality.test_no_text_retake) ... ok
+L53: Ran 12 tests in 4.432s
+L55: OK

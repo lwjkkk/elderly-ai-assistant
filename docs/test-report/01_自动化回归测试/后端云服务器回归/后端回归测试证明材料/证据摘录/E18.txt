@@ -1,0 +1,69 @@
+证据 E18  底部协议云端补测
+记录日期或阶段：2026-10-25
+结果：2条保留实际响应
+验证范围：皮肤瘙痒和微信语音；后端协议不等于APK实机通过
+原件：来源卡片修复_20261025/footer_cloud_results.json
+原件SHA256：bfc3222e0cf90c9e0d33b0ea64a92943f40d03d78346177ebb990f4860507846
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+[
+  {
+    "question": "我最近皮肤痒，晚上睡不着觉怎么办？",
+    "response_fields": [
+      "schema_version",
+      "answer",
+      "module",
+      "steps",
+      "disclaimer",
+      "sources",
+      "has_evidence",
+      "knowledge_base_hit",
+      "evidence_card",
+      "answer_footer",
+      "evidence_status",
+      "retrieval_channel",
+      "fallback_reason",
+      "index_version",
+      "evidence_notice",
+      "answer_origin",
+      "safety_flags",
+      "role",
+      "source",
+      "parts",
+      "elder_view",
+      "family_view",
+      "view",
+      "elder_answer",
+      "family_answer",
+      "views_distinct",
+      "render_mode",
+      "display_notice",
+      "emergency",
+      "emergency_types"
+    ]
+  },
+  {
+    "question": "微信怎么发语音",
+    "response_fields": [
+      "answer",
+      "module",
+      "steps",
+      "sources",
+      "retrieval_channel",
+      "evidence_status",
+      "evidence_notice",
+      "answer_origin",
+      "safety_flags",
+      "emergency_types",
+      "fallback_reason",
+      "index_version",
+      "disclaimer",
+      "has_evidence",
+      "knowledge_base_hit",
+      "answer_footer",
+      "display_notice",
+      "evidence_card",
+      "emergency"
+    ]
+  }
+]

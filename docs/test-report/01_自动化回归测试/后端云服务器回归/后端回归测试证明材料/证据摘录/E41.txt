@@ -1,0 +1,24 @@
+证据 E41  真实ASR云端接口
+记录日期或阶段：2026-10-27
+结果：1条200；0.711秒
+验证范围：合成血压音频；隔离身份，无生产库写入
+原件：语音录音转写_20261027/cloud_real_asr.json
+原件SHA256：25eb63c3e961c3f77b9b3afdfd2f59ca82e0de41c612a60edab457c6896ae30a
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "status": 200,
+  "seconds": 0.711,
+  "response": {
+    "transcript": "今天早上八点测的血压，高压145，低压90。",
+    "duration_seconds": 6.455,
+    "requires_confirmation": true,
+    "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+    "purpose": "vitals",
+    "request_id": "811f7f0bb814411ab470cd6f48d3db16"
+  },
+  "asr_mocked": false,
+  "authentication_fixture": true,
+  "production_db_used": false,
+  "audio_source": "local Chinese TTS"
+}

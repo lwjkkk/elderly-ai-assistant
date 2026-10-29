@@ -1,0 +1,23 @@
+证据 E13  聊天真实接口汇总
+记录日期或阶段：2026-10-25
+结果：本地11条；云端6条
+验证范围：本地8次、云端4次真实生成；其余为规则响应
+原件：聊天修复_20261025/最终验证汇总.json
+原件SHA256：86460c4bb7c3588dd628f50afa51ffe7142820ff1434409c4ce56193fb1e12fa
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "commit": "d5f947d539101ce653c76653f6a0a19d093c64f5",
+  "matched_backend_and_kb_files": 260,
+  "service": "active",
+  "public_openapi": 200,
+  "isolated_regressions": 70,
+  "local_real_http_cases": 11,
+  "local_llm_cases": 8,
+  "local_rule_cases": 3,
+  "cloud_real_http_cases": 6,
+  "cloud_llm_cases": 4,
+  "cloud_rule_cases": 2,
+  "frontend_changed": false,
+  "apk_ui_verified": false
+}

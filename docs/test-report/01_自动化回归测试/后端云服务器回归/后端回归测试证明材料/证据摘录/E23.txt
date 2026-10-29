@@ -1,0 +1,21 @@
+证据 E23  不自动旋转契约
+记录日期或阶段：2026-10-25
+结果：11/11 通过
+验证范围：方向不正重拍；原有回归另记
+原件：方向不正重拍_20261025/contracts.log
+原件SHA256：2b1cc92625c3c1bfefeb27a800e6a406b7e281bf54eedcfd5d0f2e8b30ee02f6
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_blank_still_gets_specific_no_text_reason (__main__.NoRotation.test_blank_still_gets_specific_no_text_reason) ... ok
+L2: test_minor_tilt_does_not_force_retake (__main__.NoRotation.test_minor_tilt_does_not_force_retake) ... ok
+L3: test_obvious_tilt_rejected (__main__.NoRotation.test_obvious_tilt_rejected) ... ok
+L4: test_orientation_reason_precedes_partial_numeric_results (__main__.NoRotation.test_orientation_reason_precedes_partial_numeric_results) ... ok
+L5: test_single_vertical_fragment_does_not_reject_report (__main__.NoRotation.test_single_vertical_fragment_does_not_reject_report) ... ok
+L6: test_translation_coordinates_still_restore_to_original (__main__.NoRotation.test_translation_coordinates_still_restore_to_original) ... ok
+L7: test_unlocated_upright_table_never_runs_rotation_or_warp (__main__.NoRotation.test_unlocated_upright_table_never_runs_rotation_or_warp) ... ok
+L8: test_upright_accepted (__main__.NoRotation.test_upright_accepted) ... ok
+L9: test_upright_strong_report_has_no_extra_ocr (__main__.NoRotation.test_upright_strong_report_has_no_extra_ocr) ... ok
+L10: test_vertical_text_rejected (__main__.NoRotation.test_vertical_text_rejected) ... ok
+L11: test_wrong_orientation_runs_no_more_ocr (__main__.NoRotation.test_wrong_orientation_runs_no_more_ocr) ... ok
+L14: Ran 11 tests in 0.015s
+L16: OK

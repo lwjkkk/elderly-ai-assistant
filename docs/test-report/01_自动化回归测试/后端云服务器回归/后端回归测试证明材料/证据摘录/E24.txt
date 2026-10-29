@@ -1,0 +1,43 @@
+证据 E24  方向实际验证
+记录日期或阶段：2026-10-25
+结果：正向接受；倒置和横置重拍
+验证范围：3个方向输入；旋转探测次数均为0
+原件：方向不正重拍_20261025/real_summary.json
+原件SHA256：a200a1538173055f51fc52ae86d9fc9895be47d5874bbce7eced01ed59b63847
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "ocr_mocked": false,
+  "llm_called": false,
+  "sha256": {
+    "core/report_ocr.py": "19ce07bbe84c63dbe41c82aef1bd4ba0ea60f3500c4bc3b8e1ddf6b2e3e32019",
+    "core/report_preprocess.py": "b3fd6c27c9dfbdb6d5ef28f7e1591f417456dbec5ac0d27d5140cfe65cdf74e0",
+    "core/report_quality.py": "e5877465b8d658c48ba7eb36350ff4d9194daf5c10e0abff8db8772ea90bb6c0"
+  },
+  "cases": [
+    {
+      "case": "upright",
+      "seconds": 58.68,
+      "retake_required": false,
+      "metrics": 15,
+      "actual_ocr_calls": 3,
+      "rotation_probes": 0
+    },
+    {
+      "case": "upside_down",
+      "seconds": 45.21,
+      "retake_required": true,
+      "metrics": 0,
+      "actual_ocr_calls": 1,
+      "rotation_probes": 0
+    },
+    {
+      "case": "sideways",
+      "seconds": 45.63,
+      "retake_required": true,
+      "metrics": 0,
+      "actual_ocr_calls": 1,
+      "rotation_probes": 0
+    }
+  ]
+}

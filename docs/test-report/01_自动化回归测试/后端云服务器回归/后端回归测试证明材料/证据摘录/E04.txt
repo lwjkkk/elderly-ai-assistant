@@ -1,0 +1,14 @@
+证据 E04  云端真实链路
+记录日期或阶段：2026-10-22
+结果：5 个检查点完成
+验证范围：真实bge、Qwen、PaddleOCR、历史和同步
+原件：silver_agent_backend/backend_validation/results_20261022/cloud/cloud_real_pipeline.log
+原件SHA256：21fc624931d6efb533d3f366eacc8119d516083c4bf81376295fc7d22b245d3b
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L5: Actual bge index: {'rebuilt': True, 'reason': 'rebuilt', 'stats': {'docs': 201, 'chunks': 632, 'skipped': 0, 'dim': 512, 'db': '/tmp/silver-real-pvpqlit1/vectors.db'}}
+L6: Actual chat completed: 28.8s 高血压老人平时饮食要注意什么？
+L7: Actual chat completed: 10.6s 微信怎么发红包？
+L8: Actual chat completed: 23.9s 胸痛是不是心梗？
+L15: Actual OCR/report/model/history/sync completed: 49.0s
+L16: PASS ['real_embedding_and_chunk_metadata', 'real_chat:高血压老人平时饮食要注意什么？', 'real_chat:微信怎么发红包？', 'real_chat:胸痛是不是心梗？', 'real_ocr_upload_advice_history_sync']

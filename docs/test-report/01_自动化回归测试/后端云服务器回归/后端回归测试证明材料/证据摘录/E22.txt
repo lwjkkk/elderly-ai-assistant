@@ -1,0 +1,16 @@
+证据 E22  真实空白图拒识
+记录日期或阶段：2026-10-25
+结果：422；要求重拍；正式报告0条
+验证范围：未调用LLM
+原件：报告识别第三轮_20261025/real_blank_api_summary.json
+原件SHA256：f1e590748799ea11044d93f338022e7d0e94bb082f38748467dd038a818d2233
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "ocr_mocked": false,
+  "real_http": true,
+  "status": 422,
+  "retake_required": true,
+  "llm_not_called": true,
+  "formal_report_count": 0
+}

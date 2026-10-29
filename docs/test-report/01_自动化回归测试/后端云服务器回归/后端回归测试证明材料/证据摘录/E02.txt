@@ -1,0 +1,74 @@
+证据 E02  云端综合回归
+记录日期或阶段：2026-10-22
+结果：64/64 通过
+验证范围：业务、并发、权限、迁移、PDF；不等于64次真实模型调用
+原件：silver_agent_backend/backend_validation/results_20261022/cloud/cloud_regressions_after_font.log
+原件SHA256：7eb68089ed73887197c03193a5ff6264808c3e8388741e52adefa647a4a85faf
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_afternoon_and_minutes_not_taken_from_vital_value (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L2: test_cancel_and_confirm_race (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L3: test_confirm_replay_same_id_and_one_notification (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L4: test_confirmed_retry_with_concurrent_new_key (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L5: test_document_and_chunk_metadata_version (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L6: test_edit_version_time_and_type_cleanup (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L7: test_elder_view_keeps_complete_conditional_seek (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L8: test_emergency_worker_reads_user_in_its_own_session (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L9: test_family_personal_draft_can_be_read_and_confirmed (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L10: test_injected_failure_rolls_back_all_writes (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L11: test_injected_push_failure_preserves_vital_and_retries (tests.test_backend_contracts_20261022.BackendContracts) ... 通知 outbox 发送失败 id=1
+L23: test_message_read_rechecks_privacy (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L24: test_no_unit_reversed_ranges_and_two_column_not_normal (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L25: test_null_confirmation_rejected_without_server_error (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L26: test_object_requires_explicit_confirmation (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L27: test_old_schema_migration_keeps_existing_records (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L28: test_outbox_recovers_expired_claim_after_restart (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L29: test_outbox_two_workers_claim_once (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L30: test_report_blood_pressure_pair_not_replaced_by_diastolic (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L31: test_retrieval_focus_filters_wrong_subtopic (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L32: test_retry_checks_current_sharing_and_binding (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L33: test_single_bp_correction_overwrites_previous (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L34: test_summary_rechecks_sharing_after_generation (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L35: test_tiered_legacy_aliases_and_emergency_preserved (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L36: test_time_only_followup_and_raw_text (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L37: test_trend_groups_utc_records_by_shanghai_calendar_day (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L38: test_two_concurrent_confirms_one_record (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L39: test_type_switch_and_time_not_used_as_value (tests.test_backend_contracts_20261022.BackendContracts) ... ok
+L40: test_actual_pdf_export (backend_validation.test_regressions.BackendRegressions) ... ok
+L41: test_bound_family_messages_are_shared_and_persisted (backend_validation.test_regressions.BackendRegressions) ... ok
+L42: test_chat_privacy_owner_and_family (backend_validation.test_regressions.BackendRegressions) ... ok
+L43: test_checkin_schedule_and_ownership (backend_validation.test_regressions.BackendRegressions) ... ok
+L44: test_family_ownership_and_bound_access (backend_validation.test_regressions.BackendRegressions) ... ok
+L45: test_family_personal_audio (backend_validation.test_regressions.BackendRegressions) ... ok
+L46: test_future_plan_skipped_and_beijing_scheduler (backend_validation.test_regressions.BackendRegressions) ... ok
+L47: test_invalid_base64_is_input_error (backend_validation.test_regressions.BackendRegressions) ... ok
+L48: test_invalid_upload_and_server_failure (backend_validation.test_regressions.BackendRegressions) ... ok
+L49: test_mobile_upload_history_sync_metrics (backend_validation.test_regressions.BackendRegressions) ... ok
+L50: test_ocr_error_status_all_routes (backend_validation.test_regressions.BackendRegressions) ... OCR 服务不可用
+L62: test_password_login_returns_user_id (backend_validation.test_regressions.BackendRegressions) ... ok
+L63: test_pdf_empty_invalid_and_missing_dependency (backend_validation.test_regressions.BackendRegressions) ... ok
+L64: test_photo_vitals_route_removed (backend_validation.test_regressions.BackendRegressions) ... ok
+L65: test_privacy_enabled_shares_only_bound_account (backend_validation.test_regressions.BackendRegressions) ... ok
+L66: test_privacy_keeps_records_created_before_enabled_time (backend_validation.test_regressions.BackendRegressions) ... ok
+L67: test_reference_separators (backend_validation.test_regressions.BackendRegressions) ... ok
+L68: test_startup_survives_ocr_failure (backend_validation.test_regressions.BackendRegressions) ... OCR 启动自检失败
+L80: test_units_and_implausible_vitals (backend_validation.test_regressions.BackendRegressions) ... ok
+L81: test_unparsed_and_conflicting_advice (backend_validation.test_regressions.BackendRegressions) ... ok
+L82: test_vitals_ocr_fallback_extracts_blood_pressure (backend_validation.test_regressions.BackendRegressions) ... ok
+L83: test_backward_compat_reference_separators (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L84: test_backward_compat_unparsed (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L85: test_evidence_fields (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L86: test_folded_line_merged (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L87: test_header_row_skipped (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L88: test_multiple_metrics_and_units (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L89: test_second_pass_implausible_glucose (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L90: test_unit_mmhg (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L91: test_unit_parsed_blood_glucose (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L92: test_unit_u_l (test_report_parse_enhanced.ReportParseEnhancedTests) ... ok
+L93: test_consult_summary_failure_and_historical_retry (tests.test_family_message_media.FamilyMediaTests) ... Consultation summary failed: 1
+L105: test_consult_summary_is_generated_persisted_and_bound (tests.test_family_message_media.FamilyMediaTests) ... ok
+L106: test_recording_survives_sync_and_retry_and_is_private (tests.test_family_message_media.FamilyMediaTests) ... ok
+L107: test_transcript_is_cached_and_image_is_persisted (tests.test_family_message_media.FamilyMediaTests) ... ok
+L108: test_uploaded_records_can_only_be_deleted_by_owner (tests.test_family_message_media.FamilyMediaTests) ... ok
+L111: Ran 64 tests in 16.835s
+L113: OK
