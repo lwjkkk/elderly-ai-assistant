@@ -1,0 +1,88 @@
+证据 E37  紧急分流最终生产函数路径
+记录日期或阶段：2026-10-27
+结果：5/5 预期一致
+验证范围：2条规则路径、3条语义路径；不是生产用户测试
+原件：紧急症状修复_20261027/real_paths_final.json
+原件SHA256：fa80fcb6b5fed901219554f866b8a46e9fea8c4b803668fa84dc7d3201a48cc6
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "synthetic_only": true,
+  "mocked_model": false,
+  "cases": [
+    {
+      "id": "heart",
+      "triage": {
+        "status": "urgent",
+        "emergency_types": [
+          "chest_pain"
+        ],
+        "source": "rules",
+        "reason": "current_red_flags",
+        "version": "emergency-triage-1.0",
+        "needs_review": false
+      },
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "metaphor",
+      "triage": {
+        "status": "urgent",
+        "emergency_types": [
+          "chest_pain"
+        ],
+        "source": "semantic",
+        "reason": "semantic_screen",
+        "version": "emergency-triage-1.0",
+        "needs_review": false,
+        "seconds": 3.778
+      },
+      "seconds": 3.779,
+      "passed": true
+    },
+    {
+      "id": "speech",
+      "triage": {
+        "status": "urgent",
+        "emergency_types": [
+          "stroke"
+        ],
+        "source": "semantic",
+        "reason": "semantic_screen",
+        "version": "emergency-triage-1.0",
+        "needs_review": false,
+        "seconds": 1.1
+      },
+      "seconds": 1.101,
+      "passed": true
+    },
+    {
+      "id": "mild",
+      "triage": {
+        "status": "non_urgent",
+        "emergency_types": [],
+        "source": "semantic",
+        "reason": "semantic_screen",
+        "version": "emergency-triage-1.0",
+        "needs_review": false,
+        "seconds": 0.906
+      },
+      "seconds": 0.906,
+      "passed": true
+    },
+    {
+      "id": "denial",
+      "triage": {
+        "status": "not_indicated",
+        "emergency_types": [],
+        "source": "rules",
+        "reason": "no_current_red_flag",
+        "version": "emergency-triage-1.0",
+        "needs_review": false
+      },
+      "seconds": 0.0,
+      "passed": true
+    }
+  ]
+}

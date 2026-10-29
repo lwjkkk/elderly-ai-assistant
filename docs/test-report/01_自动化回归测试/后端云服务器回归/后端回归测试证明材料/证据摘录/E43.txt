@@ -1,0 +1,18 @@
+证据 E43  未完成合并候选检查
+记录日期或阶段：2026-10-27
+结果：133项中132通过1失败
+验证范围：未完成合并；不用于运行版本全部通过结论
+原件：分支合并验证_20261027/backend_result.json
+原件SHA256：f0f17e34360825c920e56ff553116f0a922ae54c23b74ffcd1b5b77088c06560
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "runtime": "D:\\AICcode\\backend_merge_20261027",
+  "compiled_python_files": 123,
+  "tests": 133,
+  "failures": 1,
+  "errors": 0,
+  "passed": false,
+  "real_external_model_calls": false,
+  "production_db_used": false
+}

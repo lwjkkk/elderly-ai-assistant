@@ -1,0 +1,20 @@
+证据 E17  来源真实接口汇总
+记录日期或阶段：2026-10-25
+结果：本地8条；云端6条
+验证范围：10次真实Qwen响应；另有16+5条真实检索，不累加准确率
+原件：来源卡片修复_20261025/summary.json
+原件SHA256：0b578c01c62cd96e80102c0f3aa8000a47a4540b625122ed3010379b66193f7d
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "business_contract_tests": 98,
+  "local_retrieval_queries": 16,
+  "additional_retrieval_queries": 5,
+  "local_api_cases": 8,
+  "cloud_cases": 6,
+  "real_qwen_responses": 10,
+  "cloud_status": "active",
+  "runtime_files_hash_matched": 10,
+  "frontend_modified": false,
+  "git_pushed": false
+}

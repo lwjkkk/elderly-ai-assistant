@@ -1,0 +1,54 @@
+证据 E32  云端用药专项
+记录日期或阶段：2026-10-26
+结果：44/44 通过
+验证范围：没有接入真实手机推送
+原件：用药提醒后端对齐_20261026/cloud_tests.log
+原件SHA256：acf6b270c1c96d24ab52f90218c2d43485b60146dadb651bd11acff330c2d2ac
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_after_deadline_not_reminded (__main__.Tests) ... ok
+L2: test_clock_with_utc_offset_consistent (__main__.Tests) ... ok
+L3: test_concurrent_checkin_idempotent (__main__.Tests) ... ok
+L4: test_concurrent_scan_no_duplicates (__main__.Tests) ... ok
+L5: test_due_is_durable_and_never_delivered (__main__.Tests) ... ok
+L6: test_due_repeat_no_duplicates (__main__.Tests) ... ok
+L7: test_early_rejected (__main__.Tests) ... ok
+L8: test_exact_deadline_accepts (__main__.Tests) ... ok
+L9: test_existing_pending_log_still_stages_missing_notice (__main__.Tests) ... ok
+L10: test_expired_due_retry_suppressed (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L29: test_family_card_rechecked_after_privacy_disabled (__main__.Tests) ... ok
+L30: test_future_start_not_queued (__main__.Tests) ... ok
+L31: test_genuine_symptom_emergency_kind_is_preserved (__main__.Tests) ... ok
+L32: test_invalid_calendar_rejected (__main__.Tests) ... ok
+L33: test_invalid_legacy_slot_does_not_stop_valid_one (__main__.Tests) ... 跳过无效用药时间点 medication_id=1
+L36: test_late_restart_catches_due_only_in_window (__main__.Tests) ... ok
+L37: test_legacy_medication_emergency_kind_read_as_health_without_db_rewrite (__main__.Tests) ... ok
+L38: test_maximum_retries_bounded (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L129: test_midnight_due_and_missed (__main__.Tests) ... ok
+L130: test_migration_old_outbox_keeps_records_and_is_repeatable (__main__.Tests) ... ok
+L131: test_missed_exact_deadline_no_missed (__main__.Tests) ... ok
+L132: test_missed_family_card_is_persisted_and_not_a_dose_claim (__main__.Tests) ... ok
+L133: test_missed_repeat_once (__main__.Tests) ... ok
+L134: test_one_microsecond_past_rejects (__main__.Tests) ... ok
+L135: test_one_second_past_rejects_without_log (__main__.Tests) ... ok
+L136: test_policy_does_not_claim_device_permissions_or_real_push (__main__.Tests) ... ok
+L137: test_policy_requires_authentication (__main__.Tests) ... ok
+L138: test_privacy_revoked_between_stage_and_retry (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L157: test_real_placeholder_even_with_credentials_not_ready (__main__.Tests) ... ok
+L158: test_repeated_checkin_idempotent (__main__.Tests) ... ok
+L159: test_retry_after_checkin_suppressed (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L178: test_retry_after_delete_suppressed (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L197: test_retry_after_schedule_change_suppressed (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L216: test_rollback_removes_log_outbox_and_family_card (__main__.Tests) ... ok
+L217: test_taken_not_marked_missed (__main__.Tests) ... ok
+L218: test_taken_not_reminded (__main__.Tests) ... ok
+L219: test_transport_acceptance_not_delivery (__main__.Tests) ... ok
+L220: test_transport_failure_does_not_undo_cards_and_logs (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L239: test_transport_unproven_result_not_submitted (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L250: test_unbinding_suppresses_family_only (__main__.Tests) ... 通知 outbox 发送失败 id=1
+L269: test_unknown_birth_suppresses_family_at_stage (__main__.Tests) ... ok
+L270: test_whitespace_in_new_plan_is_canonicalized (__main__.Tests) ... ok
+L271: test_yesterday_non_crossing_slots_not_backfilled (__main__.Tests) ... ok
+L272: test_younger_private_suppresses_family_at_stage (__main__.Tests) ... ok
+L275: Ran 44 tests in 20.838s
+L277: OK

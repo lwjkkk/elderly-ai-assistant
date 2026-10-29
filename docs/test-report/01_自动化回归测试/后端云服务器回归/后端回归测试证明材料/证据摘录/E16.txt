@@ -1,0 +1,17 @@
+证据 E16  来源底部协议
+记录日期或阶段：2026-10-25
+结果：7/7 通过
+验证范围：按文档归组、默认折叠、场景安全提醒、隐藏诊断字段
+原件：来源卡片修复_20261025/footer.log
+原件SHA256：b442f08619c7f9595f36be699c76de4afa711373b13f40946af05ecde77e8ceb
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+L1: test_both_routes_expose_same_footer (__main__.Footer.test_both_routes_expose_same_footer) ... ok
+L2: test_footer_only_safe_content (__main__.Footer.test_footer_only_safe_content) ... ok
+L3: test_group_same_document_without_losing_chunks (__main__.Footer.test_group_same_document_without_losing_chunks) ... ok
+L4: test_no_source_and_rules_hide_entire_reference_area (__main__.Footer.test_no_source_and_rules_hide_entire_reference_area) ... ok
+L5: test_no_url_still_has_card_and_unsafe_urls_not_exposed (__main__.Footer.test_no_url_still_has_card_and_unsafe_urls_not_exposed) ... ok
+L6: test_safety_copy_varies_by_scene (__main__.Footer.test_safety_copy_varies_by_scene) ... ok
+L7: test_symptom_response_keeps_footer (__main__.Footer.test_symptom_response_keeps_footer) ... ok
+L10: Ran 7 tests in 0.052s
+L12: OK

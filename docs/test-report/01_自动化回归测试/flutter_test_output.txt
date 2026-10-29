@@ -1,0 +1,97 @@
+﻿flutter : Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+所在位置 行:1 字符: 66
++ ... \Desktop\elderly-ai-assistant\app_flutter"; flutter test 2>&1 | Tee-O ...
++                                                 ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Flutter assets ...st this source!:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+00:00 +0: loading C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart
+00:00 +0: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: family self and elder view use separate request ownership
+00:00 +1: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: unbound family cannot silently read own data as elder data
+00:00 +2: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_archive_test.dart: 迁移旧聊天记录只执行一次，写入新会话后仍保留旧记录
+00:00 +3: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_archive_test.dart: 迁移旧聊天记录只执行一次，写入新会话后仍保留旧记录
+00:00 +4: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: report jobs upload original multipart with correct elder scope
+00:00 +5: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: report jobs upload original multipart with correct elder scope
+00:00 +6: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: report upload displays backend detail and Retry-After guidance
+00:00 +7: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: unfinished report jobs are stored separately by user and elder
+00:00 +8: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: file credentials are not sent to another server
+00:00 +9: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: new vitals constraints reject invalid data before posting
+00:00 +10: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: report displays backend statuses without inferring normal from advice
+00:00 +11: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_history_widget_test.dart: 历史回答可切换详版，旧记录仍展示原文
+00:01 +12: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_history_widget_test.dart: 历史回答可切换详版，旧记录仍展示原文
+00:01 +13: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_history_widget_test.dart: 历史回答可切换详版，旧记录仍展示原文
+00:01 +14: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_history_widget_test.dart: 历史回答可切换详版，旧记录仍展示原文
+00:01 +15: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: privacy uses backend value and preserves it on failed save
+00:01 +16: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/backend_contract_test.dart: privacy uses backend value and preserves it on failed save
+00:02 +17: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +18: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +19: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +20: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +21: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +22: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +23: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +24: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +25: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +26: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:03 +27: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:04 +28: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/chat_lifecycle_test.dart: AI page survives restored font size and tab switching
+00:04 +29: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +30: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +31: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +32: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +33: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +34: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +35: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +36: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +37: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +38: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +39: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +40: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +41: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +42: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/contest_draft_widget_test.dart: draft opens without saving and can be resumed after leaving
+00:04 +43: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/emergency_reported_question_test.dart: chat quotes actual submitted text despite a stale server echo
+00:05 +44: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/emergency_reported_question_test.dart: chat quotes actual submitted text despite a stale server echo
+00:05 +45: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/emergency_reported_question_test.dart: chat quotes actual submitted text despite a stale server echo
+00:05 +46: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/emergency_reported_question_test.dart: chat quotes actual submitted text despite a stale server echo
+00:05 +47: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/emergency_reported_question_test.dart: chat quotes actual submitted text despite a stale server echo
+00:05 +48: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:05 +49: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:05 +50: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:05 +51: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:05 +52: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:05 +53: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:06 +54: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:06 +55: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/health_interactions_test.dart: drug question uses backend chat privacy rules and shows grey speech pause
+00:06 +56: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +57: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +58: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +59: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +60: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +61: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +62: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +63: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +64: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +65: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +66: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +67: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +68: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +69: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/privacy_age_alert_test.dart: server forced sharing removes the unavailable privacy toggle
+00:06 +70: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:06 +71: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:06 +72: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:06 +73: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:06 +74: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:07 +75: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:07 +76: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: failed retake wins over success and never calls onReportSaved
+00:07 +77: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: chat uses editable confirmed text and sends only on user send
+00:07 +78: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: chat uses editable confirmed text and sends only on user send
+00:07 +79: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/report_ocr_handoff_test.dart: retake dialog occurs once across rebuild and task restore
+00:07 +80: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: vitals requires editing/confirming text before draft parsing and no final save
+00:08 +81: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: vitals requires editing/confirming text before draft parsing and no final save
+00:08 +82: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: vitals requires editing/confirming text before draft parsing and no final save
+00:08 +83: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: vitals requires editing/confirming text before draft parsing and no final save
+00:08 +84: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: 60 seconds auto-stops once and cancel during ASR never fills input
+00:08 +85: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: background and route removal release microphone without upload
+00:08 +86: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: permission rejection offers text input and permanent rejection settings
+00:09 +87: C:/Users/Duyijing/Desktop/elderly-ai-assistant/app_flutter/test/voice_input_test.dart: navigation during recording releases microphone and preserves new route
+00:09 +88: All tests passed!

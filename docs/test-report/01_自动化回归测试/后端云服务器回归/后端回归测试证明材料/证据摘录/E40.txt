@@ -1,0 +1,86 @@
+证据 E40  真实ASR本地接口
+记录日期或阶段：2026-10-27
+结果：5/5 通过
+验证范围：4种合成口述，血压含WAV和M4A两个格式；非老人实录
+原件：语音录音转写_20261027/real_asr.json
+原件SHA256：925013b33539872feb1766b293417fc2cb6ddb45c2933f099d608b895697e05f
+说明：以下为原日志的带行号摘录或JSON选定字段，不是本次重新执行结果；原件未修改。
+
+{
+  "asr_mocked": false,
+  "audio_source": "local Microsoft Huihui Chinese TTS; no real user recording",
+  "authentication_fixture": true,
+  "production_db_used": false,
+  "cases": [
+    {
+      "sample": "bp.wav",
+      "status_code": 200,
+      "seconds": 2.048,
+      "response": {
+        "transcript": "今天早上八点测的血压，高压145，低压90。",
+        "duration_seconds": 6.437,
+        "requires_confirmation": true,
+        "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+        "purpose": "vitals",
+        "request_id": "c606616752064316a38a220dc85f6502"
+      },
+      "passed": true
+    },
+    {
+      "sample": "bp.m4a",
+      "status_code": 200,
+      "seconds": 1.805,
+      "response": {
+        "transcript": "今天早上八点测的血压，高压145，低压90。",
+        "duration_seconds": 6.455,
+        "requires_confirmation": true,
+        "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+        "purpose": "vitals",
+        "request_id": "b89af62931a2436eb56d7f0dfcdf1a1a"
+      },
+      "passed": true
+    },
+    {
+      "sample": "glucose.wav",
+      "status_code": 200,
+      "seconds": 1.726,
+      "response": {
+        "transcript": "我今天早上空腹血糖6.2。",
+        "duration_seconds": 3.723,
+        "requires_confirmation": true,
+        "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+        "purpose": "vitals",
+        "request_id": "3d9f7963d3764e759473653930713b59"
+      },
+      "passed": true
+    },
+    {
+      "sample": "emergency.wav",
+      "status_code": 200,
+      "seconds": 1.613,
+      "response": {
+        "transcript": "我现在心脏疼，喘不上气，请帮我联系家人。",
+        "duration_seconds": 5.873,
+        "requires_confirmation": true,
+        "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+        "purpose": "chat",
+        "request_id": "9eaf5876c9d147709b75828b00d37f2a"
+      },
+      "passed": true
+    },
+    {
+      "sample": "phone.wav",
+      "status_code": 200,
+      "seconds": 1.445,
+      "response": {
+        "transcript": "微信怎么发语音？",
+        "duration_seconds": 2.504,
+        "requires_confirmation": true,
+        "notice": "语音转写可能有误，请核对文字、数值和药名后再提交。",
+        "purpose": "chat",
+        "request_id": "1284dab348924b099a02edbd23b70bc4"
+      },
+      "passed": true
+    }
+  ]
+}
