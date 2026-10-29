@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:elderly_ai_assistant/services/api.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 import 'package:elderly_ai_assistant/services/chat/contest_answer.dart';
 import 'package:elderly_ai_assistant/services/health/vital_validation.dart';
 import 'package:elderly_ai_assistant/services/health/vital_notification_status.dart';
@@ -69,14 +70,10 @@ class _VitalDraftPageState extends State<VitalDraftPage> {
   }
 
   String _formatMeasuredAtForDisplay(dynamic raw) {
-    final value = (raw ?? '').toString().trim();
-    if (value.isEmpty) return value;
-    final parsed = DateTime.tryParse(value);
-    if (parsed == null) return value;
-    final shanghai = parsed.toUtc().add(const Duration(hours: 8));
-    String twoDigits(int number) => number.toString().padLeft(2, '0');
-    return '${shanghai.year}-${twoDigits(shanghai.month)}-${twoDigits(shanghai.day)} '
-        '${twoDigits(shanghai.hour)}:${twoDigits(shanghai.minute)}:${twoDigits(shanghai.second)}';
+    return formatBeijingDateTime(
+      raw,
+      naiveTimeZone: NaiveDateTimeZone.beijing,
+    );
   }
 
   @override
