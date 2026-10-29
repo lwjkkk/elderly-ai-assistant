@@ -14,6 +14,7 @@ from db.database import get_db
 from db.models import User, FamilyBinding, FamilyMessage
 from core.security import get_current_user
 from core import age as age_mod
+from utils.timezones import beijing_isoformat
 
 router = APIRouter(prefix="/api/messages", tags=["家人消息"])
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def _out(message: FamilyMessage) -> dict:
     return {'id': message.id, 'binding_id': message.binding_id,
             'sender_id': message.sender_id, 'kind': kind,
             'content': message.content,
-            'created_at': message.created_at.isoformat() if message.created_at else None}
+            'created_at': beijing_isoformat(message.created_at)}
 
 
 def _message(db: Session, binding_id: int, message_id: int, current: User) -> FamilyMessage:
@@ -151,7 +152,7 @@ def send_message(binding_id: int,
         "sender_id": msg.sender_id,
         "kind": msg.kind,
         "content": msg.content,
-        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        "created_at": beijing_isoformat(msg.created_at),
     }
 
 

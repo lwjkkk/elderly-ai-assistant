@@ -12,6 +12,7 @@
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from utils.timezones import beijing_isoformat
 
 from core.vitals_draft import (
     parse_spoken_vitals, validate_draft, extract_measurement_context,
@@ -209,9 +210,16 @@ def draft_payload(conv) -> dict:
     """把会话转成草稿 dict（供前端展示）。"""
     measured_at = conv.measured_at
     if isinstance(measured_at, datetime):
-        if measured_at.tzinfo is None:
-            measured_at = measured_at.replace(tzinfo=ZoneInfo("UTC"))
-        measured_at = measured_at.isoformat()
+        measured_at = beijing_isoformat(measured_at)
+    elif isinstance(measured_at, str) and measured_at:
+        try:
+            parsed = datetime.fromisoformat(measured_at.replace("Z", "+00:00"))
+            # Strings come from oral/local input; persisted DB values are datetime.
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            measured_at = beijing_isoformat(parsed)
+        except ValueError:
+            pass  # Keep invalid input visible for the existing validation flow.
     return {
         "type": conv.type,
         "systolic": conv.systolic,

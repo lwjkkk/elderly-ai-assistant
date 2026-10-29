@@ -58,7 +58,10 @@ def _extract_time(text: str, now: datetime):
         raw = iso_match.group(1)
         try:
             at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return raw, at
+            # Unzoned user input is a Beijing wall time, unlike UTC DB values.
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            return raw, at.astimezone(ZoneInfo("Asia/Shanghai"))
         except ValueError:
             return raw, None
     base_date = now.date()
