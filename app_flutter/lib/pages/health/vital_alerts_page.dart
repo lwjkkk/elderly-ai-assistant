@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:elderly_ai_assistant/services/api.dart';
+import 'package:elderly_ai_assistant/services/beijing_time.dart';
 
 class VitalAlertsPage extends StatefulWidget {
   final bool mine;
@@ -83,7 +84,8 @@ class _VitalAlertsPageState extends State<VitalAlertsPage> {
                             Text('${item['message'] ?? '请复查测量结果'}',
                                 style:
                                     const TextStyle(fontSize: 19, height: 1.5)),
-                            Text('记录时间：${item['created_at'] ?? '接口未返回'}'),
+                            Text(
+                                '记录时间：${formatBeijingDateTime(item['created_at'])}'),
                             SelectableText(
                                 '阈值依据：${item['source'] ?? '未提供，请核对'}'),
                             const Text('状态：服务端已记录；送达状态未提供'),
