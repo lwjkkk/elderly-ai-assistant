@@ -70,7 +70,7 @@ flutter run -d edge --web-hostname 127.0.0.1 --web-port 8080 --dart-define=API_B
 | 本机 Edge | `http://127.0.0.1:8000` |
 | Android 模拟器 | `http://10.0.2.2:8000` |
 | 同一局域网内的 Android 真机 | `http://电脑的局域网IP:8000` |
-| 已部署后端 | 实际部署的 HTTPS 地址，例如 `https://api.example.com`（仅占位） |
+| 已部署后端 | `http://47.93.97.48:8000`（当前部署未配置 HTTPS） |
 
 真机上的 `127.0.0.1` 指向手机自身。局域网测试时后端需要监听电脑的局域网网卡，手机和电脑应互通。地址变更后需重新运行或构建应用；浏览器刷新不会更改已经编译进去的地址。API 密钥由后端管理，不写入 Flutter 源码或 `--dart-define`。
 
@@ -113,7 +113,7 @@ git revert 0f79a3d
 Android SDK 已安装但提示 `No Android SDK found` 时，应明确传入 SDK 路径。在本机前端目录执行：
 
 ```powershell
-.\tool\build_apk.ps1 -ApiBase http://101.201.226.34:8000 -AndroidSdk D:\AndroidSdk -GoogleMavenMirror https://maven.aliyun.com/repository/google -NoPub
+.\tool\build_apk.ps1 -ApiBase http://47.93.97.48:8000 -AndroidSdk D:\AndroidSdk -GoogleMavenMirror https://maven.aliyun.com/repository/google -NoPub
 ```
 
 若尚未执行 `flutter pub get`，移除 `-NoPub`。也可在当前 PowerShell 中设置路径后直接使用 Flutter：
@@ -122,9 +122,9 @@ Android SDK 已安装但提示 `No Android SDK found` 时，应明确传入 SDK 
 $env:ANDROID_HOME = 'D:\AndroidSdk'
 $env:ANDROID_SDK_ROOT = 'D:\AndroidSdk'
 $env:JAVA_HOME = 'D:\AndroidTools\jdk21\jdk-21.0.12.1+1'
-flutter build apk --release --dart-define=API_BASE=http://101.201.226.34:8000
+flutter build apk --release --dart-define=API_BASE=http://47.93.97.48:8000
 ```
 
 当前中文项目路径请优先使用上面的 `build_apk.ps1`：脚本还会通过临时盘符避开 Windows AOT 编译器的中文路径问题，构建结束后自动撤销映射。安装包位于 `build/app/outputs/flutter-apk/app-release.apk`，当前使用调试签名供演示测试。工具说明见 [tool/README.md](tool/README.md)。修改构建时后端地址后需要重新打包。
 
-本次安装包的版本、校验值及验证范围见 [Android 构建记录](docs/history/frontend-apk-build.md)。
+本次新 APK 已通过构建参数写入 `http://47.93.97.48:8000`，版本、校验值及验证范围见 [2026-10-29 构建记录](docs/frontend-apk-build-20261029.md)。旧 APK 不会自动切换地址，需安装新包。新服务器未迁移旧用户业务库，旧服务器账号不会自动可用。
