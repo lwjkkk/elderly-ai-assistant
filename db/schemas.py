@@ -1,11 +1,20 @@
 # Pydantic 校验模型：负责校验请求体长什么样、返回体长什么样
 # 注意和 models.py 的区别：models 对应数据库表，schemas 对应接口的输入输出
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from core.disclaimer import HEALTH_DISCLAIMER
+from utils.timezones import beijing_isoformat
+
+
+class BeijingTimeOut(BaseModel):
+    """All persisted UTC record timestamps use an explicit Beijing offset on output."""
+
+    @field_serializer("created_at", "updated_at", "measured_at", check_fields=False)
+    def serialize_record_time(self, value: datetime | None):
+        return beijing_isoformat(value)
 
 
 # ---------- 账号鉴权 ----------
@@ -105,7 +114,7 @@ class PrivacyUpdate(BaseModel):
 
 # ---------- 对话摘要 ----------
 
-class ChatSummaryOut(BaseModel):
+class ChatSummaryOut(BeijingTimeOut):
     """对话摘要返回体（家属端查看老人对话记录）"""
     id: int
     elder_id: int
@@ -122,7 +131,7 @@ class ChatSummaryOut(BaseModel):
 
 # ---------- 查药记录 ----------
 
-class DrugQueryOut(BaseModel):
+class DrugQueryOut(BeijingTimeOut):
     """查药记录返回体（家属端摘要展示）"""
     id: int
     elder_id: int
@@ -263,7 +272,7 @@ class VitalsCreate(BaseModel):
     elder_id: int | None = Field(None, description="家属代录时指定老人id")
 
 
-class VitalsOut(BaseModel):
+class VitalsOut(BeijingTimeOut):
     id: int
     elder_id: int
     type: str
@@ -271,21 +280,15 @@ class VitalsOut(BaseModel):
     diastolic: int | None = None
     value: float | None = None
     measurement_context: str | None = None
-    measured_at: datetime | None = None
+    measured_at: datetime | None = Field(None, description="测量时间，输出为北京时间 ISO 8601（+08:00）")
     notification_status: str | None = None
     disclaimer: str = HEALTH_DISCLAIMER
-
-    @field_serializer("measured_at")
-    def serialize_measured_at(self, value: datetime | None):
-        if value is not None and value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.isoformat() if value else None
 
     class Config:
         from_attributes = True
 
 
-class VitalAlertOut(BaseModel):
+class VitalAlertOut(BeijingTimeOut):
     """体征异常事件返回体（#9，10.27 新增）。"""
     id: int
     elder_id: int
@@ -301,12 +304,6 @@ class VitalAlertOut(BaseModel):
     threshold_version: str | None = None
     measured_at: datetime | None = None
     created_at: datetime | None = None
-
-    @field_serializer("measured_at", "created_at")
-    def serialize_utc_timestamps(self, value: datetime | None):
-        if value is not None and value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.isoformat() if value else None
 
     class Config:
         from_attributes = True
@@ -390,7 +387,7 @@ class TrendPoint(BaseModel):
 
 # ---------- 问诊录音 ----------
 
-class ConsultOut(BaseModel):
+class ConsultOut(BeijingTimeOut):
     id: int
     elder_id: int
     audio_url: str
@@ -415,7 +412,7 @@ class SymptomCreate(BaseModel):
     elder_id: int | None = Field(None, description="家属代提交时指定老人id")
 
 
-class SymptomOut(BaseModel):
+class SymptomOut(BeijingTimeOut):
     id: int
     elder_id: int
     input_text: str
@@ -458,7 +455,7 @@ class SymptomOut(BaseModel):
 
 # ---------- 体检报告 ----------
 
-class HealthReportOut(BaseModel):
+class HealthReportOut(BeijingTimeOut):
     id: int
     elder_id: int
     image_url: str | None = None

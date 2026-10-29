@@ -4,10 +4,11 @@
 import io
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
 from db.models import Vitals
+from utils.timezones import as_beijing
 
 
 def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str) -> bytes:
@@ -43,7 +44,8 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
 
     # 标题
     elements.append(Paragraph(f"{escape(str(elder_name))} 的体征记录", title_style))
-    elements.append(Paragraph(f"导出时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}", normal_style))
+    exported_at = as_beijing(datetime.now(timezone.utc))
+    elements.append(Paragraph(f"导出时间：{exported_at.strftime('%Y-%m-%d %H:%M')}（北京时间）", normal_style))
     elements.append(Spacer(1, 10 * mm))
 
     # 趋势图（如果有血压数据）
@@ -61,9 +63,9 @@ def generate_vitals_pdf(records: list[Vitals], elder_name: str, disclaimer: str)
     elements.append(Paragraph("详细数据", normal_style))
     elements.append(Spacer(1, 3 * mm))
 
-    table_data = [["日期", "类型", "数值"]]
+    table_data = [["日期（北京时间）", "类型", "数值"]]
     for r in records:
-        date_str = r.measured_at.strftime("%Y-%m-%d %H:%M") if r.measured_at else "-"
+        date_str = as_beijing(r.measured_at).strftime("%Y-%m-%d %H:%M") if r.measured_at else "-"
         type_map = {"bp": "血压", "bs": "血糖", "hr": "心率", "weight": "体重"}
         type_name = type_map.get(r.type, r.type)
 
@@ -176,7 +178,7 @@ def _draw_bp_chart(records: list[Vitals]) -> str | None:
         diastolic = []
         for r in records:
             if r.measured_at and r.systolic is not None and r.diastolic is not None:
-                dates.append(r.measured_at.strftime("%m/%d"))
+                dates.append(as_beijing(r.measured_at).strftime("%m/%d"))
                 systolic.append(r.systolic)
                 diastolic.append(r.diastolic)
 

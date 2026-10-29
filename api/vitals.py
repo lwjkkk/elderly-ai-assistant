@@ -34,6 +34,7 @@ from core import vital_thresholds as vth
 from core import age as age_mod
 from services import push as push_svc
 from services.pdf_export import generate_vitals_pdf
+from utils.timezones import as_beijing
 
 router = APIRouter(prefix="/api/vitals", tags=["体征"])
 
@@ -320,8 +321,7 @@ def trend(vital_type: str | None = None,
     # 按日期分组
     grouped: dict[str, list] = defaultdict(list)
     for r in records:
-        day = (r.measured_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Asia/Shanghai"))
-               .strftime("%Y-%m-%d")) if r.measured_at else "unknown"
+        day = as_beijing(r.measured_at).strftime("%Y-%m-%d") if r.measured_at else "unknown"
         grouped[day].append(r)
 
     result: dict[str, list[TrendPoint]] = {}

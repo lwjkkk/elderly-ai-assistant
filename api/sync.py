@@ -20,6 +20,7 @@ from core.security import get_current_user
 from api.meds import resolve_elder_id
 from core.report_ocr import report_metrics
 from core import age as age_mod
+from utils.timezones import beijing_isoformat
 
 router = APIRouter(prefix="/api", tags=["同步"])
 
@@ -114,7 +115,7 @@ def sync(since: str | None = None,
     server_time = datetime.now(timezone.utc).replace(microsecond=0)
 
     return {
-        "server_time": server_time.isoformat(),
+        "server_time": beijing_isoformat(server_time),
         "elder_id": target,
         "medications": [MedicationOut.model_validate(m).model_dump() for m in meds],
         "medication_logs": [LogOut.model_validate(l).model_dump() for l in logs],
